@@ -2,6 +2,7 @@ package com.ubs.pesubapi.controller;
 
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.repository.FacilityRepository;
+import com.ubs.pesubapi.service.NotificationService;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -15,9 +16,11 @@ import java.util.Map;
 public class FacilityController {
 
     private final FacilityRepository repo;
+    private final NotificationService notifier;
 
-    public FacilityController(FacilityRepository repo) {
-        this.repo = repo;
+    public FacilityController(FacilityRepository repo, NotificationService notifier) {
+        this.repo     = repo;
+        this.notifier = notifier;
     }
 
     @GetMapping
@@ -26,20 +29,22 @@ public class FacilityController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Facility> get(@PathVariable Integer id) {
+    public ResponseEntity<Facility> get(@PathVariable int id) {
         return repo.findById(id)
             .map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());
     }
 
     @PatchMapping("/{id}/status")
-    public ResponseEntity<Facility> patchStatus(@PathVariable Integer id,
+    public ResponseEntity<Facility> patchStatus(@PathVariable int id,
                                                  @RequestBody Map<String, String> body) {
         return repo.findById(id).map(f -> {
-            f.setStatus(body.get("status"));
+            String newStatus = body.get("status");
+            f.setStatus(newStatus);
             f.setUpdatedAt(LocalDateTime.now());
-            return ResponseEntity.ok(repo.save(f));
+            Facility saved = repo.save(f);
+            notifier.broadcast(f.getName() + " status updated to " + newStatus);
+            return ResponseEntity.ok(saved);
         }).orElse(ResponseEntity.notFound().build());
     }
-
 }

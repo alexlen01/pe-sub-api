@@ -7,6 +7,7 @@ import com.ubs.pesubapi.repository.BbSnapshotRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.LpRepository;
 import com.ubs.pesubapi.service.BbCalculationService;
+import com.ubs.pesubapi.service.NotificationService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -21,17 +22,20 @@ public class BbController {
     private final LpRepository          lpRepo;
     private final BbSnapshotRepository  snapshotRepo;
     private final BbCalculationService  calculator;
+    private final NotificationService   notifier;
 
     public BbController(FacilityRepository facilityRepo, LpRepository lpRepo,
-                        BbSnapshotRepository snapshotRepo, BbCalculationService calculator) {
+                        BbSnapshotRepository snapshotRepo, BbCalculationService calculator,
+                        NotificationService notifier) {
         this.facilityRepo = facilityRepo;
         this.lpRepo       = lpRepo;
         this.snapshotRepo = snapshotRepo;
         this.calculator   = calculator;
+        this.notifier     = notifier;
     }
 
     @PostMapping("/run/{facilityId}")
-    public ResponseEntity<BbSnapshot> run(@PathVariable Integer facilityId) {
+    public ResponseEntity<BbSnapshot> run(@PathVariable int facilityId) {
         Facility facility = facilityRepo.findById(facilityId)
             .orElseThrow(() -> new ResourceNotFoundException("Facility not found: " + facilityId));
 
@@ -48,16 +52,19 @@ public class BbController {
         facility.setLastRunAt(LocalDateTime.now());
         facilityRepo.save(facility);
 
+        notifier.broadcast("Shadow BB calculated for " + facility.getName()
+            + " — UBS BB $" + String.format("%.1f", result.summary().totalUBB()) + "M");
+
         return ResponseEntity.status(201).body(saved);
     }
 
     @GetMapping("/snapshots/{facilityId}")
-    public List<BbSnapshot> snapshots(@PathVariable Integer facilityId) {
+    public List<BbSnapshot> snapshots(@PathVariable int facilityId) {
         return snapshotRepo.findByFacilityIdOrderByCalculatedAtAsc(facilityId);
     }
 
     @GetMapping("/snapshots/{facilityId}/latest")
-    public ResponseEntity<BbSnapshot> latestSnapshot(@PathVariable Integer facilityId) {
+    public ResponseEntity<BbSnapshot> latestSnapshot(@PathVariable int facilityId) {
         return snapshotRepo.findTopByFacilityIdOrderByCalculatedAtDesc(facilityId)
             .map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());

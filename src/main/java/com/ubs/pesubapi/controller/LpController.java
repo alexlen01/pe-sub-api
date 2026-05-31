@@ -2,6 +2,7 @@ package com.ubs.pesubapi.controller;
 
 import com.ubs.pesubapi.entity.Lp;
 import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.service.NotificationService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -13,10 +14,12 @@ import java.util.Map;
 @RequestMapping("/api/lps")
 public class LpController {
 
-    private final LpRepository repo;
+    private final LpRepository        repo;
+    private final NotificationService notifier;
 
-    public LpController(LpRepository repo) {
-        this.repo = repo;
+    public LpController(LpRepository repo, NotificationService notifier) {
+        this.repo     = repo;
+        this.notifier = notifier;
     }
 
     @GetMapping
@@ -36,24 +39,29 @@ public class LpController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Lp> get(@PathVariable Integer id) {
+    public ResponseEntity<Lp> get(@PathVariable int id) {
         return repo.findById(id)
             .map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());
     }
 
     @PatchMapping("/{id}")
-    public ResponseEntity<Lp> patch(@PathVariable Integer id,
+    public ResponseEntity<Lp> patch(@PathVariable int id,
                                      @RequestBody Map<String, Object> body) {
         return repo.findById(id).map(lp -> {
-            if (body.containsKey("cls"))   lp.setCls((String) body.get("cls"));
+            String prevCls = lp.getCls();
+            if (body.containsKey("cls"))    lp.setCls((String) body.get("cls"));
             if (body.containsKey("clsTag")) lp.setClsTag((String) body.get("clsTag"));
-            if (body.containsKey("abb"))   lp.setAbb((String) body.get("abb"));
-            if (body.containsKey("inc"))   lp.setInc((Boolean) body.get("inc"));
-            if (body.containsKey("rcl"))   lp.setRcl((Boolean) body.get("rcl"));
-            if (body.containsKey("notes")) lp.setNotes((String) body.get("notes"));
+            if (body.containsKey("abb"))    lp.setAbb((String) body.get("abb"));
+            if (body.containsKey("inc"))    lp.setInc((Boolean) body.get("inc"));
+            if (body.containsKey("rcl"))    lp.setRcl((Boolean) body.get("rcl"));
+            if (body.containsKey("notes"))  lp.setNotes((String) body.get("notes"));
             lp.setUpdatedAt(LocalDateTime.now());
-            return ResponseEntity.ok(repo.save(lp));
+            Lp saved = repo.save(lp);
+            if (body.containsKey("cls") && !lp.getCls().equals(prevCls)) {
+                notifier.broadcast(lp.getName() + " reclassified to " + lp.getCls());
+            }
+            return ResponseEntity.ok(saved);
         }).orElse(ResponseEntity.notFound().build());
     }
 }

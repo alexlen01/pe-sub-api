@@ -1,6 +1,5 @@
 package com.ubs.pesubapi.controller;
 
-import com.ubs.pesubapi.dto.BbResult;
 import com.ubs.pesubapi.repository.BbSnapshotRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -18,7 +17,7 @@ public class ReportController {
     }
 
     @GetMapping("/collateral/{facilityId}")
-    public ResponseEntity<?> collateral(@PathVariable Integer facilityId) {
+    public ResponseEntity<?> collateral(@PathVariable int facilityId) {
         return snapshotRepo.findTopByFacilityIdOrderByCalculatedAtDesc(facilityId)
             .map(snap -> ResponseEntity.ok(Map.of(
                 "facilityId",    snap.getFacilityId(),
@@ -29,7 +28,7 @@ public class ReportController {
     }
 
     @GetMapping("/concentration/{facilityId}")
-    public ResponseEntity<?> concentration(@PathVariable Integer facilityId) {
+    public ResponseEntity<?> concentration(@PathVariable int facilityId) {
         return snapshotRepo.findTopByFacilityIdOrderByCalculatedAtDesc(facilityId)
             .map(snap -> ResponseEntity.ok(Map.of(
                 "breaches", snap.getResult().breaches()

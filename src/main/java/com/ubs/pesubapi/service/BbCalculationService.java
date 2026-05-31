@@ -27,14 +27,6 @@ public class BbCalculationService {
         "Excluded",       0.00
     );
 
-    private static final Map<String, Double> AGENT_RATES = Map.of(
-        "Rated",          0.95,
-        "Unrated >2bn",   0.75,
-        "Unrated 1–2bn", 0.75,
-        "Eligible",       0.00,
-        "Excluded",       0.00
-    );
-
     public BbResult compute(List<Lp> lps, double concLimitM) {
         List<ComputedLp> computed = lps.stream()
             .map(lp -> computeOne(lp, concLimitM))
