@@ -52,6 +52,8 @@ public class Facility {
     public LocalDateTime getCreatedAt()          { return createdAt; }
     public LocalDateTime getUpdatedAt()          { return updatedAt; }
 
+    public void setName(String name)             { this.name = name; }
+    public void setAgentBank(String agentBank)   { this.agentBank = agentBank; }
     public void setStatus(String status)         { this.status = status; }
     public void setLastRunAt(LocalDateTime t)    { this.lastRunAt = t; }
     public void setUpdatedAt(LocalDateTime t)    { this.updatedAt = t; }

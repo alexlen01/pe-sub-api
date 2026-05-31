@@ -3,4 +3,8 @@ package com.ubs.pesubapi.repository;
 import com.ubs.pesubapi.entity.Facility;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface FacilityRepository extends JpaRepository<Facility, Integer> {}
+import java.util.Optional;
+
+public interface FacilityRepository extends JpaRepository<Facility, Integer> {
+    Optional<Facility> findByName(String name);
+}

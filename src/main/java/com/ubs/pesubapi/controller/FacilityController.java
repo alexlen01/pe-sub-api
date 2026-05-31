@@ -3,6 +3,8 @@ package com.ubs.pesubapi.controller;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.service.NotificationService;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -14,6 +16,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/facilities")
 public class FacilityController {
+
+    record CreateFacilityRequest(@NotBlank String name, @NotBlank String agentBank) {}
 
     private final FacilityRepository repo;
     private final NotificationService notifier;
@@ -33,6 +37,19 @@ public class FacilityController {
         return repo.findById(id)
             .map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping
+    public ResponseEntity<?> create(@RequestBody @Valid CreateFacilityRequest req) {
+        if (repo.findByName(req.name()).isPresent()) {
+            return ResponseEntity.status(409).body(Map.of("error", "A facility with this name already exists."));
+        }
+        Facility f = new Facility();
+        f.setName(req.name());
+        f.setAgentBank(req.agentBank());
+        Facility saved = repo.save(f);
+        notifier.broadcast("New facility onboarded: " + saved.getName());
+        return ResponseEntity.status(201).body(saved);
     }
 
     @PatchMapping("/{id}/status")
