@@ -12,7 +12,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/bb")
@@ -67,6 +68,101 @@ public class BbController {
     public ResponseEntity<BbSnapshot> latestSnapshot(@PathVariable int facilityId) {
         return snapshotRepo.findTopByFacilityIdOrderByCalculatedAtDesc(facilityId)
             .map(ResponseEntity::ok)
-            .orElse(ResponseEntity.notFound().build());
+            .orElse(ResponseEntity.noContent().build());
+    }
+
+    @GetMapping("/summary-ext/{facilityId}")
+    public ResponseEntity<Map<String, Object>> summaryExt(@PathVariable int facilityId) {
+        List<com.ubs.pesubapi.entity.Lp> lps = lpRepo.findByFacilityIdOrderByRankAsc(facilityId);
+        if (lps.isEmpty()) return ResponseEntity.ok(emptySummaryExt());
+
+        int    totalLPs       = lps.size();
+        double totalCapCommit = lps.stream().mapToDouble(lp -> parseMoney(lp.getCapCommit())).sum();
+        double totalCalledCap = lps.stream().mapToDouble(lp -> parseMoney(lp.getCalledCap())).sum();
+        double totalUncalled  = lps.stream().mapToDouble(lp -> parseMoney(lp.getUc())).sum();
+        double pctCalled      = totalCapCommit > 0 ? totalCalledCap / totalCapCommit * 100 : 0;
+        long   igCount        = lps.stream().filter(com.ubs.pesubapi.entity.Lp::isIg).count();
+        double igRatio        = totalLPs > 0 ? (double) igCount / totalLPs * 100 : 0;
+
+        List<Double> sortedUc = lps.stream()
+            .mapToDouble(lp -> parseMoney(lp.getUc()))
+            .boxed().sorted(Comparator.reverseOrder()).toList();
+        double top10Uc = sortedUc.stream().limit(10).mapToDouble(d -> d).sum();
+        double top20Uc = sortedUc.stream().limit(20).mapToDouble(d -> d).sum();
+        double pctTop10       = totalUncalled > 0 ? top10Uc / totalUncalled * 100 : 0;
+        double pctTop20       = totalUncalled > 0 ? top20Uc / totalUncalled * 100 : 0;
+        long   gt2MCount      = lps.stream().filter(lp -> parseMoney(lp.getUc()) > 2).count();
+        double pctUncalledGt2M = totalLPs > 0 ? (double) gt2MCount / totalLPs * 100 : 0;
+
+        double agentBBRaw = 0, ubsBBRaw = 0;
+        Optional<BbSnapshot> latest = snapshotRepo.findTopByFacilityIdOrderByCalculatedAtDesc(facilityId);
+        if (latest.isPresent() && latest.get().getResult() != null) {
+            agentBBRaw = latest.get().getResult().summary().totalABB();
+            ubsBBRaw   = latest.get().getResult().summary().totalUBB();
+        }
+        double ubsAdvRate = totalUncalled > 0 ? ubsBBRaw / totalUncalled * 100 : 0;
+
+        Map<String, List<com.ubs.pesubapi.entity.Lp>> byClass =
+            lps.stream().collect(Collectors.groupingBy(lp -> lp.getCls() != null ? lp.getCls() : "Unclassified"));
+        List<Map<String, Object>> clsBreakdown = byClass.entrySet().stream().map(e -> {
+            double dollars = e.getValue().stream().mapToDouble(lp -> parseMoney(lp.getUc())).sum();
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("label",   e.getKey());
+            row.put("count",   e.getValue().size());
+            row.put("dollars", dollars);
+            row.put("pct",     totalUncalled > 0 ? dollars / totalUncalled * 100 : 0);
+            return row;
+        }).collect(Collectors.toList());
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("totalCapCommit",     totalCapCommit);
+        out.put("totalCalledCap",     totalCalledCap);
+        out.put("pctCalled",          pctCalled);
+        out.put("totalAllUncalled",   totalUncalled);
+        out.put("totalLPs",           totalLPs);
+        out.put("pctInstitutional",   igRatio);
+        out.put("pctHNW",             0.0);
+        out.put("pctTop10",           pctTop10);
+        out.put("pctTop20",           pctTop20);
+        out.put("igRatio",            igRatio);
+        out.put("pctUncalledGt2M",    pctUncalledGt2M);
+        out.put("facilitySize",       0.0);
+        out.put("ubsParticipation",   0.0);
+        out.put("ubsParticipationPct",0.0);
+        out.put("facilityLTV",        0.0);
+        out.put("availableCommit",    0.0);
+        out.put("facilityAdvRate",    0.0);
+        out.put("agentBBRaw",         agentBBRaw);
+        out.put("ubsBBRaw",           ubsBBRaw);
+        out.put("ubsAdvRate",         ubsAdvRate);
+        out.put("busaBreakdown",      List.of());
+        out.put("agentBreakdown",     List.of());
+        out.put("clsBreakdown",       clsBreakdown);
+        return ResponseEntity.ok(out);
+    }
+
+    private static double parseMoney(String value) {
+        if (value == null || value.isBlank()) {
+            return 0.0;
+        }
+        try {
+            return Double.parseDouble(value.replaceAll("[,$%]", ""));
+        } catch (NumberFormatException e) {
+            return 0.0;
+        }
+    }
+
+    private Map<String, Object> emptySummaryExt() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (String k : List.of("totalCapCommit","totalCalledCap","pctCalled","totalAllUncalled",
+                "totalLPs","pctInstitutional","pctHNW","pctTop10","pctTop20","igRatio",
+                "pctUncalledGt2M","facilitySize","ubsParticipation","ubsParticipationPct",
+                "facilityLTV","availableCommit","facilityAdvRate","agentBBRaw","ubsBBRaw","ubsAdvRate")) {
+            out.put(k, 0.0);
+        }
+        out.put("busaBreakdown",  List.of());
+        out.put("agentBreakdown", List.of());
+        out.put("clsBreakdown",   List.of());
+        return out;
     }
 }

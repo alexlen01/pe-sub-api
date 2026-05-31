@@ -18,6 +18,10 @@ spring:
 
 server:
   port: ${PORT:3001}
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
 
 logging:
   file:
