@@ -1,15 +1,11 @@
-FROM node:20-alpine AS build
+FROM eclipse-temurin:21-jdk AS build
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
+COPY pom.xml .
+COPY src ./src
+RUN apt-get update && apt-get install -y maven && mvn -q package -DskipTests
 
-FROM node:20-alpine
+FROM eclipse-temurin:21-jre
 WORKDIR /app
-ENV NODE_ENV=production
-COPY package*.json ./
-RUN npm ci --omit=dev
-COPY --from=build /app/dist ./dist
+COPY --from=build /app/target/pe-sub-api-0.1.0.jar app.jar
 EXPOSE 3001
-CMD ["node", "dist/index.js"]
+ENTRYPOINT ["java", "-jar", "app.jar"]
