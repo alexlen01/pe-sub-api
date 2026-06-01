@@ -21,11 +21,21 @@ Spring Boot 3.3 / Java 21 REST API for the PE Sub Borrowing Base Platform.
 # 1. Start PostgreSQL
 docker compose up -d
 
-# 2. Start the API (Flyway runs V1__init.sql on first start)
+# 2. Start the API (Flyway runs V1_1 + V1_2 on first start)
 mvn spring-boot:run
 ```
 
 API runs at `http://localhost:3001`. Health check: `GET /health`.
+
+## Resetting the local database
+
+Required after migration file changes (e.g. renaming or replacing migration files):
+
+```bash
+docker compose down -v   # drop the volume — all data is lost
+docker compose up -d     # fresh PostgreSQL
+mvn spring-boot:run      # Flyway applies V1_1 + V1_2 on first start
+```
 
 ## Other commands
 
@@ -55,14 +65,19 @@ Logs are written to `C:/Users/alexl/apps/pe-sub/logs/pe-sub-api.log` with daily 
 ```
 src/main/java/com/ubs/pesubapi/
   config/       CORS and web configuration
-  controller/   REST controllers (Facility, LP, BB, Report, Health)
+  controller/   AuditController, BbController, ConfigController, FacilityController,
+                HealthController, LpController, MatchingController,
+                NotificationController, ReportController, SubmissionController
   dto/          Java records: BbResult, BbSummary, BbBreach, ComputedLp
-  entity/       JPA entities: Facility, Lp, BbSnapshot
+  entity/       JPA entities: Facility, Lp, BbSnapshot, ConfigEntry, AuditLog, Submission
+  entity/converter/  BbResultConverter (PGobject), JsonNodeConverter (PGobject)
   repository/   Spring Data JPA repositories
-  service/      BbCalculationService (port of the TypeScript BB engine)
+  service/      AuditLogService, BbCalculationService, ConfigService,
+                MatchingService, NotificationService
 src/main/resources/
   application.yml
-  db/migration/V1__init.sql
+  db/migration/V1_1__schema.sql   -- all DDL (tables + indexes)
+  db/migration/V1_2__seed.sql     -- config reference data
 ```
 
 ## API

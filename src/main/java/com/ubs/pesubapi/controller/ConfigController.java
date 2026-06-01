@@ -1,7 +1,9 @@
 package com.ubs.pesubapi.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.ubs.pesubapi.service.AuditLogService;
 import com.ubs.pesubapi.service.ConfigService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -12,10 +14,12 @@ import java.util.Map;
 @RequestMapping("/api/config")
 public class ConfigController {
 
-    private final ConfigService configService;
+    private final ConfigService    configService;
+    private final AuditLogService  auditService;
 
-    public ConfigController(ConfigService configService) {
+    public ConfigController(ConfigService configService, AuditLogService auditService) {
         this.configService = configService;
+        this.auditService  = auditService;
     }
 
     @GetMapping("/eligibility")
@@ -49,6 +53,24 @@ public class ConfigController {
         return configService.get("matching_config")
             .map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());
+    }
+
+    private static final Map<String, String> SECTION_LABELS = Map.of(
+        "thresholds",    "Confidence Thresholds",
+        "weights",       "Algorithm Weights",
+        "suffixes",      "Legal Entity Suffix Rules",
+        "abbreviations", "Abbreviation Expansion Dictionary"
+    );
+
+    @PutMapping("/matching")
+    public ResponseEntity<JsonNode> setMatching(
+            @RequestBody JsonNode body,
+            @RequestParam(required = false) String section,
+            HttpServletRequest req) {
+        JsonNode saved = configService.put("matching_config", body).getValue();
+        String label = SECTION_LABELS.getOrDefault(section, "Matching config");
+        auditService.log("Config Change", label + " updated", null, "J. Smith", auditService.extractIp(req));
+        return ResponseEntity.ok(saved);
     }
 
     @GetMapping("/reports")

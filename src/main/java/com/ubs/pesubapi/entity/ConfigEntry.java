@@ -1,8 +1,9 @@
 package com.ubs.pesubapi.entity;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.ubs.pesubapi.entity.converter.JsonNodeConverter;
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
 
 @Entity
@@ -13,7 +14,7 @@ public class ConfigEntry {
     @Column(length = 100)
     private String key;
 
-    @Convert(converter = JsonNodeConverter.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb", nullable = false)
     private JsonNode value;
 

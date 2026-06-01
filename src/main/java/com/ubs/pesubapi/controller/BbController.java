@@ -6,8 +6,10 @@ import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.repository.BbSnapshotRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.service.AuditLogService;
 import com.ubs.pesubapi.service.BbCalculationService;
 import com.ubs.pesubapi.service.NotificationService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,26 +26,26 @@ public class BbController {
     private final BbSnapshotRepository  snapshotRepo;
     private final BbCalculationService  calculator;
     private final NotificationService   notifier;
+    private final AuditLogService       auditService;
 
     public BbController(FacilityRepository facilityRepo, LpRepository lpRepo,
                         BbSnapshotRepository snapshotRepo, BbCalculationService calculator,
-                        NotificationService notifier) {
+                        NotificationService notifier, AuditLogService auditService) {
         this.facilityRepo = facilityRepo;
         this.lpRepo       = lpRepo;
         this.snapshotRepo = snapshotRepo;
         this.calculator   = calculator;
         this.notifier     = notifier;
+        this.auditService = auditService;
     }
 
     @PostMapping("/run/{facilityId}")
-    public ResponseEntity<BbSnapshot> run(@PathVariable int facilityId) {
+    public ResponseEntity<BbSnapshot> run(@PathVariable int facilityId, HttpServletRequest request) {
         Facility facility = facilityRepo.findById(facilityId)
             .orElseThrow(() -> new ResourceNotFoundException("Facility not found: " + facilityId));
 
-        BbResult result = calculator.compute(
-            lpRepo.findByFacilityIdOrderByRankAsc(facilityId),
-            facility.getConcLimitM().doubleValue()
-        );
+        List<com.ubs.pesubapi.entity.Lp> lps = lpRepo.findByFacilityIdOrderByRankAsc(facilityId);
+        BbResult result = calculator.compute(lps, facility.getConcLimitM().doubleValue());
 
         BbSnapshot snapshot = new BbSnapshot();
         snapshot.setFacilityId(facilityId);
@@ -53,8 +55,11 @@ public class BbController {
         facility.setLastRunAt(LocalDateTime.now());
         facilityRepo.save(facility);
 
+        String detail = lps.size() + " LPs · UBS BB $"
+            + String.format("%.1f", result.summary().totalUBB()) + "M";
         notifier.broadcast("Shadow BB calculated for " + facility.getName()
             + " — UBS BB $" + String.format("%.1f", result.summary().totalUBB()) + "M");
+        auditService.log("BB Recalculated", detail, facilityId, "J. Smith", auditService.extractIp(request));
 
         return ResponseEntity.status(201).body(saved);
     }

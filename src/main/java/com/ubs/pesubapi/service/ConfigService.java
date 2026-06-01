@@ -1,10 +1,12 @@
 package com.ubs.pesubapi.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.ubs.pesubapi.entity.ConfigEntry;
 import com.ubs.pesubapi.repository.ConfigRepository;
 import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Service;
 
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -26,5 +28,18 @@ public class ConfigService {
 
     public Optional<JsonNode> get(String key) {
         return Optional.ofNullable(cache.get(key));
+    }
+
+    public ConfigEntry put(String key, JsonNode value) {
+        Objects.requireNonNull(key, "key");
+        ConfigEntry entry = repo.findById(key).orElseGet(() -> {
+            ConfigEntry e = new ConfigEntry();
+            e.setKey(key);
+            return e;
+        });
+        entry.setValue(value);
+        ConfigEntry saved = repo.save(entry);
+        cache.put(key, value);
+        return saved;
     }
 }
