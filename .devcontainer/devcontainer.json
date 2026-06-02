@@ -1,0 +1,32 @@
+{
+  "name": "PE Sub API",
+  "dockerComposeFile": ["../docker-compose.yml", "docker-compose.yml"],
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "forwardPorts": [3001],
+  "portsAttributes": {
+    "3001": {
+      "label": "PE Sub API",
+      "onAutoForward": "notify"
+    }
+  },
+  "remoteEnv": {
+    "SPRING_DATASOURCE_URL": "jdbc:postgresql://db:5432/pesub",
+    "LOG_PATH": "/workspace/logs"
+  },
+  "postCreateCommand": "mvn dependency:resolve -q",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "vmware.vscode-spring-boot",
+        "vscjava.vscode-spring-boot-dashboard"
+      ],
+      "settings": {
+        "java.configuration.updateBuildConfiguration": "automatic",
+        "java.compile.nullAnalysis.mode": "automatic",
+        "editor.formatOnSave": true
+      }
+    }
+  }
+}

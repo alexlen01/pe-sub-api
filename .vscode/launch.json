@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "PE Sub API",
+      "request": "launch",
+      "mainClass": "com.ubs.pesubapi.PeSubApiApplication",
+      "projectName": "pe-sub-api",
+      "env": {
+        "SPRING_DATASOURCE_URL": "jdbc:postgresql://db:5432/pesub",
+        "LOG_PATH": "/workspace/logs"
+      }
+    }
+  ]
+}
