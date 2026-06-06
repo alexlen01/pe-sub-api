@@ -73,6 +73,26 @@ public class ConfigController {
         return ResponseEntity.ok(saved);
     }
 
+    private static final Map<String, String> ELIGIBILITY_LABELS = Map.of(
+        "busa_tiers",        "BUSA Advance Rate Schedule",
+        "agent_tiers",       "Agent Advance Rate Schedule",
+        "agent_rate_params", "Agent Rate Parameters",
+        "elig_rules",        "Eligibility Rules",
+        "conc_limits",       "Concentration Limits",
+        "global_settings",   "Global Settings"
+    );
+
+    @PutMapping("/eligibility")
+    public ResponseEntity<JsonNode> setEligibility(
+            @RequestBody JsonNode body,
+            @RequestParam String section,
+            HttpServletRequest req) {
+        configService.put(section, body);
+        String label = ELIGIBILITY_LABELS.getOrDefault(section, section);
+        auditService.log("Config Change", label + " updated", null, "J. Smith", auditService.extractIp(req));
+        return ResponseEntity.ok(body);
+    }
+
     @GetMapping("/reports")
     public ResponseEntity<JsonNode> reports() {
         return configService.get("report_config")

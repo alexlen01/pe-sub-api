@@ -85,7 +85,7 @@ public class SubmissionController {
 
         Set<Integer> ids = subs.stream().map(Submission::getFacilityId).filter(Objects::nonNull).collect(Collectors.toSet());
         Map<Integer, String> nameById = new HashMap<>();
-        facilities.findAllById(ids).forEach(f -> nameById.put(f.getId(), f.getName()));
+        facilities.findAllById(Objects.requireNonNull(ids)).forEach(f -> nameById.put(f.getId(), f.getName()));
 
         return subs.stream().map(s -> new SubmissionDto(
             s.getId(), s.getFacilityId(), nameById.getOrDefault(s.getFacilityId(), "—"),

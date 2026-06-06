@@ -4,7 +4,7 @@ Spring Boot 3.3 / Java 21 REST API for the PE Sub Borrowing Base Platform.
 
 ## Stack
 
-- Java 21 (Eclipse Temurin), Spring Boot 3.3, Maven 3.9
+- Java 21 (Eclipse Temurin), Spring Boot 3.5, Maven 3.9
 - Spring Data JPA (Hibernate 6), PostgreSQL 16
 - Flyway — migrations applied automatically on startup from `src/main/resources/db/migration/`
 - Jackson — JSONB serialisation for `bb_snapshots.result`
@@ -93,6 +93,18 @@ Solution design: `pe-sub-docs/SOLUTION_DESIGN.md`.
 | `GET` | `/api/lps` | List LPs — filter by `facilityId`, `cls`, or `search` |
 | `GET` | `/api/lps/{id}` | Get a single LP |
 | `PATCH` | `/api/lps/{id}` | Update LP fields: `cls`, `clsTag`, `abb`, `inc`, `rcl`, `notes` |
+| `POST` | `/api/lps/ingest` | Ingest extracted LP records from pe-sub-extraction (see below) |
+
+#### `POST /api/lps/ingest`
+
+Called by `pe-sub-extraction` after parsing an agent schedule file. Accepts an `IngestRequest` body containing the facility ID and the full `ExtractionResult` payload. For each extracted LP row:
+
+1. Runs fuzzy name matching (Jaro-Winkler + Levenshtein) against the facility's existing LP records.
+2. **Updated** — match score ≥ auto-accept threshold and all fields meet the 70% confidence minimum; writes `aum`, `capCommit`, `uc`, `agentRate`, `agentConc` on the matched LP.
+3. **Queued** — medium-confidence match or extraction flagged low-confidence fields; no data written, returned for credit officer review.
+4. **Skipped** — below review-queue threshold or no investor name extracted.
+
+Writes an `LP Data Updated` audit event when at least one LP is updated.
 
 ### Borrowing Base — `/api/bb`
 

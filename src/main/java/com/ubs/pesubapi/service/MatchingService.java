@@ -29,6 +29,20 @@ public class MatchingService {
 
     // ── Public API ────────────────────────────────────────────────────────────
 
+    public MatchCandidate matchBestInList(String name, List<String> candidates) {
+        if (candidates.isEmpty()) return null;
+        Config cfg  = parseConfig();
+        String norm = normalize(name, cfg);
+        return candidates.stream()
+            .map(candidate -> {
+                int    s      = score(norm, normalize(candidate, cfg), cfg);
+                String action = s >= cfg.autoAccept() ? "Accept" : s >= cfg.reviewQueue() ? "Queue" : "Reject";
+                return new MatchCandidate(candidate, s, action);
+            })
+            .max(Comparator.comparingInt(MatchCandidate::score))
+            .orElse(null);
+    }
+
     public MatchTestResult test(String inputName) {
         Config cfg   = parseConfig();
         String norm  = normalize(inputName, cfg);

@@ -14,7 +14,7 @@
     "SPRING_DATASOURCE_URL": "jdbc:postgresql://db:5432/pesub",
     "LOG_PATH": "/workspace/logs"
   },
-  "postCreateCommand": "mvn dependency:resolve -q",
+  "postCreateCommand": "./mvnw dependency:resolve -q",
   "customizations": {
     "vscode": {
       "extensions": [

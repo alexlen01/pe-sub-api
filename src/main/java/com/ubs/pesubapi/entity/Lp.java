@@ -155,4 +155,11 @@ public class Lp {
     public void setInc(boolean inc)        { this.inc = inc; }
     public void setRcl(boolean rcl)        { this.rcl = rcl; }
     public void setUpdatedAt(LocalDateTime t) { this.updatedAt = t; }
+
+    // Setters for extraction ingest
+    public void setAum(String aum)             { this.aum = aum; }
+    public void setCapCommit(String capCommit) { this.capCommit = capCommit; }
+    public void setUc(String uc)               { this.uc = uc; }
+    public void setAgentRate(String agentRate) { this.agentRate = agentRate; }
+    public void setAgentConc(String agentConc) { this.agentConc = agentConc; }
 }

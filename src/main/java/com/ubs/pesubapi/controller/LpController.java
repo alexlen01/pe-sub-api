@@ -1,8 +1,11 @@
 package com.ubs.pesubapi.controller;
 
+import com.ubs.pesubapi.dto.IngestRequest;
+import com.ubs.pesubapi.dto.IngestResult;
 import com.ubs.pesubapi.entity.Lp;
 import com.ubs.pesubapi.repository.LpRepository;
 import com.ubs.pesubapi.service.AuditLogService;
+import com.ubs.pesubapi.service.LpIngestService;
 import com.ubs.pesubapi.service.NotificationService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
@@ -20,11 +23,25 @@ public class LpController {
     private final LpRepository        repo;
     private final NotificationService notifier;
     private final AuditLogService     auditService;
+    private final LpIngestService     ingestService;
 
-    public LpController(LpRepository repo, NotificationService notifier, AuditLogService auditService) {
-        this.repo         = repo;
-        this.notifier     = notifier;
-        this.auditService = auditService;
+    public LpController(LpRepository repo, NotificationService notifier,
+                        AuditLogService auditService, LpIngestService ingestService) {
+        this.repo          = repo;
+        this.notifier      = notifier;
+        this.auditService  = auditService;
+        this.ingestService = ingestService;
+    }
+
+    @PostMapping("/ingest")
+    public IngestResult ingest(@RequestBody IngestRequest request, HttpServletRequest httpRequest) {
+        IngestResult result = ingestService.ingest(request);
+        if (result.updated() > 0) {
+            auditService.log("LP Data Updated",
+                result.updated() + " LP records updated from " + result.templateFormat() + " extraction",
+                request.facilityId(), "J. Smith", auditService.extractIp(httpRequest));
+        }
+        return result;
     }
 
     @GetMapping
