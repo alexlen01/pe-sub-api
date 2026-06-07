@@ -30,6 +30,9 @@ public class FmCanonicalField {
     @Column(name = "extraction_key")
     private String extractionKey;
 
+    @Column(name = "is_derived", nullable = false)
+    private boolean isDerived = false;
+
     public Integer getId()            { return id; }
     public String  getGroupName()     { return groupName; }
     public Integer getGroupSort()     { return groupSort; }
@@ -38,4 +41,5 @@ public class FmCanonicalField {
     public String  getLpMasterField() { return lpMasterField; }
     public String  getDisambiguation(){ return disambiguation; }
     public String  getExtractionKey() { return extractionKey; }
+    public boolean isDerived()        { return isDerived; }
 }

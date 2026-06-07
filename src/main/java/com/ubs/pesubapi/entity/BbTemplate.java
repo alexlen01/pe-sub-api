@@ -23,6 +23,18 @@ public class BbTemplate {
     @Column(name = "auto_learned", nullable = false)
     private boolean autoLearned = true;
 
+    @Column(name = "tranche_count", nullable = false)
+    private int trancheCount = 1;
+
+    @Column(name = "has_grouping_rows", nullable = false)
+    private boolean hasGroupingRows = false;
+
+    @Column(name = "has_color_flags", nullable = false)
+    private boolean hasColorFlags = false;
+
+    @Column(name = "summary_rows_above_header", nullable = false)
+    private int summaryRowsAboveHeader = 0;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -35,16 +47,24 @@ public class BbTemplate {
     @PreUpdate
     void onUpdate() { updatedAt = LocalDateTime.now(); }
 
-    public Integer getId()             { return id; }
-    public String  getAgentBank()      { return agentBank; }
-    public String  getSheetName()      { return sheetName; }
-    public Integer getHeaderRowIndex() { return headerRowIndex; }
-    public boolean isAutoLearned()     { return autoLearned; }
-    public LocalDateTime getCreatedAt(){ return createdAt; }
-    public LocalDateTime getUpdatedAt(){ return updatedAt; }
+    public Integer getId()                   { return id; }
+    public String  getAgentBank()            { return agentBank; }
+    public String  getSheetName()            { return sheetName; }
+    public Integer getHeaderRowIndex()       { return headerRowIndex; }
+    public boolean isAutoLearned()           { return autoLearned; }
+    public int     getTranchCount()          { return trancheCount; }
+    public boolean isHasGroupingRows()       { return hasGroupingRows; }
+    public boolean isHasColorFlags()         { return hasColorFlags; }
+    public int     getSummaryRowsAboveHeader(){ return summaryRowsAboveHeader; }
+    public LocalDateTime getCreatedAt()      { return createdAt; }
+    public LocalDateTime getUpdatedAt()      { return updatedAt; }
 
-    public void setAgentBank(String v)       { this.agentBank      = v; }
-    public void setSheetName(String v)       { this.sheetName      = v; }
-    public void setHeaderRowIndex(Integer v) { this.headerRowIndex = v; }
-    public void setAutoLearned(boolean v)    { this.autoLearned    = v; }
+    public void setAgentBank(String v)              { this.agentBank             = v; }
+    public void setSheetName(String v)              { this.sheetName             = v; }
+    public void setHeaderRowIndex(Integer v)        { this.headerRowIndex        = v; }
+    public void setAutoLearned(boolean v)           { this.autoLearned           = v; }
+    public void setTrancheCount(int v)              { this.trancheCount          = v; }
+    public void setHasGroupingRows(boolean v)       { this.hasGroupingRows       = v; }
+    public void setHasColorFlags(boolean v)         { this.hasColorFlags         = v; }
+    public void setSummaryRowsAboveHeader(int v)    { this.summaryRowsAboveHeader= v; }
 }

@@ -174,8 +174,8 @@ Two Flyway migrations, applied in order:
 
 | Migration | Contents |
 |---|---|
-| `V1_1__schema.sql` | All tables: `users`, `facilities`, `lps`, `bb_snapshots`, `config`, `submissions`, `audit_log`, `submission_extractions`, `match_queue_entries`, `fm_canonical_fields`, `fm_aliases`, `fm_blocklist`, `fm_suggestions`, `bb_templates` |
-| `V1_2__seed.sql` | Field Mapping Dictionary seed data (canonical fields + aliases) |
+| `V1_1__schema.sql` | All tables: `users`, `facilities`, `lps`, `bb_snapshots`, `config`, `submissions`, `audit_log`, `submission_extractions`, `match_queue_entries`, `fm_canonical_fields` (with `is_derived` flag), `fm_aliases`, `fm_blocklist`, `fm_suggestions`, `bb_templates` (with `tranche_count`, `has_grouping_rows`, `has_color_flags`, `summary_rows_above_header`), `bb_template_tabs`, `bb_template_groups` |
+| `V1_2__seed.sql` | Field Mapping Dictionary — 29 canonical fields across 7 groups (Identity & Classification, Commitment Data, Uncalled Data, Financial Scale, Borrowing Base, Concentration, Ratings) with full alias sets; Goldman Sachs / SVB / Wells Fargo template metadata; bb_template_groups for Goldman LP Grid group-header rows |
 
 ## Project structure
 
@@ -187,11 +187,12 @@ src/main/java/com/ubs/pesubapi/
                 MatchingController, NotificationController, ReportController,
                 SubmissionController
   dto/          Java records: BbResult, BbSummary, BbBreach, ComputedLp, ExtractionResponse
-  entity/       JPA entities: AuditLog, BbSnapshot, BbTemplate, ConfigEntry, Facility,
-                FmAlias, FmBlocklistEntry, FmCanonicalField, FmSuggestion, Lp,
-                MatchQueueEntry, Submission, SubmissionExtraction
-  entity/converter/  BbResultConverter, JsonNodeConverter (PGobject ↔ JSONB)
-  repository/   Spring Data JPA repositories for all entities
+  entity/       JPA entities: AuditLog, BbSnapshot, BbTemplate, BbTemplateTab, BbTemplateGroup,
+                ConfigEntry, Facility, FmAlias, FmBlocklistEntry, FmCanonicalField,
+                FmSuggestion, Lp, MatchQueueEntry, Submission, SubmissionExtraction
+  entity/converter/  BbResultConverter, JsonNodeConverter, StringListConverter (all PGobject ↔ JSONB)
+  repository/   Spring Data JPA repositories for all entities, including BbTemplateTabRepository
+                and BbTemplateGroupRepository
   service/      AliasConfigBuilder, AuditLogService, BbCalculationService,
                 ConfigService, ExtractionClientService, LpIngestService,
                 MatchingService, NotificationService

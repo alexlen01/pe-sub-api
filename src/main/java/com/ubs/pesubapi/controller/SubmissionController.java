@@ -593,6 +593,18 @@ public class SubmissionController {
         if (raw == null || raw.isBlank()) return null;
         try {
             String cleaned = raw.trim().replaceAll("[,$%]", "").replaceAll("\\s+", "");
+            if (cleaned.isEmpty()) return null;
+            char suffix = Character.toUpperCase(cleaned.charAt(cleaned.length() - 1));
+            BigDecimal multiplier = switch (suffix) {
+                case 'B' -> new BigDecimal("1000000000");
+                case 'M' -> new BigDecimal("1000000");
+                case 'K' -> new BigDecimal("1000");
+                default  -> null;
+            };
+            if (multiplier != null) {
+                String numeric = cleaned.substring(0, cleaned.length() - 1);
+                return new BigDecimal(numeric).multiply(multiplier);
+            }
             return new BigDecimal(cleaned);
         } catch (NumberFormatException e) {
             return null;
@@ -628,8 +640,7 @@ public class SubmissionController {
 
     private String confidenceNote(double confidence) {
         if (confidence >= 1.0)  return "Exact match";
-        if (confidence >= 0.85) return "Matched via substring";
-        if (confidence >= 0.75) return "Matched via word overlap";
+        if (confidence >= 0.95) return "Matched via fuzzy similarity";
         return "Matched via alias dictionary";
     }
 

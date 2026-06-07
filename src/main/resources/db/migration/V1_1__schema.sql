@@ -138,6 +138,11 @@ CREATE INDEX idx_match_queue_submission ON match_queue_entries(submission_id);
 CREATE INDEX idx_match_queue_facility   ON match_queue_entries(facility_id);
 
 -- ── Field Mapping Dictionary ───────────────────────────────────────────────────
+-- is_derived: TRUE = agent-calculated output captured for display / cross-check only;
+--             not fed into UBS's own BB engine as a raw input.
+-- Alias resolution precedence: bank-specific aliases checked before Core; derived-field
+-- aliases checked before the blocklist (so "Eligible Commitment" → Agent Eligible
+-- Commitment wins over the "Eligible" blocklist entry guarding Uncalled Capital).
 
 CREATE TABLE fm_canonical_fields (
     id              SERIAL PRIMARY KEY,
@@ -147,7 +152,8 @@ CREATE TABLE fm_canonical_fields (
     canonical       VARCHAR(200) NOT NULL UNIQUE,
     lp_master_field VARCHAR(300) NOT NULL,
     disambiguation  TEXT,
-    extraction_key  VARCHAR(50)
+    extraction_key  VARCHAR(50),
+    is_derived      BOOLEAN      NOT NULL DEFAULT FALSE
 );
 
 CREATE INDEX idx_fm_canonical_fields_extraction_key
@@ -180,15 +186,71 @@ CREATE TABLE fm_suggestions (
 );
 
 -- ── BB template registry ───────────────────────────────────────────────────────
+-- bb_templates: one row per agent bank; top-level structural flags tell the
+--   extraction engine how to interpret the workbook before column parsing begins.
+-- bb_template_tabs: one row per Excel tab per template; drives per-tab extraction.
+-- bb_template_groups: group-header rows (e.g. "Rated Investors") that set the
+--   inherited LP Classification for all LP rows beneath them.
 
 CREATE TABLE bb_templates (
-    id               SERIAL PRIMARY KEY,
-    agent_bank       VARCHAR(255) NOT NULL,
-    sheet_name       VARCHAR(255),
-    header_row_index INTEGER,
-    auto_learned     BOOLEAN   NOT NULL DEFAULT TRUE,
-    created_at       TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at       TIMESTAMP NOT NULL DEFAULT NOW()
+    id                       SERIAL PRIMARY KEY,
+    agent_bank               VARCHAR(255) NOT NULL,
+    -- sheet_name / header_row_index kept as a single-tab shortcut; superseded by
+    -- bb_template_tabs for multi-tab workbooks.
+    sheet_name               VARCHAR(255),
+    header_row_index         INTEGER,
+    auto_learned             BOOLEAN      NOT NULL DEFAULT TRUE,
+    tranche_count            INTEGER      NOT NULL DEFAULT 1,
+    has_grouping_rows        BOOLEAN      NOT NULL DEFAULT FALSE,
+    has_color_flags          BOOLEAN      NOT NULL DEFAULT FALSE,
+    summary_rows_above_header INTEGER     NOT NULL DEFAULT 0,
+    created_at               TIMESTAMP    NOT NULL DEFAULT NOW(),
+    updated_at               TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 
 CREATE UNIQUE INDEX idx_bb_templates_agent_bank ON bb_templates (LOWER(agent_bank));
+
+-- tab_role values:
+--   LP_GRID       Primary LP grid (commitments, ratings, advance rates) — main extraction target
+--   CONCENTRATION Concentration cap and haircut schedules
+--   CAPITAL_CALL  Capital call log / roll-forward audit trail
+--   TOP_SHEET     Master certificate / summary (cross-check only; not parsed for LP data)
+--
+-- skip_row_keywords: rows whose first populated cell matches any keyword (case-insensitive)
+--   are discarded before LP parsing. Default covers most agent templates; override per tab.
+
+CREATE TABLE bb_template_tabs (
+    id               SERIAL PRIMARY KEY,
+    template_id      INTEGER      NOT NULL REFERENCES bb_templates(id) ON DELETE CASCADE,
+    tab_role         VARCHAR(50)  NOT NULL,
+    tab_sort         INTEGER      NOT NULL DEFAULT 1,
+    sheet_name       VARCHAR(255),
+    header_row_index INTEGER,
+    skip_row_keywords JSONB       NOT NULL
+        DEFAULT '["Total","Subtotal","Sub-Total","Grand Total","Sum","Net Total"]',
+    created_at       TIMESTAMP    NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT uq_template_tab_role UNIQUE (template_id, tab_role),
+    CONSTRAINT chk_tab_role CHECK (tab_role IN ('LP_GRID','CONCENTRATION','CAPITAL_CALL','TOP_SHEET'))
+);
+
+CREATE INDEX idx_bb_template_tabs_template ON bb_template_tabs(template_id);
+
+-- LP Classification resolution for group-header rows:
+--   1. Per-row column present in sheet (e.g. WF "Investor Category") — highest priority
+--   2. Inherited from current group context (this table) — when no column present
+--   3. NULL — final fallback; surfaced as unresolved in ExtractionPreview
+--
+-- group_sort reflects the top-to-bottom order groups appear in the workbook.
+
+CREATE TABLE bb_template_groups (
+    id             SERIAL PRIMARY KEY,
+    tab_id         INTEGER      NOT NULL REFERENCES bb_template_tabs(id) ON DELETE CASCADE,
+    group_sort     INTEGER      NOT NULL,
+    header_text    VARCHAR(255) NOT NULL,
+    classification VARCHAR(100) NOT NULL,
+
+    CONSTRAINT uq_template_group_header UNIQUE (tab_id, header_text)
+);
+
+CREATE INDEX idx_bb_template_groups_tab ON bb_template_groups(tab_id);
