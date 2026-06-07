@@ -1,3 +1,5 @@
+-- ── Core tables ───────────────────────────────────────────────────────────────
+
 CREATE TABLE users (
     id         SERIAL PRIMARY KEY,
     email      VARCHAR(255) NOT NULL UNIQUE,
@@ -78,6 +80,7 @@ CREATE TABLE submissions (
     file_name    VARCHAR(255) NOT NULL,
     file_path    VARCHAR(512),
     uploaded_by  INTEGER REFERENCES users(id),
+    notes        TEXT,
     created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at   TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -94,3 +97,98 @@ CREATE TABLE audit_log (
 );
 
 CREATE INDEX idx_audit_log_created_at ON audit_log(created_at DESC);
+
+-- ── Extraction & match-queue tables ───────────────────────────────────────────
+
+CREATE TABLE submission_extractions (
+    id                   SERIAL PRIMARY KEY,
+    submission_id        INTEGER NOT NULL REFERENCES submissions(id),
+    template_format      VARCHAR(50),
+    template_version     VARCHAR(50),
+    sheet_name           VARCHAR(255),
+    header_row_index     INTEGER,
+    total_rows           INTEGER NOT NULL DEFAULT 0,
+    flagged_count        INTEGER NOT NULL DEFAULT 0,
+    extracted_lps        JSONB,
+    field_mappings       JSONB,
+    unrecognized_columns JSONB,
+    created_at           TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX uq_submission_extractions_submission ON submission_extractions(submission_id);
+
+CREATE TABLE match_queue_entries (
+    id                   SERIAL PRIMARY KEY,
+    submission_id        INTEGER NOT NULL REFERENCES submissions(id),
+    facility_id          INTEGER NOT NULL REFERENCES facilities(id),
+    row_index            INTEGER NOT NULL,
+    extracted_name       VARCHAR(255),
+    matched_lp_id        INTEGER REFERENCES lps(id),
+    matched_lp_name      VARCHAR(255),
+    match_score          INTEGER,
+    decision             VARCHAR(50) NOT NULL DEFAULT 'pending',
+    master_name_override VARCHAR(255),
+    is_new               BOOLEAN NOT NULL DEFAULT FALSE,
+    reasons              JSONB,
+    created_at           TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_match_queue_submission ON match_queue_entries(submission_id);
+CREATE INDEX idx_match_queue_facility   ON match_queue_entries(facility_id);
+
+-- ── Field Mapping Dictionary ───────────────────────────────────────────────────
+
+CREATE TABLE fm_canonical_fields (
+    id              SERIAL PRIMARY KEY,
+    group_name      VARCHAR(100) NOT NULL,
+    group_sort      INTEGER      NOT NULL,
+    field_sort      INTEGER      NOT NULL,
+    canonical       VARCHAR(200) NOT NULL UNIQUE,
+    lp_master_field VARCHAR(300) NOT NULL,
+    disambiguation  TEXT,
+    extraction_key  VARCHAR(50)
+);
+
+CREATE INDEX idx_fm_canonical_fields_extraction_key
+    ON fm_canonical_fields(extraction_key)
+    WHERE extraction_key IS NOT NULL;
+
+CREATE TABLE fm_aliases (
+    id                 SERIAL PRIMARY KEY,
+    canonical_field_id INTEGER      NOT NULL REFERENCES fm_canonical_fields(id),
+    alias_sort         INTEGER      NOT NULL,
+    alias_text         VARCHAR(200) NOT NULL,
+    tier               VARCHAR(20)  NOT NULL DEFAULT 'Core',
+    bank               VARCHAR(100)
+);
+
+CREATE TABLE fm_blocklist (
+    id        SERIAL PRIMARY KEY,
+    qualifier VARCHAR(100) NOT NULL UNIQUE,
+    reason    TEXT NOT NULL
+);
+
+CREATE TABLE fm_suggestions (
+    id               SERIAL PRIMARY KEY,
+    extracted_header VARCHAR(200) NOT NULL,
+    canonical_field  VARCHAR(200) NOT NULL,
+    suggested_by     VARCHAR(100),
+    source           VARCHAR(20)  NOT NULL DEFAULT 'User',
+    confidence       INTEGER,
+    created_at       TIMESTAMP    NOT NULL DEFAULT NOW()
+);
+
+-- ── BB template registry ───────────────────────────────────────────────────────
+
+CREATE TABLE bb_templates (
+    id               SERIAL PRIMARY KEY,
+    agent_bank       VARCHAR(255) NOT NULL,
+    sheet_name       VARCHAR(255),
+    header_row_index INTEGER,
+    auto_learned     BOOLEAN   NOT NULL DEFAULT TRUE,
+    created_at       TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX idx_bb_templates_agent_bank ON bb_templates (LOWER(agent_bank));

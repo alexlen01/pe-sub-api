@@ -27,6 +27,9 @@ public class FmCanonicalField {
 
     private String disambiguation;
 
+    @Column(name = "extraction_key")
+    private String extractionKey;
+
     public Integer getId()            { return id; }
     public String  getGroupName()     { return groupName; }
     public Integer getGroupSort()     { return groupSort; }
@@ -34,4 +37,5 @@ public class FmCanonicalField {
     public String  getCanonical()     { return canonical; }
     public String  getLpMasterField() { return lpMasterField; }
     public String  getDisambiguation(){ return disambiguation; }
+    public String  getExtractionKey() { return extractionKey; }
 }

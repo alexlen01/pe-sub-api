@@ -3,7 +3,9 @@ package com.ubs.pesubapi.service;
 import com.ubs.pesubapi.dto.IngestRequest;
 import com.ubs.pesubapi.dto.IngestResult;
 import com.ubs.pesubapi.entity.Lp;
+import com.ubs.pesubapi.entity.MatchQueueEntry;
 import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -19,15 +21,19 @@ public class LpIngestService {
 
     private static final double MIN_FIELD_CONFIDENCE = 0.7;
 
-    private final LpRepository     lpRepo;
-    private final MatchingService  matchingService;
+    private final LpRepository              lpRepo;
+    private final MatchingService           matchingService;
+    private final MatchQueueEntryRepository matchQueueRepo;
 
-    public LpIngestService(LpRepository lpRepo, MatchingService matchingService) {
-        this.lpRepo           = lpRepo;
-        this.matchingService  = matchingService;
+    public LpIngestService(LpRepository lpRepo,
+                           MatchingService matchingService,
+                           MatchQueueEntryRepository matchQueueRepo) {
+        this.lpRepo          = lpRepo;
+        this.matchingService = matchingService;
+        this.matchQueueRepo  = matchQueueRepo;
     }
 
-    public IngestResult ingest(IngestRequest request) {
+    public IngestResult ingest(int submissionId, IngestRequest request) {
         List<Lp> facilityLps = lpRepo.findByFacilityIdOrderByRankAsc(request.facilityId());
         List<String> names   = facilityLps.stream().map(Lp::getName).toList();
         Map<String, Lp> byName = facilityLps.stream()
@@ -68,8 +74,13 @@ public class LpIngestService {
 
             if (needsReview) {
                 queued++;
+                List<String> reasons = reviewReasons(row, best);
                 results.add(result(row.rowIndex(), extractedName, lp.getId(), lp.getName(),
-                    best.score(), "Queued", List.of(), reviewReasons(row, best)));
+                    best.score(), "Queued", List.of(), reasons));
+                if (submissionId > 0) {
+                    persistQueueEntry(submissionId, request.facilityId(), row.rowIndex(),
+                        extractedName, lp.getId(), lp.getName(), best.score(), reasons);
+                }
             } else {
                 List<String> updatedFields = applyFields(lp, row);
                 lpRepo.save(lp);
@@ -83,6 +94,24 @@ public class LpIngestService {
             ? request.extraction().template().format() : "UNKNOWN";
         return new IngestResult(request.facilityId(), LocalDateTime.now(),
             fmt, results, updated, queued, skipped);
+    }
+
+    private void persistQueueEntry(int submissionId, int facilityId, int rowIndex,
+                                   String extractedName, Integer matchedLpId,
+                                   String matchedLpName, int matchScore,
+                                   List<String> reasons) {
+        MatchQueueEntry entry = new MatchQueueEntry();
+        entry.setSubmissionId(submissionId);
+        entry.setFacilityId(facilityId);
+        entry.setRowIndex(rowIndex);
+        entry.setExtractedName(extractedName);
+        entry.setMatchedLpId(matchedLpId);
+        entry.setMatchedLpName(matchedLpName);
+        entry.setMatchScore(matchScore);
+        entry.setDecision("Pending");
+        entry.setNew(matchedLpId == null);
+        entry.setReasons(reasons);
+        matchQueueRepo.save(entry);
     }
 
     private List<String> applyFields(Lp lp, IngestRequest.ExtractedLpRow row) {
@@ -116,7 +145,8 @@ public class LpIngestService {
         return String.format("%.1f%%", pct);
     }
 
-    private List<String> reviewReasons(IngestRequest.ExtractedLpRow row, MatchingService.MatchCandidate match) {
+    private List<String> reviewReasons(IngestRequest.ExtractedLpRow row,
+                                       MatchingService.MatchCandidate match) {
         List<String> reasons = new ArrayList<>();
         if (!"Accept".equals(match.action()))
             reasons.add("Match score " + match.score() + " is below auto-accept threshold");

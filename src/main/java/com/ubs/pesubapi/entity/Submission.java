@@ -32,6 +32,9 @@ public class Submission {
     @Column(name = "uploaded_by")
     private Integer uploadedBy;
 
+    @Column(name = "notes", columnDefinition = "TEXT")
+    private String notes;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -52,6 +55,7 @@ public class Submission {
     public String        getFileName()    { return fileName; }
     public String        getFilePath()    { return filePath; }
     public Integer       getUploadedBy()  { return uploadedBy; }
+    public String        getNotes()       { return notes; }
     public LocalDateTime getCreatedAt()   { return createdAt; }
     public LocalDateTime getUpdatedAt()   { return updatedAt; }
 
@@ -62,4 +66,5 @@ public class Submission {
     public void setFileName(String v)     { this.fileName    = v; }
     public void setFilePath(String v)     { this.filePath    = v; }
     public void setUploadedBy(Integer v)  { this.uploadedBy  = v; }
+    public void setNotes(String v)        { this.notes       = v; }
 }

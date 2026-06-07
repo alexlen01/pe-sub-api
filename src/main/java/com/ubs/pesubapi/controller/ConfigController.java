@@ -69,7 +69,7 @@ public class ConfigController {
             HttpServletRequest req) {
         JsonNode saved = configService.put("matching_config", body).getValue();
         String label = SECTION_LABELS.getOrDefault(section, "Matching config");
-        auditService.log("Config Change", label + " updated", null, "J. Smith", auditService.extractIp(req));
+        auditService.log("Match Config Change", label + " updated", null, "J. Smith", auditService.extractIp(req));
         return ResponseEntity.ok(saved);
     }
 

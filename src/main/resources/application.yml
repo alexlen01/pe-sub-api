@@ -23,6 +23,9 @@ spring:
 server:
   port: ${PORT:3001}
 
+pe-sub-extraction:
+  base-url: ${PE_SUB_EXTRACTION_URL:http://localhost:3002}
+
 logging:
   file:
     path: ${LOG_PATH:C:/Users/alexl/apps/pe-sub/logs}

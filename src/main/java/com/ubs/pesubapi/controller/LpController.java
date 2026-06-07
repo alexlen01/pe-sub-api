@@ -35,7 +35,7 @@ public class LpController {
 
     @PostMapping("/ingest")
     public IngestResult ingest(@RequestBody IngestRequest request, HttpServletRequest httpRequest) {
-        IngestResult result = ingestService.ingest(request);
+        IngestResult result = ingestService.ingest(0, request);
         if (result.updated() > 0) {
             auditService.log("LP Data Updated",
                 result.updated() + " LP records updated from " + result.templateFormat() + " extraction",

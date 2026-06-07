@@ -72,12 +72,15 @@ public class FieldMappingController {
     }
 
     @GetMapping("/canonical-fields")
-    public List<Map<String, String>> canonicalFields() {
+    public List<Map<String, Object>> canonicalFields() {
         return canonicalFieldRepo.findAllByOrderByGroupSortAscFieldSortAsc().stream()
-            .map(f -> Map.of(
-                "value", f.getCanonical(),
-                "label", f.getGroupName() + " › " + f.getCanonical()
-            ))
+            .map(f -> {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("value",      f.getCanonical());
+                m.put("label",      f.getGroupName() + " › " + f.getCanonical());
+                m.put("extractable", f.getExtractionKey() != null);
+                return m;
+            })
             .toList();
     }
 
