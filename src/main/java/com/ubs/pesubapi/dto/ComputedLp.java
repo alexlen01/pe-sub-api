@@ -38,9 +38,10 @@ public record ComputedLp(
 ) {
     public static ComputedLp from(Lp lp, double busaRate, double uecM, double ubbM,
                                    double abbM, double deltaM, double concExcessM) {
-        boolean highQuality = lp.getCls().equals("Rated")
-            || lp.getCls().equals("Unrated >2bn")
-            || lp.getCls().equals("Unrated 1–2bn");
+        String cls = lp.getCls();
+        boolean highQuality = "Rated".equals(cls)
+            || "Unrated >2bn".equals(cls)
+            || "Unrated 1–2bn".equals(cls);
         return new ComputedLp(
             lp.getId(), lp.getFacilityId(), lp.getRank(), lp.getName(), lp.getParent(),
             lp.isSpv(), lp.isHq(), lp.getType(), lp.getRegion(), lp.isIg(),

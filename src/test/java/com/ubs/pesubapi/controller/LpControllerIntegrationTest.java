@@ -3,6 +3,7 @@ package com.ubs.pesubapi.controller;
 import com.ubs.pesubapi.IntegrationTestBase;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.entity.Lp;
+import com.ubs.pesubapi.repository.AuditLogRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.LpRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,17 +16,20 @@ import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+@SuppressWarnings("null")
 class LpControllerIntegrationTest extends IntegrationTestBase {
 
     @Autowired MockMvc mvc;
     @Autowired LpRepository lpRepo;
     @Autowired FacilityRepository facilityRepo;
+    @Autowired AuditLogRepository auditLogRepo;
 
     private int facilityId;
 
     @BeforeEach
     void setup() {
         lpRepo.deleteAll();
+        auditLogRepo.deleteAll();
         facilityRepo.deleteAll();
 
         Facility f = new Facility();

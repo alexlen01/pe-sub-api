@@ -3,7 +3,6 @@ package com.ubs.pesubapi.controller;
 import com.ubs.pesubapi.dto.FmBlocklistEntryDto;
 import com.ubs.pesubapi.dto.FmSuggestionDto;
 import com.ubs.pesubapi.entity.FmAlias;
-import com.ubs.pesubapi.entity.FmBlocklistEntry;
 import com.ubs.pesubapi.entity.FmCanonicalField;
 import com.ubs.pesubapi.entity.FmSuggestion;
 import com.ubs.pesubapi.repository.FmAliasRepository;
@@ -160,7 +159,8 @@ public class FieldMappingController {
         String oldText = alias.getAliasText();
 
         if (body.containsKey("text")) {
-            String newText = body.get("text").trim();
+            String rawText = body.get("text");
+            String newText = rawText != null ? rawText.trim() : "";
             if (!newText.equalsIgnoreCase(alias.getAliasText())) {
                 Optional<FmAlias> duplicate = aliasRepo.findByAliasTextIgnoreCase(newText)
                     .filter(c -> !c.getId().equals(id));

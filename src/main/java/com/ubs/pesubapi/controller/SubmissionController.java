@@ -482,8 +482,9 @@ public class SubmissionController {
     @GetMapping("/{id}")
     public ResponseEntity<SubmissionDto> get(@PathVariable int id) {
         return submissions.findById(id).map(s -> {
-            String facilityName = s.getFacilityId() != null
-                ? facilities.findById(s.getFacilityId()).map(Facility::getName).orElse("—")
+            Integer facilityId = s.getFacilityId();
+            String facilityName = facilityId != null
+                ? facilities.findById(facilityId).map(Facility::getName).orElse("—")
                 : "—";
             return ResponseEntity.ok(toDto(s, facilityName));
         }).orElse(ResponseEntity.notFound().build());

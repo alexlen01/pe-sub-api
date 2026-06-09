@@ -116,17 +116,25 @@ public class LpIngestService {
 
     private List<String> applyFields(Lp lp, IngestRequest.ExtractedLpRow row) {
         List<String> changed = new ArrayList<>();
-        if (hasValue(row.aum()))                { lp.setAum(formatMoney(row.aum().value()));                changed.add("aum"); }
-        if (hasValue(row.commitment()))         { lp.setCapCommit(formatMoney(row.commitment().value()));   changed.add("capCommit"); }
-        if (hasValue(row.uncalled()))           { lp.setUc(formatMoney(row.uncalled().value()));            changed.add("uc"); }
-        if (hasValue(row.agentRate()))          { lp.setAgentRate(formatRate(row.agentRate().value()));     changed.add("agentRate"); }
-        if (hasValue(row.concentrationLimit())) { lp.setAgentConc(formatRate(row.concentrationLimit().value())); changed.add("agentConc"); }
+        BigDecimal aum   = valueIfValid(row.aum());
+        BigDecimal comm  = valueIfValid(row.commitment());
+        BigDecimal uc    = valueIfValid(row.uncalled());
+        BigDecimal rate  = valueIfValid(row.agentRate());
+        BigDecimal conc  = valueIfValid(row.concentrationLimit());
+
+        if (aum  != null) { lp.setAum(formatMoney(aum));        changed.add("aum"); }
+        if (comm != null) { lp.setCapCommit(formatMoney(comm));  changed.add("capCommit"); }
+        if (uc   != null) { lp.setUc(formatMoney(uc));           changed.add("uc"); }
+        if (rate != null) { lp.setAgentRate(formatRate(rate));   changed.add("agentRate"); }
+        if (conc != null) { lp.setAgentConc(formatRate(conc));   changed.add("agentConc"); }
+
         lp.setUpdatedAt(LocalDateTime.now());
         return changed;
     }
 
-    private boolean hasValue(IngestRequest.DecimalField f) {
-        return f != null && f.value() != null && f.confidence() >= MIN_FIELD_CONFIDENCE;
+    private BigDecimal valueIfValid(IngestRequest.DecimalField f) {
+        return (f != null && f.value() != null && f.confidence() >= MIN_FIELD_CONFIDENCE)
+            ? f.value() : null;
     }
 
     private String formatMoney(BigDecimal v) {

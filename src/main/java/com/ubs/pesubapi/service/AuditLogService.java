@@ -70,7 +70,7 @@ public class AuditLogService {
 
         return entries.stream().map(e -> {
             Map<String, Object> row = new LinkedHashMap<>();
-            row.put("ts",       e.getCreatedAt().format(TS_FMT));
+            row.put("ts",       e.getCreatedAt() != null ? e.getCreatedAt().format(TS_FMT) : "");
             row.put("event",    e.getEvent());
             row.put("detail",   e.getDetail()     != null ? e.getDetail() : "");
             row.put("facility", e.getFacilityId() != null
