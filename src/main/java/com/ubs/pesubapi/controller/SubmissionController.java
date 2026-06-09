@@ -21,6 +21,7 @@ import com.ubs.pesubapi.repository.SubmissionRepository;
 import com.ubs.pesubapi.service.AuditLogService;
 import com.ubs.pesubapi.service.ExtractionClientService;
 import com.ubs.pesubapi.service.LpIngestService;
+import com.ubs.pesubapi.service.MatchingService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.transaction.annotation.Transactional;
 import org.slf4j.Logger;
@@ -97,6 +98,7 @@ public class SubmissionController {
     private final AuditLogService                auditService;
     private final ExtractionClientService        extractionClient;
     private final LpIngestService                ingestService;
+    private final MatchingService                matchingService;
     private final SubmissionExtractionRepository extractionRepo;
     private final MatchQueueEntryRepository      matchQueueRepo;
     private final FmCanonicalFieldRepository     canonicalFieldRepo;
@@ -112,6 +114,7 @@ public class SubmissionController {
                                 AuditLogService auditService,
                                 ExtractionClientService extractionClient,
                                 LpIngestService ingestService,
+                                MatchingService matchingService,
                                 SubmissionExtractionRepository extractionRepo,
                                 MatchQueueEntryRepository matchQueueRepo,
                                 FmCanonicalFieldRepository canonicalFieldRepo,
@@ -123,6 +126,7 @@ public class SubmissionController {
         this.auditService       = auditService;
         this.extractionClient   = extractionClient;
         this.ingestService      = ingestService;
+        this.matchingService    = matchingService;
         this.extractionRepo     = extractionRepo;
         this.matchQueueRepo     = matchQueueRepo;
         this.canonicalFieldRepo = canonicalFieldRepo;
@@ -494,6 +498,7 @@ public class SubmissionController {
 
     record ConfirmResponse(boolean templateSaved, String agentBank) {}
 
+    @Transactional
     @PostMapping("/{id}/confirm")
     public ResponseEntity<?> confirm(@PathVariable int id, HttpServletRequest request) {
         Optional<Submission> subOpt = submissions.findById(id);
@@ -503,8 +508,9 @@ public class SubmissionController {
         String agentBank = sub.getAgentBank();
         boolean templateSaved = false;
 
+        Optional<SubmissionExtraction> extOpt = extractionRepo.findBySubmissionId(id);
+
         if (templateRepo.findByAgentBankIgnoreCase(agentBank).isEmpty()) {
-            Optional<SubmissionExtraction> extOpt = extractionRepo.findBySubmissionId(id);
             if (extOpt.isPresent() && extOpt.get().getSheetName() != null) {
                 SubmissionExtraction ext = extOpt.get();
                 BbTemplate t = new BbTemplate();
@@ -515,6 +521,13 @@ public class SubmissionController {
                 templateRepo.save(t);
                 templateSaved = true;
             }
+        }
+
+        if (extOpt.isPresent()) {
+            var entries = matchingService.buildMatchQueueEntries(
+                id, sub.getFacilityId(), extOpt.get().getExtractedLps());
+            matchQueueRepo.deleteBySubmissionId(id);
+            matchQueueRepo.saveAll(entries);
         }
 
         auditService.log("Extraction Confirmed", "Submission #" + id + " extraction confirmed",

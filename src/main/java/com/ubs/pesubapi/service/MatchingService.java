@@ -2,7 +2,9 @@ package com.ubs.pesubapi.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ubs.pesubapi.entity.MatchQueueEntry;
 import com.ubs.pesubapi.repository.LpRepository;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -41,6 +43,34 @@ public class MatchingService {
             })
             .max(Comparator.comparingInt(MatchCandidate::score))
             .orElse(null);
+    }
+
+    public @NonNull List<MatchQueueEntry> buildMatchQueueEntries(
+            int submissionId, int facilityId, JsonNode extractedLps) {
+        if (extractedLps == null || !extractedLps.isArray()) return new ArrayList<>();
+        List<String> masterNames = lpRepo.findAllDistinctNames();
+        List<MatchQueueEntry> entries = new ArrayList<>();
+        int index = 0;
+        for (JsonNode lpNode : extractedLps) {
+            String agentName = lpNode.path("name").asText("").trim();
+            if (agentName.isBlank()) { index++; continue; }
+            MatchCandidate best = masterNames.isEmpty() ? null : matchBestInList(agentName, masterNames);
+            String matchedName = (best != null && !"Reject".equals(best.action())) ? best.name() : null;
+            int    matchScore  = best != null ? best.score() : 0;
+            String decision    = (best != null && "Accept".equals(best.action())) ? "Accepted" : "Pending";
+            MatchQueueEntry entry = new MatchQueueEntry();
+            entry.setSubmissionId(submissionId);
+            entry.setFacilityId(facilityId);
+            entry.setRowIndex(index);
+            entry.setExtractedName(agentName);
+            entry.setMatchedLpName(matchedName);
+            entry.setMatchScore(matchScore);
+            entry.setNew(matchedName == null);
+            entry.setDecision(decision);
+            entries.add(entry);
+            index++;
+        }
+        return entries;
     }
 
     public MatchTestResult test(String inputName) {

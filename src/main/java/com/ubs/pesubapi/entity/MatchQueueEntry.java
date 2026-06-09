@@ -39,6 +39,12 @@ public class MatchQueueEntry {
     @Column(name = "decision", nullable = false)
     private String decision = "pending";
 
+    @Column(name = "agent_parent")
+    private String agentParent;
+
+    @Column(name = "master_parent")
+    private String masterParent;
+
     @Column(name = "master_name_override")
     private String masterNameOverride;
 
@@ -70,7 +76,9 @@ public class MatchQueueEntry {
     public String getMatchedLpName()   { return matchedLpName; }
     public Integer getMatchScore()     { return matchScore; }
     public String getDecision()        { return decision; }
-    public String getMasterNameOverride() { return masterNameOverride; }
+    public String getAgentParent()         { return agentParent; }
+    public String getMasterParent()        { return masterParent; }
+    public String getMasterNameOverride()  { return masterNameOverride; }
     public boolean isNew()             { return isNew; }
     public List<String> getReasons()   { return reasons; }
     public LocalDateTime getCreatedAt(){ return createdAt; }
@@ -84,6 +92,8 @@ public class MatchQueueEntry {
     public void setMatchedLpName(String v)    { this.matchedLpName = v; }
     public void setMatchScore(Integer v)      { this.matchScore = v; }
     public void setDecision(String v)         { this.decision = v; }
+    public void setAgentParent(String v)       { this.agentParent = v; }
+    public void setMasterParent(String v)      { this.masterParent = v; }
     public void setMasterNameOverride(String v){ this.masterNameOverride = v; }
     public void setNew(boolean v)             { this.isNew = v; }
     public void setReasons(List<String> v)    { this.reasons = v; }
