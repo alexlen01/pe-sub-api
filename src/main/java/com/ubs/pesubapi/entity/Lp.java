@@ -147,6 +147,21 @@ public class Lp {
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 
+    // Setters for creation
+    public void setFacilityId(Integer v)   { this.facilityId = v; }
+    public void setRank(Integer v)         { this.rank = v; }
+    public void setName(String v)          { this.name = v; }
+    public void setType(String v)          { this.type = v; }
+    public void setRegion(String v)        { this.region = v; }
+    public void setParent(String v)        { this.parent = v; }
+    public void setSpv(boolean v)          { this.spv = v; }
+    public void setHq(boolean v)           { this.hq = v; }
+    public void setIg(boolean v)           { this.ig = v; }
+    public void setSp(String v)            { this.sp = v; }
+    public void setMdy(String v)           { this.mdy = v; }
+    public void setFitch(String v)         { this.fitch = v; }
+    public void setTf(boolean v)           { this.tf = v; }
+
     // Setters for patch
     public void setCls(String cls)         { this.cls = cls; }
     public void setClsTag(String clsTag)   { this.clsTag = clsTag; }

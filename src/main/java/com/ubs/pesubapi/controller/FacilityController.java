@@ -1,5 +1,6 @@
 package com.ubs.pesubapi.controller;
 
+import com.ubs.pesubapi.dto.FacilityDto;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.service.NotificationService;
@@ -28,13 +29,14 @@ public class FacilityController {
     }
 
     @GetMapping
-    public List<Facility> list() {
-        return repo.findAll(Sort.by("name"));
+    public List<FacilityDto> list() {
+        return repo.findAll(Sort.by("name")).stream().map(FacilityDto::from).toList();
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Facility> get(@PathVariable int id) {
+    public ResponseEntity<FacilityDto> get(@PathVariable int id) {
         return repo.findById(id)
+            .map(FacilityDto::from)
             .map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());
     }
@@ -49,19 +51,19 @@ public class FacilityController {
         f.setAgentBank(req.agentBank());
         Facility saved = repo.save(f);
         notifier.broadcast("New facility onboarded: " + saved.getName());
-        return ResponseEntity.status(201).body(saved);
+        return ResponseEntity.status(201).body(FacilityDto.from(saved));
     }
 
     @PatchMapping("/{id}/status")
-    public ResponseEntity<Facility> patchStatus(@PathVariable int id,
-                                                 @RequestBody Map<String, String> body) {
+    public ResponseEntity<FacilityDto> patchStatus(@PathVariable int id,
+                                                    @RequestBody Map<String, String> body) {
         return repo.findById(id).map(f -> {
             String newStatus = body.get("status");
             f.setStatus(newStatus);
             f.setUpdatedAt(LocalDateTime.now());
             Facility saved = repo.save(f);
             notifier.broadcast(f.getName() + " status updated to " + newStatus);
-            return ResponseEntity.ok(saved);
+            return ResponseEntity.ok(FacilityDto.from(saved));
         }).orElse(ResponseEntity.notFound().build());
     }
 }

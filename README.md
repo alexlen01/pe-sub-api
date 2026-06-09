@@ -144,8 +144,18 @@ Max upload size: 50 MB. Files stored at `app.uploads.path`.
 | `POST` | `/api/matching/test` | Test fuzzy LP name match (`{ "name": "..." }`) |
 | `GET` | `/api/matching/queue` | Match queue items — filter by `submissionId` |
 | `PATCH` | `/api/matching/queue/{id}` | Record a decision (`accept`, `reject`, `override`) and optional `masterName` |
-| `GET` | `/api/matching/thresholds` | Current matching configuration (thresholds, weights, normalisation options) |
-| `PATCH` | `/api/matching/thresholds` | Update matching configuration |
+
+### Configuration — `/api/config`
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/config/eligibility` | Eligibility rules and advance rate schedules (`BUSA_TIERS`, `AGENT_TIERS`, `AGENT_RATE_PARAMS`, `ELIG_RULES`, `CONC_LIMITS`, `GLOBAL_SETTINGS`) |
+| `PUT` | `/api/config/eligibility` | Update one eligibility section (`?section=busa_tiers\|agent_tiers\|agent_rate_params\|elig_rules\|conc_limits\|global_settings`) |
+| `GET` | `/api/config/matching` | Matching configuration — thresholds, algorithm weights, suffix rules, abbreviation dictionary |
+| `PUT` | `/api/config/matching` | Update matching configuration (`?section=thresholds\|weights\|suffixes\|abbreviations`) |
+| `GET` | `/api/config/wizard` | Ingest wizard step configuration |
+| `GET` | `/api/config/audit` | Audit log configuration (retention period, etc.) |
+| `GET` | `/api/config/reports` | Report generation configuration |
 
 ### Reports — `/api/reports`
 
@@ -153,7 +163,6 @@ Max upload size: 50 MB. Files stored at `app.uploads.path`.
 |---|---|---|
 | `GET` | `/api/reports/collateral/{facilityId}` | Collateral summary from the latest BB snapshot |
 | `GET` | `/api/reports/concentration/{facilityId}` | Concentration breaches from the latest BB snapshot |
-| `GET` | `/api/reports/ear/{facilityId}` | EAR (Eligible Advance Rate) time series |
 
 ### Audit — `/api/audit`
 

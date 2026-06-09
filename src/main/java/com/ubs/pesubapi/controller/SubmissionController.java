@@ -60,27 +60,36 @@ public class SubmissionController {
 
     private static final Map<String, FieldMeta> CANONICAL_META = Map.ofEntries(
         // Extractable fields — keyed by extraction_key
-        Map.entry("INVESTOR_NAME",       new FieldMeta("LP Master — Investor Name",                          "Identity & Classification")),
+        Map.entry("INVESTOR_NAME",       new FieldMeta("Identity & Classification — Investor Name",           "Identity & Classification")),
         Map.entry("LP_CLASSIFICATION",   new FieldMeta("Identity & Classification — LP Classification",      "Identity & Classification")),
+        Map.entry("ELIGIBILITY_FLAG",    new FieldMeta("Identity & Classification — Eligibility Flag",       "Identity & Classification")),
         Map.entry("COMMITMENT",          new FieldMeta("Commitment Data — Capital Commitments",               "Commitment Data")),
+        Map.entry("RECALLABLE_DIST",     new FieldMeta("Commitment Data — Recallable Distributions",         "Commitment Data")),
         Map.entry("UNCALLED",            new FieldMeta("Uncalled Data — Uncalled Capital",                    "Uncalled Data")),
         Map.entry("AUM",                 new FieldMeta("Financial Scale — AUM",                               "Financial Scale")),
         Map.entry("NAV",                 new FieldMeta("Financial Scale — NAV",                               "Financial Scale")),
         Map.entry("AGENT_RATE",          new FieldMeta("Borrowing Base — Agent Advance Rate",                 "Borrowing Base")),
         Map.entry("CONCENTRATION_LIMIT", new FieldMeta("Concentration — Agent Concentration Limit",           "Concentration")),
         // Non-extractable fields — keyed by canonical name
-        Map.entry("Transferee",             new FieldMeta("Identity & Classification — Transferee",           "Identity & Classification")),
-        Map.entry("Parent / Sponsor",       new FieldMeta("Identity & Classification — Parent / Sponsor",     "Identity & Classification")),
-        Map.entry("% of Capital Commitments", new FieldMeta("Commitment Data — % of Capital Commitments",    "Commitment Data")),
-        Map.entry("Called Capital",           new FieldMeta("Commitment Data — Called Capital",               "Commitment Data")),
-        Map.entry("% of Uncalled Capital",    new FieldMeta("Uncalled Data — % of Uncalled Capital",         "Uncalled Data")),
-        Map.entry("% of LP Called",           new FieldMeta("Uncalled Data — % of LP Called",                "Uncalled Data")),
-        Map.entry("Pension Assets",           new FieldMeta("Financial Scale — Pension Assets",              "Financial Scale")),
-        Map.entry("Pension Funded %",         new FieldMeta("Financial Scale — Pension Funded %",            "Financial Scale")),
-        Map.entry("Agent Borrowing Base",     new FieldMeta("Concentration — Agent Borrowing Base",          "Concentration")),
-        Map.entry("S&P Rating",               new FieldMeta("Ratings — S&P Rating",                         "Ratings")),
-        Map.entry("Moody's Rating",           new FieldMeta("Ratings — Moody's Rating",                     "Ratings")),
-        Map.entry("Fitch Rating",             new FieldMeta("Ratings — Fitch Rating",                       "Ratings"))
+        Map.entry("Transferee",                new FieldMeta("Identity & Classification — Transferee",        "Identity & Classification")),
+        Map.entry("Parent / Sponsor",          new FieldMeta("Identity & Classification — Parent / Sponsor",  "Identity & Classification")),
+        Map.entry("% of Capital Commitments",  new FieldMeta("Commitment Data — % of Capital Commitments",   "Commitment Data")),
+        Map.entry("Called Capital",            new FieldMeta("Commitment Data — Called Capital",              "Commitment Data")),
+        Map.entry("% of Uncalled Capital",     new FieldMeta("Uncalled Data — % of Uncalled Capital",        "Uncalled Data")),
+        Map.entry("% of LP Called",            new FieldMeta("Uncalled Data — % of LP Called",               "Uncalled Data")),
+        Map.entry("Pension Assets",            new FieldMeta("Financial Scale — Pension Assets",             "Financial Scale")),
+        Map.entry("Pension Funded %",          new FieldMeta("Financial Scale — Pension Funded %",           "Financial Scale")),
+        Map.entry("Agent Eligible Commitment", new FieldMeta("Borrowing Base — Agent Eligible Commitment",   "Borrowing Base")),
+        Map.entry("% of Eligible Uncalled",    new FieldMeta("Borrowing Base — % of Eligible Uncalled",      "Borrowing Base")),
+        Map.entry("% of Borrowing Base",       new FieldMeta("Borrowing Base — % of Borrowing Base",         "Borrowing Base")),
+        Map.entry("Agent Borrowing Base",      new FieldMeta("Borrowing Base — Agent Borrowing Base",        "Borrowing Base")),
+        Map.entry("Excess Concentration",      new FieldMeta("Concentration — Excess Concentration",         "Concentration")),
+        Map.entry("S&P Rating",                new FieldMeta("Ratings — S&P Rating",                        "Ratings")),
+        Map.entry("Moody's Rating",            new FieldMeta("Ratings — Moody's Rating",                    "Ratings")),
+        Map.entry("Fitch Rating",              new FieldMeta("Ratings — Fitch Rating",                      "Ratings")),
+        Map.entry("S&P Numeric Score",         new FieldMeta("Ratings — S&P Numeric Score",                 "Ratings")),
+        Map.entry("Moody's Numeric Score",     new FieldMeta("Ratings — Moody's Numeric Score",             "Ratings")),
+        Map.entry("Agent Numeric Rating",      new FieldMeta("Ratings — Agent Numeric Rating",              "Ratings"))
     );
 
     private final SubmissionRepository           submissions;
@@ -219,6 +228,8 @@ public class SubmissionController {
         // Build extracted_lps JSON array
         ArrayNode lpArray = mapper.createArrayNode();
         if (r.records() != null) {
+            List<ObjectNode>    rows   = new ArrayList<>();
+            List<BigDecimal>    bbRaws = new ArrayList<>();
             int seqId = 1;
             for (ExtractionResponse.ExtractedRecord rec : r.records()) {
                 ObjectNode row = mapper.createObjectNode();
@@ -244,6 +255,34 @@ public class SubmissionController {
                     rec.warnings().forEach(w -> warnings.add(w.field() + ": " + w.message()));
                 }
                 row.set("warnings", warnings);
+
+                BigDecimal uncalledDec = fieldDec(rec.fields(), "UNCALLED");
+                BigDecimal rateDec     = fieldDec(rec.fields(), "AGENT_RATE");
+                BigDecimal rateNorm    = rateDec != null
+                    ? (rateDec.compareTo(BigDecimal.ONE) < 0
+                        ? rateDec
+                        : rateDec.divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP))
+                    : null;
+                BigDecimal bbRaw = (uncalledDec != null && rateNorm != null)
+                    ? uncalledDec.multiply(rateNorm).setScale(0, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+                bbRaws.add(bbRaw);
+                rows.add(row);
+            }
+
+            BigDecimal totalBB = bbRaws.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+            for (int i = 0; i < rows.size(); i++) {
+                ObjectNode row = rows.get(i);
+                BigDecimal bb  = bbRaws.get(i);
+                row.put("agentBBFmt", bb.compareTo(BigDecimal.ZERO) > 0
+                    ? "$" + String.format("%,.0f", bb) : "");
+                String pct = "";
+                if (totalBB.compareTo(BigDecimal.ZERO) > 0 && bb.compareTo(BigDecimal.ZERO) > 0) {
+                    pct = bb.multiply(BigDecimal.valueOf(100))
+                             .divide(totalBB, 2, RoundingMode.HALF_UP)
+                             .toPlainString() + "%";
+                }
+                row.put("pctBBFmt", pct);
                 lpArray.add(row);
             }
         }
@@ -441,10 +480,13 @@ public class SubmissionController {
     // ── GET /api/submissions/:id ─────────────────────────────────────────────
 
     @GetMapping("/{id}")
-    public ResponseEntity<Submission> get(@PathVariable int id) {
-        return submissions.findById(id)
-            .map(ResponseEntity::ok)
-            .orElse(ResponseEntity.notFound().build());
+    public ResponseEntity<SubmissionDto> get(@PathVariable int id) {
+        return submissions.findById(id).map(s -> {
+            String facilityName = s.getFacilityId() != null
+                ? facilities.findById(s.getFacilityId()).map(Facility::getName).orElse("—")
+                : "—";
+            return ResponseEntity.ok(toDto(s, facilityName));
+        }).orElse(ResponseEntity.notFound().build());
     }
 
     // ── POST /api/submissions/:id/confirm ────────────────────────────────────

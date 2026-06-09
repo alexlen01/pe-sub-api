@@ -1,5 +1,7 @@
 package com.ubs.pesubapi.controller;
 
+import com.ubs.pesubapi.dto.FmBlocklistEntryDto;
+import com.ubs.pesubapi.dto.FmSuggestionDto;
 import com.ubs.pesubapi.entity.FmAlias;
 import com.ubs.pesubapi.entity.FmBlocklistEntry;
 import com.ubs.pesubapi.entity.FmCanonicalField;
@@ -10,6 +12,8 @@ import com.ubs.pesubapi.repository.FmCanonicalFieldRepository;
 import com.ubs.pesubapi.repository.FmSuggestionRepository;
 import com.ubs.pesubapi.service.AuditLogService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -85,18 +89,18 @@ public class FieldMappingController {
     }
 
     @GetMapping("/blocklist")
-    public List<FmBlocklistEntry> blocklist() {
-        return blocklistRepo.findAllByOrderByIdAsc();
+    public List<FmBlocklistEntryDto> blocklist() {
+        return blocklistRepo.findAllByOrderByIdAsc().stream().map(FmBlocklistEntryDto::from).toList();
     }
 
     @GetMapping("/suggestions")
-    public List<FmSuggestion> suggestions() {
-        return suggestionRepo.findAllByOrderByCreatedAtDesc();
+    public List<FmSuggestionDto> suggestions() {
+        return suggestionRepo.findAllByOrderByCreatedAtDesc().stream().map(FmSuggestionDto::from).toList();
     }
 
     @PostMapping("/aliases")
-    public ResponseEntity<AliasEntryDto> createAlias(@RequestBody Map<String, Object> body,
-                                                     HttpServletRequest request) {
+    public ResponseEntity<?> createAlias(@RequestBody Map<String, Object> body,
+                                         HttpServletRequest request) {
         Integer canonicalFieldId = (Integer) body.get("canonicalFieldId");
         String  text = (String) body.get("text");
         if (canonicalFieldId == null || text == null) {
@@ -105,13 +109,24 @@ public class FieldMappingController {
         String  tier = body.containsKey("tier") ? (String) body.get("tier") : "Bank";
         String  bank = (String) body.get("bank");
 
+        Optional<FmAlias> duplicate = aliasRepo.findByAliasTextIgnoreCase(text.trim());
+        if (duplicate.isPresent()) {
+            Integer conflictFieldId = duplicate.get().getCanonicalFieldId();
+            String conflictField = conflictFieldId != null
+                ? canonicalFieldRepo.findById(conflictFieldId).map(FmCanonicalField::getCanonical).orElse("another field")
+                : "another field";
+            ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
+                "\"" + text.trim() + "\" is already mapped to \"" + conflictField + "\".");
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(pd);
+        }
+
         List<FmAlias> existing = aliasRepo.findByCanonicalFieldIdOrderByAliasSortAsc(canonicalFieldId);
-        int nextSort = existing.isEmpty() ? 1 : existing.get(existing.size() - 1).getAliasSort() + 1;
+        int nextSort = existing.isEmpty() ? 1 : existing.getLast().getAliasSort() + 1;
 
         FmAlias alias = new FmAlias();
         alias.setCanonicalFieldId(canonicalFieldId);
         alias.setAliasSort(nextSort);
-        alias.setAliasText(text);
+        alias.setAliasText(text.trim());
         alias.setTier(tier);
         alias.setBank(bank);
         FmAlias saved = aliasRepo.save(alias);
@@ -136,13 +151,31 @@ public class FieldMappingController {
     }
 
     @PatchMapping("/aliases/{id}")
-    public ResponseEntity<AliasEntryDto> updateAlias(@PathVariable int id,
-                                                     @RequestBody Map<String, String> body,
-                                                     HttpServletRequest request) {
+    public ResponseEntity<?> updateAlias(@PathVariable int id,
+                                         @RequestBody Map<String, String> body,
+                                         HttpServletRequest request) {
         FmAlias alias = aliasRepo.findById(id).orElse(null);
         if (alias == null) return ResponseEntity.notFound().build();
+
         String oldText = alias.getAliasText();
-        if (body.containsKey("text")) alias.setAliasText(body.get("text"));
+
+        if (body.containsKey("text")) {
+            String newText = body.get("text").trim();
+            if (!newText.equalsIgnoreCase(alias.getAliasText())) {
+                Optional<FmAlias> duplicate = aliasRepo.findByAliasTextIgnoreCase(newText)
+                    .filter(c -> !c.getId().equals(id));
+                if (duplicate.isPresent()) {
+                    Integer conflictFieldId = duplicate.get().getCanonicalFieldId();
+                    String conflictField = conflictFieldId != null
+                        ? canonicalFieldRepo.findById(conflictFieldId).map(FmCanonicalField::getCanonical).orElse("another field")
+                        : "another field";
+                    ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
+                        "\"" + newText + "\" is already mapped to \"" + conflictField + "\".");
+                    return ResponseEntity.status(HttpStatus.CONFLICT).body(pd);
+                }
+            }
+            alias.setAliasText(newText);
+        }
         if (body.containsKey("bank")) alias.setBank(body.get("bank"));
         FmAlias saved = aliasRepo.save(alias);
         auditService.log("Field Mapping Change", "FM Alias Updated: \"" + oldText + "\" → \"" + saved.getAliasText() + "\"",
@@ -151,11 +184,11 @@ public class FieldMappingController {
     }
 
     @PostMapping("/suggestions")
-    public ResponseEntity<FmSuggestion> suggest(@RequestBody Map<String, String> body) {
+    public ResponseEntity<FmSuggestionDto> suggest(@RequestBody Map<String, String> body) {
         FmSuggestion s = new FmSuggestion();
         s.setExtractedHeader(body.get("extractedHeader"));
         s.setCanonicalField(body.get("canonicalField"));
         s.setSuggestedBy(body.get("suggestedBy"));
-        return ResponseEntity.status(201).body(suggestionRepo.save(s));
+        return ResponseEntity.status(201).body(FmSuggestionDto.from(suggestionRepo.save(s)));
     }
 }

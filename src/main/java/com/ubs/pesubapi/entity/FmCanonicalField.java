@@ -42,4 +42,13 @@ public class FmCanonicalField {
     public String  getDisambiguation(){ return disambiguation; }
     public String  getExtractionKey() { return extractionKey; }
     public boolean isDerived()        { return isDerived; }
+
+    public void setGroupName(String v)     { this.groupName = v; }
+    public void setGroupSort(Integer v)    { this.groupSort = v; }
+    public void setFieldSort(Integer v)    { this.fieldSort = v; }
+    public void setCanonical(String v)     { this.canonical = v; }
+    public void setLpMasterField(String v) { this.lpMasterField = v; }
+    public void setDisambiguation(String v){ this.disambiguation = v; }
+    public void setExtractionKey(String v) { this.extractionKey = v; }
+    public void setDerived(boolean v)      { this.isDerived = v; }
 }

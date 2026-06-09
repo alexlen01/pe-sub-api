@@ -2,6 +2,7 @@ package com.ubs.pesubapi.controller;
 
 import com.ubs.pesubapi.dto.IngestRequest;
 import com.ubs.pesubapi.dto.IngestResult;
+import com.ubs.pesubapi.dto.LpDto;
 import com.ubs.pesubapi.entity.Lp;
 import com.ubs.pesubapi.repository.LpRepository;
 import com.ubs.pesubapi.service.AuditLogService;
@@ -45,32 +46,34 @@ public class LpController {
     }
 
     @GetMapping
-    public List<Lp> list(@RequestParam(required = false) Integer facilityId,
-                          @RequestParam(required = false) String cls,
-                          @RequestParam(required = false) String search) {
+    public List<LpDto> list(@RequestParam(required = false) Integer facilityId,
+                             @RequestParam(required = false) String cls,
+                             @RequestParam(required = false) String search) {
+        List<Lp> lps;
         if (facilityId != null && cls != null) {
-            return repo.findByFacilityIdAndClsOrderByRankAsc(facilityId, cls);
+            lps = repo.findByFacilityIdAndClsOrderByRankAsc(facilityId, cls);
+        } else if (facilityId != null && search != null) {
+            lps = repo.findByFacilityIdAndNameContainingIgnoreCaseOrderByRankAsc(facilityId, search);
+        } else if (facilityId != null) {
+            lps = repo.findByFacilityIdOrderByRankAsc(facilityId);
+        } else {
+            lps = repo.findAllByOrderByRankAsc();
         }
-        if (facilityId != null && search != null) {
-            return repo.findByFacilityIdAndNameContainingIgnoreCaseOrderByRankAsc(facilityId, search);
-        }
-        if (facilityId != null) {
-            return repo.findByFacilityIdOrderByRankAsc(facilityId);
-        }
-        return repo.findAllByOrderByRankAsc();
+        return lps.stream().map(LpDto::from).toList();
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Lp> get(@PathVariable int id) {
+    public ResponseEntity<LpDto> get(@PathVariable int id) {
         return repo.findById(id)
+            .map(LpDto::from)
             .map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());
     }
 
     @PatchMapping("/{id}")
-    public ResponseEntity<Lp> patch(@PathVariable int id,
-                                     @RequestBody Map<String, Object> body,
-                                     HttpServletRequest request) {
+    public ResponseEntity<LpDto> patch(@PathVariable int id,
+                                        @RequestBody Map<String, Object> body,
+                                        HttpServletRequest request) {
         return repo.findById(id).map(lp -> {
             String prevCls = lp.getCls();
             if (body.containsKey("cls"))    lp.setCls((String) body.get("cls"));
@@ -88,7 +91,7 @@ public class LpController {
                 auditService.log("LP Reclassified", detail, lp.getFacilityId(),
                     "J. Smith", auditService.extractIp(request));
             }
-            return ResponseEntity.ok(saved);
+            return ResponseEntity.ok(LpDto.from(saved));
         }).orElse(ResponseEntity.notFound().build());
     }
 }
