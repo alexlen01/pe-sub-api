@@ -44,13 +44,13 @@ public class Lp {
     private String clsTag;
 
     @Column(nullable = false)
-    private String sp = "NR";
+    private String sp = "";
 
     @Column(nullable = false)
-    private String mdy = "NR";
+    private String mdy = "";
 
     @Column(nullable = false)
-    private String fitch = "NR";
+    private String fitch = "";
 
     private String aum;
     private String nav;

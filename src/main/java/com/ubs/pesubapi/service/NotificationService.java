@@ -30,6 +30,7 @@ public class NotificationService {
                 emitter.send(SseEmitter.event().name("notification").data(message));
             } catch (Exception e) {
                 dead.add(emitter);
+                try { emitter.completeWithError(e); } catch (Exception ignored) {}
             }
         }
         emitters.removeAll(dead);
@@ -44,6 +45,7 @@ public class NotificationService {
                 emitter.send(SseEmitter.event().name("ping").data(""));
             } catch (Exception e) {
                 dead.add(emitter);
+                try { emitter.completeWithError(e); } catch (Exception ignored) {}
             }
         }
         emitters.removeAll(dead);

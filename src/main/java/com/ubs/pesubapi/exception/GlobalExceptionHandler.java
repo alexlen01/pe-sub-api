@@ -1,5 +1,6 @@
 package com.ubs.pesubapi.exception;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -37,7 +38,11 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ProblemDetail> handleUnexpected(Exception ex) {
+    public ResponseEntity<?> handleUnexpected(Exception ex, HttpServletRequest request) {
+        // No converter exists for ProblemDetail over text/event-stream; emitter lifecycle handles cleanup.
+        if ("text/event-stream".equals(request.getHeader("Accept"))) {
+            return ResponseEntity.ok().build();
+        }
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(
             HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
         problem.setTitle("Internal Server Error");
