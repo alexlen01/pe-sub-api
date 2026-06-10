@@ -53,6 +53,7 @@ public class SubmissionController {
         Integer id, Integer facilityId, String facilityName,
         String agentBank, String periodMonth, String status,
         String fileName, Integer uploadedBy, String notes,
+        int wizardStep, com.fasterxml.jackson.databind.JsonNode shadowBbOverrides,
         LocalDateTime createdAt, LocalDateTime updatedAt
     ) {}
 
@@ -173,6 +174,7 @@ public class SubmissionController {
         ingestService.ingest(sub.getId(), ingestRequest);
 
         sub.setStatus("Review");
+        sub.setWizardStep(3);
         submissions.save(sub);
 
         facilities.findById(facilityId).ifPresent(f -> {
@@ -501,9 +503,38 @@ public class SubmissionController {
             matchQueueRepo.saveAll(entries);
         }
 
+        sub.setWizardStep(4);
+        submissions.save(sub);
+
         auditService.log("Extraction Confirmed", "Submission #" + id + " extraction confirmed",
             sub.getFacilityId(), "J. Smith", auditService.extractIp(request));
         return ResponseEntity.ok(new ConfirmResponse(templateSaved, agentBank));
+    }
+
+    // ── PATCH /api/submissions/:id/shadow-bb-state ───────────────────────────
+    // Advances the submission to wizard step 5 and optionally persists the LP
+    // classification/rate overrides set by the credit officer on the Run Shadow BB screen.
+    // Called on "Commit Decisions" (no overrides yet) and on "Save" (with overrides).
+
+    record ShadowBbStateRequest(com.fasterxml.jackson.databind.JsonNode overrides) {}
+
+    @Transactional
+    @PatchMapping("/{id}/shadow-bb-state")
+    public ResponseEntity<SubmissionDto> saveShadowBbState(
+            @PathVariable int id,
+            @RequestBody ShadowBbStateRequest req) {
+        return submissions.findById(id).map(sub -> {
+            sub.setWizardStep(5);
+            if (req.overrides() != null) {
+                sub.setShadowBbOverrides(req.overrides());
+            }
+            submissions.save(sub);
+            Integer facilityId = sub.getFacilityId();
+            String facilityName = facilityId != null
+                ? facilities.findById(facilityId).map(Facility::getName).orElse("—")
+                : "—";
+            return ResponseEntity.ok(toDto(sub, facilityName));
+        }).orElse(ResponseEntity.notFound().build());
     }
 
     // ── POST /api/submissions/:id/abort ──────────────────────────────────────
@@ -560,6 +591,7 @@ public class SubmissionController {
             s.getId(), s.getFacilityId(), facilityName,
             s.getAgentBank(), s.getPeriodMonth(), s.getStatus(),
             s.getFileName(), s.getUploadedBy(), s.getNotes(),
+            s.getWizardStep(), s.getShadowBbOverrides(),
             s.getCreatedAt(), s.getUpdatedAt()
         );
     }

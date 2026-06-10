@@ -1,6 +1,9 @@
 package com.ubs.pesubapi.entity;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
 
 @Entity
@@ -35,6 +38,13 @@ public class Submission {
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;
 
+    @Column(name = "wizard_step", nullable = false)
+    private int wizardStep = 1;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "shadow_bb_overrides", columnDefinition = "jsonb")
+    private JsonNode shadowBbOverrides;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -47,24 +57,28 @@ public class Submission {
     @PreUpdate
     void onUpdate() { updatedAt = LocalDateTime.now(); }
 
-    public Integer       getId()          { return id; }
-    public Integer       getFacilityId()  { return facilityId; }
-    public String        getAgentBank()   { return agentBank; }
-    public String        getPeriodMonth() { return periodMonth; }
-    public String        getStatus()      { return status; }
-    public String        getFileName()    { return fileName; }
-    public String        getFilePath()    { return filePath; }
-    public Integer       getUploadedBy()  { return uploadedBy; }
-    public String        getNotes()       { return notes; }
-    public LocalDateTime getCreatedAt()   { return createdAt; }
-    public LocalDateTime getUpdatedAt()   { return updatedAt; }
+    public Integer       getId()                 { return id; }
+    public Integer       getFacilityId()         { return facilityId; }
+    public String        getAgentBank()          { return agentBank; }
+    public String        getPeriodMonth()        { return periodMonth; }
+    public String        getStatus()             { return status; }
+    public String        getFileName()           { return fileName; }
+    public String        getFilePath()           { return filePath; }
+    public Integer       getUploadedBy()         { return uploadedBy; }
+    public String        getNotes()              { return notes; }
+    public int           getWizardStep()         { return wizardStep; }
+    public JsonNode      getShadowBbOverrides()  { return shadowBbOverrides; }
+    public LocalDateTime getCreatedAt()          { return createdAt; }
+    public LocalDateTime getUpdatedAt()          { return updatedAt; }
 
-    public void setFacilityId(Integer v)  { this.facilityId  = v; }
-    public void setAgentBank(String v)    { this.agentBank   = v; }
-    public void setPeriodMonth(String v)  { this.periodMonth = v; }
-    public void setStatus(String v)       { this.status      = v; }
-    public void setFileName(String v)     { this.fileName    = v; }
-    public void setFilePath(String v)     { this.filePath    = v; }
-    public void setUploadedBy(Integer v)  { this.uploadedBy  = v; }
-    public void setNotes(String v)        { this.notes       = v; }
+    public void setFacilityId(Integer v)        { this.facilityId        = v; }
+    public void setAgentBank(String v)          { this.agentBank         = v; }
+    public void setPeriodMonth(String v)        { this.periodMonth       = v; }
+    public void setStatus(String v)             { this.status            = v; }
+    public void setFileName(String v)           { this.fileName          = v; }
+    public void setFilePath(String v)           { this.filePath          = v; }
+    public void setUploadedBy(Integer v)        { this.uploadedBy        = v; }
+    public void setNotes(String v)              { this.notes             = v; }
+    public void setWizardStep(int v)            { this.wizardStep        = v; }
+    public void setShadowBbOverrides(JsonNode v){ this.shadowBbOverrides = v; }
 }
