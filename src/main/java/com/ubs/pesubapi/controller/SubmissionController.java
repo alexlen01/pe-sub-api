@@ -49,6 +49,47 @@ public class SubmissionController {
 
     private static final Logger log = LoggerFactory.getLogger(SubmissionController.class);
 
+    private record CanonicalMeta(String group, String canonical) {}
+
+    private static final Map<String, Object> CANONICAL_META = Map.ofEntries(
+        // Identity & Classification
+        Map.entry("INVESTOR_NAME",             new CanonicalMeta("Identity & Classification", "Identity & Classification — Investor Name")),
+        Map.entry("LP_CLASSIFICATION",         new CanonicalMeta("Identity & Classification", "Identity & Classification — LP Classification")),
+        Map.entry("ELIGIBILITY_FLAG",          new CanonicalMeta("Identity & Classification", "Identity & Classification — Eligibility Flag")),
+        Map.entry("Transferee",                new CanonicalMeta("Identity & Classification", "Identity & Classification — Transferee")),
+        Map.entry("Parent / Sponsor",          new CanonicalMeta("Identity & Classification", "Identity & Classification — Parent / Sponsor")),
+        // Commitment Data
+        Map.entry("COMMITMENT",                new CanonicalMeta("Commitment Data", "Commitment Data — Capital Commitments")),
+        Map.entry("RECALLABLE_DIST",           new CanonicalMeta("Commitment Data", "Commitment Data — Recallable Distributions")),
+        Map.entry("% of Capital Commitments",  new CanonicalMeta("Commitment Data", "Commitment Data — % of Capital Commitments")),
+        Map.entry("Called Capital",            new CanonicalMeta("Commitment Data", "Commitment Data — Called Capital")),
+        // Uncalled Data
+        Map.entry("UNCALLED",                  new CanonicalMeta("Uncalled Data", "Uncalled Data — Uncalled Capital")),
+        Map.entry("% of Uncalled Capital",     new CanonicalMeta("Uncalled Data", "Uncalled Data — % of Uncalled Capital")),
+        Map.entry("% of LP Called",            new CanonicalMeta("Uncalled Data", "Uncalled Data — % of LP Called")),
+        // Financial Scale
+        Map.entry("AUM",                       new CanonicalMeta("Financial Scale", "Financial Scale — AUM")),
+        Map.entry("NAV",                       new CanonicalMeta("Financial Scale", "Financial Scale — NAV")),
+        Map.entry("Pension Assets",            new CanonicalMeta("Financial Scale", "Financial Scale — Pension Assets")),
+        Map.entry("Pension Funded %",          new CanonicalMeta("Financial Scale", "Financial Scale — Pension Funded %")),
+        // Borrowing Base
+        Map.entry("AGENT_RATE",                new CanonicalMeta("Borrowing Base", "Borrowing Base — Agent Advance Rate")),
+        Map.entry("Agent Eligible Commitment", new CanonicalMeta("Borrowing Base", "Borrowing Base — Agent Eligible Commitment")),
+        Map.entry("% of Eligible Uncalled",    new CanonicalMeta("Borrowing Base", "Borrowing Base — % of Eligible Uncalled")),
+        Map.entry("% of Borrowing Base",       new CanonicalMeta("Borrowing Base", "Borrowing Base — % of Borrowing Base")),
+        Map.entry("Agent Borrowing Base",      new CanonicalMeta("Borrowing Base", "Borrowing Base — Agent Borrowing Base")),
+        // Concentration
+        Map.entry("CONCENTRATION_LIMIT",       new CanonicalMeta("Concentration", "Concentration — Agent Concentration Limit")),
+        Map.entry("Excess Concentration",      new CanonicalMeta("Concentration", "Concentration — Excess Concentration")),
+        // Ratings
+        Map.entry("S&P Rating",                new CanonicalMeta("Ratings", "Ratings — S&P Rating")),
+        Map.entry("Moody's Rating",            new CanonicalMeta("Ratings", "Ratings — Moody's Rating")),
+        Map.entry("Fitch Rating",              new CanonicalMeta("Ratings", "Ratings — Fitch Rating")),
+        Map.entry("S&P Numeric Score",         new CanonicalMeta("Ratings", "Ratings — S&P Numeric Score")),
+        Map.entry("Moody's Numeric Score",     new CanonicalMeta("Ratings", "Ratings — Moody's Numeric Score")),
+        Map.entry("Agent Numeric Rating",      new CanonicalMeta("Ratings", "Ratings — Agent Numeric Rating"))
+    );
+
     record SubmissionDto(
         Integer id, Integer facilityId, String facilityName,
         String agentBank, String periodMonth, String status,
