@@ -1,6 +1,13 @@
 -- Track which wizard step each submission has reached and persist Run Shadow BB overrides.
--- wizard_step: 1=upload, 3=extraction review, 4=match queue, 5=run shadow BB
--- shadow_bb_overrides: LP classification/rate overrides set by the credit officer on Step 5
+--
+-- wizard_step mirrors the 1-indexed WIZARD_STEPS array in the UI:
+--   1 = Select Facility / Upload (default; also set when extraction fails with status='Error')
+--   2 = Upload Document — transient; extraction runs inline so submissions jump directly to 3
+--   3 = Review Extraction (status='Review'; awaiting credit officer action)
+--   4 = Review Matches   (after POST /{id}/confirm)
+--   5 = LP Classification & Rate Assignment (after PATCH /{id}/shadow-bb-state)
+--
+-- shadow_bb_overrides: JSONB map of LP key → {cls, rate} overrides committed on Step 5
 
 ALTER TABLE submissions
     ADD COLUMN wizard_step          INTEGER NOT NULL DEFAULT 1,
