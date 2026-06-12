@@ -1,0 +1,61 @@
+package com.ubs.pesubapi.controller;
+
+import com.ubs.pesubapi.dto.LpRateBatchRequest;
+import com.ubs.pesubapi.dto.LpRateDto;
+import com.ubs.pesubapi.service.LpRateService;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.format.DateTimeParseException;
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/lps/rates")
+public class LpRateController {
+
+    private final LpRateService lpRateService;
+
+    public LpRateController(LpRateService lpRateService) {
+        this.lpRateService = lpRateService;
+    }
+
+    /**
+     * Returns the most recent rates for every LP on or before the given period.
+     * effective_date: YYYY-MM (e.g. 2026-05). Defaults to the current month.
+     */
+    @GetMapping
+    public List<LpRateDto> getRates(
+            @RequestParam(name = "effective_date", required = false) String effectiveDateParam) {
+
+        LocalDate asOf = parseEffectiveDate(effectiveDateParam);
+        return lpRateService.getRatesAsOf(asOf);
+    }
+
+    /**
+     * Bulk-upserts LP rates from an ingested feed file.
+     * Matches LPs by name (case-insensitive). Idempotent — re-posting the same
+     * effective_date overwrites existing rows for those LP IDs.
+     */
+    @PostMapping("/batch")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Map<String, Integer> batchUpsert(@Valid @RequestBody LpRateBatchRequest req) {
+        int saved = lpRateService.upsertBatch(req);
+        return Map.of("saved", saved);
+    }
+
+    private LocalDate parseEffectiveDate(String param) {
+        if (param == null || param.isBlank()) return LocalDate.now();
+        try {
+            return YearMonth.parse(param).atDay(1);
+        } catch (DateTimeParseException ex) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.BAD_REQUEST,
+                "effective_date must be YYYY-MM, got: " + param
+            );
+        }
+    }
+}

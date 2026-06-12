@@ -537,6 +537,41 @@ public class SubmissionController {
         }).orElse(ResponseEntity.notFound().build());
     }
 
+    // ── POST /api/submissions/:id/complete ──────────────────────────────────
+    // Marks the Shadow BB calculation as accepted: submission → Processed (step 6),
+    // facility → Certified, lastRunAt stamped.  Idempotent: calling it twice is safe.
+
+    @Transactional
+    @PostMapping("/{id}/complete")
+    public ResponseEntity<SubmissionDto> complete(
+            @PathVariable int id, HttpServletRequest request) {
+        Optional<Submission> opt = submissions.findById(id);
+        if (opt.isEmpty()) return ResponseEntity.notFound().build();
+
+        Submission sub = opt.get();
+        sub.setStatus("Processed");
+        sub.setWizardStep(6);
+        submissions.save(sub);
+
+        Integer facilityId = sub.getFacilityId();
+        String facilityName = "—";
+        if (facilityId != null) {
+            Optional<Facility> fOpt = facilities.findById(facilityId);
+            if (fOpt.isPresent()) {
+                Facility f = fOpt.get();
+                f.setStatus("Certified");
+                f.setLastRunAt(LocalDateTime.now());
+                facilities.save(f);
+                facilityName = f.getName();
+            }
+        }
+
+        auditService.log("Shadow BB Completed", "Submission #" + id + " Shadow BB accepted",
+            facilityId, "J. Smith", auditService.extractIp(request));
+
+        return ResponseEntity.ok(toDto(sub, facilityName));
+    }
+
     // ── POST /api/submissions/:id/abort ──────────────────────────────────────
 
     @Transactional
