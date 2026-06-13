@@ -186,6 +186,13 @@ Three Flyway migrations, applied in order:
 | `V1_1__schema.sql` | All tables: `users`, `facilities`, `lps`, `bb_snapshots`, `config`, `submissions`, `audit_log`, `submission_extractions`, `match_queue_entries`, `fm_canonical_fields` (with `is_derived` flag), `fm_aliases`, `fm_blocklist`, `fm_suggestions`, `bb_templates` (with `tranche_count`, `has_grouping_rows`, `has_color_flags`, `summary_rows_above_header`), `bb_template_tabs`, `bb_template_groups` |
 | `V1_2__seed.sql` | Field Mapping Dictionary — 29 canonical fields across 7 groups (Identity & Classification, Commitment Data, Uncalled Data, Financial Scale, Borrowing Base, Concentration, Ratings) with full alias sets; Goldman Sachs / SVB / Wells Fargo template metadata; bb_template_groups for Goldman LP Grid group-header rows |
 | `V1_3__shadow_bb_state.sql` | Adds `wizard_step INTEGER DEFAULT 1` and `shadow_bb_overrides JSONB` to `submissions`; tracks ingest wizard progress and persists LP classification/rate overrides from the Run Shadow BB step |
+| `V1_4__lp_rates.sql` | `lp_rates` feed table (per-LP, per-period UBS advance / concentration rates); updates `agent_tiers` config to the 5-tier scale |
+| `V1_5__lp_rates_seed.sql` | Seed rows for `lp_rates` |
+| `V1_6__agent_lp_classification.sql` | Splits `LP Classification` into **Agent LP Classification** (raw input, extraction_key `AGENT_LP_CLASSIFICATION`) and **UBS LP Classification** (derived). Realigns Goldman Sachs `bb_template_groups` headers to the Agent LP Classification taxonomy (Rated Included, Non-Rated Included, Designated Institutional, Designated PWM, …) |
+
+### Agent vs UBS LP Classification
+
+`Agent LP Classification` is the agent's own category label, extracted verbatim from the Agent BB document — either a column or **group-header rows** that separate sections of LPs. When supplied as section rows, the agent's value is filled down onto every LP beneath the header by pe-sub-extraction. The recognised header texts are configured per agent bank in `bb_template_groups` and passed to the extraction service as `classificationConfig` (built by `ClassificationConfigBuilder`). `UBS LP Classification` is the platform-computed internal advance-rate tier (Rated / Unrated >2bn / Unrated 1–2bn / Eligible / Excluded), kept separate so the agent label can be cross-checked against the UBS tier.
 
 ## Project structure
 

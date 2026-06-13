@@ -47,9 +47,8 @@ class LpRateControllerIntegrationTest extends IntegrationTestBase {
 
         Lp lp = new Lp();
         lp.setFacilityId(facilityId);
-        lp.setRank(1);
-        lp.setName("Monarch Alternative Capital LP");
-        lp.setType("Institutional");
+        lp.setInvestorName("Monarch Alternative Capital LP");
+        lp.setInvType("Institutional");
         lp.setRegion("North America");
         lp.setCls("Rated");
         lpId = lpRepo.save(lp).getId();

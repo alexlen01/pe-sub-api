@@ -51,13 +51,13 @@ public class LpController {
                              @RequestParam(required = false) String search) {
         List<Lp> lps;
         if (facilityId != null && cls != null) {
-            lps = repo.findByFacilityIdAndClsOrderByRankAsc(facilityId, cls);
+            lps = repo.findByFacilityIdAndClsOrderByInvestorNameAsc(facilityId, cls);
         } else if (facilityId != null && search != null) {
-            lps = repo.findByFacilityIdAndNameContainingIgnoreCaseOrderByRankAsc(facilityId, search);
+            lps = repo.findByFacilityIdAndInvestorNameContainingIgnoreCaseOrderByInvestorNameAsc(facilityId, search);
         } else if (facilityId != null) {
-            lps = repo.findByFacilityIdOrderByRankAsc(facilityId);
+            lps = repo.findByFacilityIdOrderByInvestorNameAsc(facilityId);
         } else {
-            lps = repo.findAllByOrderByRankAsc();
+            lps = repo.findAllByOrderByInvestorNameAsc();
         }
         return lps.stream().map(LpDto::from).toList();
     }
@@ -85,8 +85,8 @@ public class LpController {
             lp.setUpdatedAt(LocalDateTime.now());
             Lp saved = repo.save(lp);
             if (body.containsKey("cls") && !Objects.equals(lp.getCls(), prevCls)) {
-                notifier.broadcast(lp.getName() + " reclassified to " + lp.getCls());
-                String detail = lp.getName() + " → " + lp.getCls()
+                notifier.broadcast(lp.getInvestorName() + " reclassified to " + lp.getCls());
+                String detail = lp.getInvestorName() + " → " + lp.getCls()
                     + (prevCls != null ? " (was " + prevCls + ")" : "");
                 auditService.log("LP Reclassified", detail, lp.getFacilityId(),
                     "J. Smith", auditService.extractIp(request));

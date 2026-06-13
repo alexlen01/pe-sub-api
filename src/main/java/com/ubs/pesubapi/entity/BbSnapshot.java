@@ -3,6 +3,7 @@ package com.ubs.pesubapi.entity;
 import com.ubs.pesubapi.dto.BbResult;
 import com.ubs.pesubapi.entity.converter.BbResultConverter;
 import jakarta.persistence.*;
+import org.hibernate.annotations.ColumnTransformer;
 import java.time.LocalDateTime;
 
 @Entity
@@ -24,6 +25,7 @@ public class BbSnapshot {
 
     @Convert(converter = BbResultConverter.class)
     @Column(nullable = false, columnDefinition = "jsonb")
+    @ColumnTransformer(write = "?::jsonb")
     private BbResult result;
 
     @PrePersist

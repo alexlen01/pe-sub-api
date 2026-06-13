@@ -1,7 +1,10 @@
 package com.ubs.pesubapi.controller;
 
 import com.ubs.pesubapi.IntegrationTestBase;
+import com.ubs.pesubapi.repository.AuditLogRepository;
+import com.ubs.pesubapi.repository.BbSnapshotRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
+import com.ubs.pesubapi.repository.LpRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,11 +18,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SuppressWarnings("null")
 class FacilityControllerIntegrationTest extends IntegrationTestBase {
 
-    @Autowired MockMvc mvc;
-    @Autowired FacilityRepository facilityRepo;
+    @Autowired MockMvc             mvc;
+    @Autowired FacilityRepository  facilityRepo;
+    @Autowired LpRepository        lpRepo;
+    @Autowired BbSnapshotRepository snapshotRepo;
+    @Autowired AuditLogRepository  auditLogRepo;
 
     @BeforeEach
     void clean() {
+        // Delete dependents before facilities to satisfy FK constraints.
+        // Order: audit_log → bb_snapshots → lps → facilities
+        auditLogRepo.deleteAll();
+        snapshotRepo.deleteAll();
+        lpRepo.deleteAll();
         facilityRepo.deleteAll();
     }
 

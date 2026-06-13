@@ -159,7 +159,7 @@ public class SubmissionController {
         TemplateHints hints = hintsFor(sub.getAgentBank());
         ExtractionResponse extraction =
             extractionClient.extract(String.valueOf(facilityId), filePath,
-                hints.sheetName(), hints.headerRowIndex());
+                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank());
 
         if (extraction == null) {
             log.warn("Extraction skipped for submission {} — pe-sub-extraction unreachable", sub.getId());
@@ -206,7 +206,7 @@ public class SubmissionController {
                 row.put("id",           seqId++);
                 row.put("rowIndex",     rec.rowIndex());
                 row.put("name",         fieldStr(rec.fields(), "INVESTOR_NAME"));
-                row.put("agentClass",   fieldStr(rec.fields(), "LP_CLASSIFICATION"));
+                row.put("agentClass",   fieldStr(rec.fields(), "AGENT_LP_CLASSIFICATION"));
                 row.put("commit",       fmtMoney(fieldDec(rec.fields(), "COMMITMENT")));
                 row.put("uncalled",     fmtMoney(fieldDec(rec.fields(), "UNCALLED")));
                 row.put("aum",          fmtMoney(fieldDec(rec.fields(), "AUM")));

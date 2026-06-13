@@ -19,13 +19,16 @@ public class ExtractionClientService {
 
     private static final Logger log = LoggerFactory.getLogger(ExtractionClientService.class);
 
-    private final RestClient        extractionClient;
-    private final AliasConfigBuilder aliasConfigBuilder;
+    private final RestClient                 extractionClient;
+    private final AliasConfigBuilder          aliasConfigBuilder;
+    private final ClassificationConfigBuilder classificationConfigBuilder;
 
     public ExtractionClientService(RestClient peSubExtractionClient,
-                                   AliasConfigBuilder aliasConfigBuilder) {
-        this.extractionClient   = peSubExtractionClient;
-        this.aliasConfigBuilder = aliasConfigBuilder;
+                                   AliasConfigBuilder aliasConfigBuilder,
+                                   ClassificationConfigBuilder classificationConfigBuilder) {
+        this.extractionClient            = peSubExtractionClient;
+        this.aliasConfigBuilder          = aliasConfigBuilder;
+        this.classificationConfigBuilder = classificationConfigBuilder;
     }
 
     /**
@@ -33,15 +36,23 @@ public class ExtractionClientService {
      * Passes forward=false so pe-sub-extraction does not re-call pe-sub-api/lps/ingest.
      * Passes aliasConfig (JSON from the DB Field Mapping Dictionary) so HeaderMatcher
      * uses live user-configured aliases instead of its hardcoded fallback map.
+     * Passes classificationConfig (per-agent group-header → Agent LP Classification map)
+     * so the extraction engine can recognise classification section rows.
      *
      * @return ExtractionResponse, or null if pe-sub-extraction is unreachable
      */
     public ExtractionResponse extract(String facilityId, Path filePath) {
-        return extract(facilityId, filePath, null, null);
+        return extract(facilityId, filePath, null, null, null);
     }
 
     public ExtractionResponse extract(String facilityId, Path filePath,
                                       String sheetNameHint, Integer headerRowHint) {
+        return extract(facilityId, filePath, sheetNameHint, headerRowHint, null);
+    }
+
+    public ExtractionResponse extract(String facilityId, Path filePath,
+                                      String sheetNameHint, Integer headerRowHint,
+                                      String agentBank) {
         try {
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             body.add("facilityId", facilityId);
@@ -51,6 +62,9 @@ public class ExtractionClientService {
             if (aliasJson    != null) body.add("aliasConfig",   aliasJson);
             if (sheetNameHint != null) body.add("sheetNameHint", sheetNameHint);
             if (headerRowHint != null) body.add("headerRowHint", String.valueOf(headerRowHint));
+
+            String classificationJson = classificationConfigBuilder.buildJson(agentBank);
+            if (classificationJson != null) body.add("classificationConfig", classificationJson);
 
             return extractionClient.post()
                 .uri("/api/extract?forward=false")

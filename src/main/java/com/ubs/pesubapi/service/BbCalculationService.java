@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -27,9 +28,23 @@ public class BbCalculationService {
         "Excluded",       0.00
     );
 
+    /** Returns the BUSA advance rate for a given LP classification. */
+    public double getRateForCls(String cls) {
+        return BUSA_RATES.getOrDefault(cls, 0.0);
+    }
+
     public BbResult compute(List<Lp> lps, double concLimitM) {
+        // Rank by uncalled capital (uc) descending; 1 = largest uncalled.
+        Map<Integer, Integer> idToRank = new HashMap<>();
+        List<Lp> sortedByUc = lps.stream()
+            .sorted(Comparator.comparingDouble(lp -> -parseMoney(lp.getUc())))
+            .toList();
+        for (int i = 0; i < sortedByUc.size(); i++) {
+            idToRank.put(sortedByUc.get(i).getId(), i + 1);
+        }
+
         List<ComputedLp> computed = lps.stream()
-            .map(lp -> computeOne(lp, concLimitM))
+            .map(lp -> computeOne(lp, concLimitM, idToRank.getOrDefault(lp.getId(), 0)))
             .toList();
 
         List<ComputedLp> included = computed.stream().filter(ComputedLp::inc).toList();
@@ -50,16 +65,25 @@ public class BbCalculationService {
         return new BbResult(computed, summary, detectBreaches(computed, totalUBB));
     }
 
-    private ComputedLp computeOne(Lp lp, double concLimitM) {
-        double busaRate     = BUSA_RATES.getOrDefault(lp.getCls(), 0.0);
-        boolean excluded    = !lp.isInc() || "Excluded".equals(lp.getCls());
-        double ucM          = parseMoney(lp.getUc());
-        double abbM         = parseMoney(lp.getAbb());
-        double uecM         = excluded ? 0 : Math.min(ucM, concLimitM);
-        double concExcessM  = Math.max(0, ucM - uecM);
-        double ubbM         = uecM * busaRate;
-        double deltaM       = ubbM - abbM;
-        return ComputedLp.from(lp, busaRate, uecM, ubbM, abbM, deltaM, concExcessM);
+    private ComputedLp computeOne(Lp lp, double facilityConc, int rank) {
+        double busaRate    = BUSA_RATES.getOrDefault(lp.getCls(), 0.0);
+        boolean excluded   = !lp.isInc() || "Excluded".equals(lp.getCls());
+        double ucM         = parseMoney(lp.getUc());
+        double abbM        = parseMoney(lp.getAbb());
+        // Use per-LP dollar limit stored in ubsConc (e.g. "$25.0M") when present;
+        // fall back to the facility-level concLimitM for LPs without a stored override.
+        double concLimitM  = perLpConc(lp.getUbsConc(), facilityConc);
+        double uecM        = excluded ? 0 : Math.min(ucM, concLimitM);
+        double concExcessM = Math.max(0, ucM - uecM);
+        double ubbM        = uecM * busaRate;
+        double deltaM      = ubbM - abbM;
+        return ComputedLp.from(rank, lp, busaRate, uecM, ubbM, abbM, deltaM, concExcessM);
+    }
+
+    private static double perLpConc(String ubsConc, double facilityConc) {
+        if (ubsConc == null || ubsConc.isBlank() || ubsConc.contains("%")) return facilityConc;
+        double v = parseMoney(ubsConc);
+        return v > 0 ? v : facilityConc;
     }
 
     private List<BbBreach> detectBreaches(List<ComputedLp> lps, double totalUBB) {
@@ -73,7 +97,7 @@ public class BbCalculationService {
             double pct = lp.ubbM() / totalUBB;
             if (pct > 0.15) {
                 breaches.add(new BbBreach("single-lp", "breach",
-                    lp.name() + " exceeds 15% single-LP concentration", pct, 0.15));
+                    lp.investorName() + " exceeds 15% single-LP concentration", pct, 0.15));
             }
         }
 
@@ -102,7 +126,7 @@ public class BbCalculationService {
 
         // Non-US aggregate > 30%
         double nonUsUBB = included.stream()
-            .filter(lp -> !lp.hq())
+            .filter(lp -> !lp.highQty())
             .mapToDouble(ComputedLp::ubbM).sum();
         if (nonUsUBB / totalUBB > 0.30) {
             breaches.add(new BbBreach("non-us", "breach",

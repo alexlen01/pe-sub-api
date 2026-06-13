@@ -4,31 +4,27 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ubs.pesubapi.dto.BbResult;
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
-import org.postgresql.util.PGobject;
 
 @Converter
-public class BbResultConverter implements AttributeConverter<BbResult, Object> {
+public class BbResultConverter implements AttributeConverter<BbResult, String> {
 
     private static final ObjectMapper mapper = new ObjectMapper();
 
     @Override
-    public Object convertToDatabaseColumn(BbResult result) {
+    public String convertToDatabaseColumn(BbResult result) {
         if (result == null) return null;
         try {
-            PGobject pg = new PGobject();
-            pg.setType("jsonb");
-            pg.setValue(mapper.writeValueAsString(result));
-            return pg;
+            return mapper.writeValueAsString(result);
         } catch (Exception e) {
             throw new IllegalArgumentException("Could not serialize BbResult", e);
         }
     }
 
     @Override
-    public BbResult convertToEntityAttribute(Object dbData) {
-        if (dbData == null) return null;
+    public BbResult convertToEntityAttribute(String dbData) {
+        if (dbData == null || dbData.isBlank()) return null;
         try {
-            return mapper.readValue(dbData.toString(), BbResult.class);
+            return mapper.readValue(dbData, BbResult.class);
         } catch (Exception e) {
             throw new IllegalArgumentException("Could not deserialize BbResult", e);
         }

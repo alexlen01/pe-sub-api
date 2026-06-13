@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "lps")
+@Table(name = "lp_records")
 public class Lp {
 
     @Id
@@ -14,22 +14,19 @@ public class Lp {
     @Column(name = "facility_id", nullable = false)
     private Integer facilityId;
 
-    @Column(nullable = false)
-    private Integer rank;
-
-    @Column(nullable = false)
-    private String name;
+    @Column(name = "investor_name", nullable = false)
+    private String investorName;
 
     private String parent;
 
     @Column(nullable = false)
     private boolean spv = false;
 
-    @Column(nullable = false)
-    private boolean hq = true;
+    @Column(name = "high_qty", nullable = false)
+    private boolean highQty = true;
 
-    @Column(nullable = false)
-    private String type;
+    @Column(name = "inv_type", nullable = false)
+    private String invType;
 
     @Column(nullable = false)
     private String region;
@@ -111,70 +108,78 @@ public class Lp {
     void onUpdate() { updatedAt = LocalDateTime.now(); }
 
     // Getters
-    public Integer getId()         { return id; }
-    public Integer getFacilityId() { return facilityId; }
-    public Integer getRank()       { return rank; }
-    public String getName()        { return name; }
-    public String getParent()      { return parent; }
-    public boolean isSpv()         { return spv; }
-    public boolean isHq()          { return hq; }
-    public String getType()        { return type; }
-    public String getRegion()      { return region; }
-    public boolean isIg()          { return ig; }
-    public String getCls()         { return cls; }
-    public String getClsTag()      { return clsTag; }
-    public String getSp()          { return sp; }
-    public String getMdy()         { return mdy; }
-    public String getFitch()       { return fitch; }
-    public String getAum()         { return aum; }
-    public String getNav()         { return nav; }
-    public String getPension()     { return pension; }
-    public String getPensionFunded(){ return pensionFunded; }
-    public String getCapCommit()   { return capCommit; }
-    public String getPctCapCommit(){ return pctCapCommit; }
-    public String getCalledCap()   { return calledCap; }
-    public String getUc()          { return uc; }
-    public String getPctUncalled() { return pctUncalled; }
-    public String getPctCalled()   { return pctCalled; }
-    public String getAgentConc()   { return agentConc; }
-    public String getUbsConc()     { return ubsConc; }
-    public String getAgentRate()   { return agentRate; }
-    public String getAbb()         { return abb; }
-    public boolean isInc()         { return inc; }
-    public boolean isRcl()         { return rcl; }
-    public boolean isTf()          { return tf; }
-    public String getNotes()       { return notes; }
+    public Integer getId()              { return id; }
+    public Integer getFacilityId()      { return facilityId; }
+    public String getInvestorName()     { return investorName; }
+    public String getParent()           { return parent; }
+    public boolean isSpv()              { return spv; }
+    public boolean isHighQty()          { return highQty; }
+    public String getInvType()          { return invType; }
+    public String getRegion()           { return region; }
+    public boolean isIg()               { return ig; }
+    public String getCls()              { return cls; }
+    public String getClsTag()           { return clsTag; }
+    public String getSp()               { return sp; }
+    public String getMdy()              { return mdy; }
+    public String getFitch()            { return fitch; }
+    public String getAum()              { return aum; }
+    public String getNav()              { return nav; }
+    public String getPension()          { return pension; }
+    public String getPensionFunded()    { return pensionFunded; }
+    public String getCapCommit()        { return capCommit; }
+    public String getPctCapCommit()     { return pctCapCommit; }
+    public String getCalledCap()        { return calledCap; }
+    public String getUc()               { return uc; }
+    public String getPctUncalled()      { return pctUncalled; }
+    public String getPctCalled()        { return pctCalled; }
+    public String getAgentConc()        { return agentConc; }
+    public String getUbsConc()          { return ubsConc; }
+    public String getAgentRate()        { return agentRate; }
+    public String getAbb()              { return abb; }
+    public boolean isInc()              { return inc; }
+    public boolean isRcl()              { return rcl; }
+    public boolean isTf()               { return tf; }
+    public String getNotes()            { return notes; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 
     // Setters for creation
-    public void setFacilityId(Integer v)   { this.facilityId = v; }
-    public void setRank(Integer v)         { this.rank = v; }
-    public void setName(String v)          { this.name = v; }
-    public void setType(String v)          { this.type = v; }
-    public void setRegion(String v)        { this.region = v; }
-    public void setParent(String v)        { this.parent = v; }
-    public void setSpv(boolean v)          { this.spv = v; }
-    public void setHq(boolean v)           { this.hq = v; }
-    public void setIg(boolean v)           { this.ig = v; }
-    public void setSp(String v)            { this.sp = v; }
-    public void setMdy(String v)           { this.mdy = v; }
-    public void setFitch(String v)         { this.fitch = v; }
-    public void setTf(boolean v)           { this.tf = v; }
+    public void setFacilityId(Integer v)     { this.facilityId = v; }
+    public void setInvestorName(String v)    { this.investorName = v; }
+    public void setInvType(String v)         { this.invType = v; }
+    public void setRegion(String v)          { this.region = v; }
+    public void setParent(String v)          { this.parent = v; }
+    public void setSpv(boolean v)            { this.spv = v; }
+    public void setHighQty(boolean v)        { this.highQty = v; }
+    public void setIg(boolean v)             { this.ig = v; }
+    public void setSp(String v)              { this.sp = v; }
+    public void setMdy(String v)             { this.mdy = v; }
+    public void setFitch(String v)           { this.fitch = v; }
+    public void setTf(boolean v)             { this.tf = v; }
 
     // Setters for patch
-    public void setCls(String cls)         { this.cls = cls; }
-    public void setClsTag(String clsTag)   { this.clsTag = clsTag; }
-    public void setNotes(String notes)     { this.notes = notes; }
-    public void setAbb(String abb)         { this.abb = abb; }
-    public void setInc(boolean inc)        { this.inc = inc; }
-    public void setRcl(boolean rcl)        { this.rcl = rcl; }
-    public void setUpdatedAt(LocalDateTime t) { this.updatedAt = t; }
+    public void setCls(String cls)           { this.cls = cls; }
+    public void setClsTag(String clsTag)     { this.clsTag = clsTag; }
+    public void setNotes(String notes)       { this.notes = notes; }
+    public void setAbb(String abb)           { this.abb = abb; }
+    public void setInc(boolean inc)          { this.inc = inc; }
+    public void setRcl(boolean rcl)          { this.rcl = rcl; }
+    public void setUpdatedAt(LocalDateTime t){ this.updatedAt = t; }
 
     // Setters for extraction ingest
-    public void setAum(String aum)             { this.aum = aum; }
-    public void setCapCommit(String capCommit) { this.capCommit = capCommit; }
-    public void setUc(String uc)               { this.uc = uc; }
-    public void setAgentRate(String agentRate) { this.agentRate = agentRate; }
-    public void setAgentConc(String agentConc) { this.agentConc = agentConc; }
+    public void setAum(String aum)               { this.aum = aum; }
+    public void setCapCommit(String capCommit)   { this.capCommit = capCommit; }
+    public void setUc(String uc)                 { this.uc = uc; }
+    public void setAgentRate(String agentRate)   { this.agentRate = agentRate; }
+    public void setAgentConc(String agentConc)   { this.agentConc = agentConc; }
+
+    // Setters for Shadow BB commit (full LP Master population)
+    public void setNav(String nav)                     { this.nav = nav; }
+    public void setPension(String pension)             { this.pension = pension; }
+    public void setPensionFunded(String v)             { this.pensionFunded = v; }
+    public void setPctCapCommit(String v)              { this.pctCapCommit = v; }
+    public void setCalledCap(String calledCap)         { this.calledCap = calledCap; }
+    public void setPctUncalled(String v)               { this.pctUncalled = v; }
+    public void setPctCalled(String v)                 { this.pctCalled = v; }
+    public void setUbsConc(String ubsConc)             { this.ubsConc = ubsConc; }
 }

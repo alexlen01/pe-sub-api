@@ -33,8 +33,8 @@ public class LpRateService {
         List<LpRate> rates = rateRepo.findLatestAsOf(asOf);
         if (rates.isEmpty()) return List.of();
 
-        Map<Integer, String> nameById = lpRepo.findAllByOrderByRankAsc().stream()
-            .collect(Collectors.toMap(Lp::getId, Lp::getName));
+        Map<Integer, String> nameById = lpRepo.findAllByOrderByInvestorNameAsc().stream()
+            .collect(Collectors.toMap(Lp::getId, Lp::getInvestorName));
 
         return rates.stream()
             .map(r -> LpRateDto.from(r, nameById.getOrDefault(r.getLpId(), "Unknown")))
@@ -46,9 +46,9 @@ public class LpRateService {
         YearMonth ym = YearMonth.parse(req.effectiveDate());
         LocalDate effectiveDate = ym.atDay(1);
 
-        Map<String, Integer> idByName = lpRepo.findAllByOrderByRankAsc().stream()
+        Map<String, Integer> idByName = lpRepo.findAllByOrderByInvestorNameAsc().stream()
             .collect(Collectors.toMap(
-                lp -> lp.getName().toLowerCase(),
+                lp -> lp.getInvestorName().toLowerCase(),
                 Lp::getId,
                 (a, b) -> a  // keep first on duplicate name
             ));

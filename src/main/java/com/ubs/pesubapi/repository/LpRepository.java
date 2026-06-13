@@ -7,11 +7,11 @@ import org.springframework.data.jpa.repository.Query;
 import java.util.List;
 
 public interface LpRepository extends JpaRepository<Lp, Integer> {
-    List<Lp> findByFacilityIdOrderByRankAsc(Integer facilityId);
-    List<Lp> findByFacilityIdAndClsOrderByRankAsc(Integer facilityId, String cls);
-    List<Lp> findByFacilityIdAndNameContainingIgnoreCaseOrderByRankAsc(Integer facilityId, String name);
-    List<Lp> findAllByOrderByRankAsc();
+    List<Lp> findByFacilityIdOrderByInvestorNameAsc(Integer facilityId);
+    List<Lp> findByFacilityIdAndClsOrderByInvestorNameAsc(Integer facilityId, String cls);
+    List<Lp> findByFacilityIdAndInvestorNameContainingIgnoreCaseOrderByInvestorNameAsc(Integer facilityId, String investorName);
+    List<Lp> findAllByOrderByInvestorNameAsc();
 
-    @Query("SELECT DISTINCT l.name FROM Lp l ORDER BY l.name")
+    @Query("SELECT DISTINCT l.investorName FROM Lp l ORDER BY l.investorName")
     List<String> findAllDistinctNames();
 }

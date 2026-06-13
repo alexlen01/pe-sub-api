@@ -38,12 +38,11 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
         facilityId = facilityRepo.save(f).getId();
     }
 
-    private Lp buildLp(String name, String cls, int rank) {
+    private Lp buildLp(String investorName, String cls) {
         Lp lp = new Lp();
         lp.setFacilityId(facilityId);
-        lp.setRank(rank);
-        lp.setName(name);
-        lp.setType("Pension");
+        lp.setInvestorName(investorName);
+        lp.setInvType("Pension");
         lp.setRegion("US");
         lp.setCls(cls);
         return lp;
@@ -51,29 +50,28 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
 
     @Test
     void listByFacility_returnsRealFieldValues() throws Exception {
-        lpRepo.save(buildLp("Acme Pension Fund", "Rated", 1));
-        lpRepo.save(buildLp("Beta Capital LLC", "Unrated AUM >$2bn", 2));
+        lpRepo.save(buildLp("Acme Pension Fund", "Rated"));
+        lpRepo.save(buildLp("Beta Capital LLC", "Unrated AUM >$2bn"));
 
         mvc.perform(get("/api/lps").param("facilityId", String.valueOf(facilityId)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(2)))
-            .andExpect(jsonPath("$[0].name").value("Acme Pension Fund"))
+            .andExpect(jsonPath("$[0].investorName").value("Acme Pension Fund"))
             .andExpect(jsonPath("$[0].cls").value("Rated"))
             .andExpect(jsonPath("$[0].facilityId").value(facilityId))
-            .andExpect(jsonPath("$[1].name").value("Beta Capital LLC"));
+            .andExpect(jsonPath("$[1].investorName").value("Beta Capital LLC"));
     }
 
     @Test
     void getById_returnsRealFieldValues() throws Exception {
-        Lp saved = lpRepo.save(buildLp("Delta Fund", "Rated", 1));
+        Lp saved = lpRepo.save(buildLp("Delta Fund", "Rated"));
 
         mvc.perform(get("/api/lps/{id}", saved.getId()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(saved.getId()))
-            .andExpect(jsonPath("$.name").value("Delta Fund"))
+            .andExpect(jsonPath("$.investorName").value("Delta Fund"))
             .andExpect(jsonPath("$.cls").value("Rated"))
-            .andExpect(jsonPath("$.facilityId").value(facilityId))
-            .andExpect(jsonPath("$.rank").value(1));
+            .andExpect(jsonPath("$.facilityId").value(facilityId));
     }
 
     @Test
@@ -84,7 +82,7 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
 
     @Test
     void patchLp_updatesClsAndReturnsDto() throws Exception {
-        Lp saved = lpRepo.save(buildLp("Gamma Pension", "Rated", 1));
+        Lp saved = lpRepo.save(buildLp("Gamma Pension", "Rated"));
 
         mvc.perform(patch("/api/lps/{id}", saved.getId())
                 .contentType(MediaType.APPLICATION_JSON)
@@ -94,38 +92,38 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.cls").value("Excluded"))
             .andExpect(jsonPath("$.notes").value("Manually excluded"))
-            .andExpect(jsonPath("$.name").value("Gamma Pension"));
+            .andExpect(jsonPath("$.investorName").value("Gamma Pension"));
     }
 
     @Test
     void listByFacilityAndCls_filtersCorrectly() throws Exception {
-        lpRepo.save(buildLp("Included LP", "Rated", 1));
-        lpRepo.save(buildLp("Excluded LP", "Excluded", 2));
+        lpRepo.save(buildLp("Included LP", "Rated"));
+        lpRepo.save(buildLp("Excluded LP", "Excluded"));
 
         mvc.perform(get("/api/lps")
                 .param("facilityId", String.valueOf(facilityId))
                 .param("cls", "Rated"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(1)))
-            .andExpect(jsonPath("$[0].name").value("Included LP"));
+            .andExpect(jsonPath("$[0].investorName").value("Included LP"));
     }
 
     @Test
     void listByFacilityAndSearch_filtersCorrectly() throws Exception {
-        lpRepo.save(buildLp("Apollo Capital", "Rated", 1));
-        lpRepo.save(buildLp("Beta Partners", "Rated", 2));
+        lpRepo.save(buildLp("Apollo Capital", "Rated"));
+        lpRepo.save(buildLp("Beta Partners", "Rated"));
 
         mvc.perform(get("/api/lps")
                 .param("facilityId", String.valueOf(facilityId))
                 .param("search", "Apollo"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(1)))
-            .andExpect(jsonPath("$[0].name").value("Apollo Capital"));
+            .andExpect(jsonPath("$[0].investorName").value("Apollo Capital"));
     }
 
     @Test
     void listLps_nullDataFields_notHardcodedStrings() throws Exception {
-        Lp lp = buildLp("Sparse LP", "Rated", 1);
+        Lp lp = buildLp("Sparse LP", "Rated");
         lpRepo.save(lp);
 
         mvc.perform(get("/api/lps").param("facilityId", String.valueOf(facilityId)))

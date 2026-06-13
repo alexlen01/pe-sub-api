@@ -34,10 +34,10 @@ public class LpIngestService {
     }
 
     public IngestResult ingest(int submissionId, IngestRequest request) {
-        List<Lp> facilityLps = lpRepo.findByFacilityIdOrderByRankAsc(request.facilityId());
-        List<String> names   = facilityLps.stream().map(Lp::getName).toList();
+        List<Lp> facilityLps = lpRepo.findByFacilityIdOrderByInvestorNameAsc(request.facilityId());
+        List<String> names   = facilityLps.stream().map(Lp::getInvestorName).toList();
         Map<String, Lp> byName = facilityLps.stream()
-            .collect(Collectors.toMap(Lp::getName, lp -> lp, (a, b) -> a));
+            .collect(Collectors.toMap(Lp::getInvestorName, lp -> lp, (a, b) -> a));
 
         List<IngestResult.RecordResult> results = new ArrayList<>();
         int updated = 0, queued = 0, skipped = 0;
@@ -75,17 +75,17 @@ public class LpIngestService {
             if (needsReview) {
                 queued++;
                 List<String> reasons = reviewReasons(row, best);
-                results.add(result(row.rowIndex(), extractedName, lp.getId(), lp.getName(),
+                results.add(result(row.rowIndex(), extractedName, lp.getId(), lp.getInvestorName(),
                     best.score(), "Queued", List.of(), reasons));
                 if (submissionId > 0) {
                     persistQueueEntry(submissionId, request.facilityId(), row.rowIndex(),
-                        extractedName, lp.getId(), lp.getName(), best.score(), reasons);
+                        extractedName, lp.getId(), lp.getInvestorName(), best.score(), reasons);
                 }
             } else {
                 List<String> updatedFields = applyFields(lp, row);
                 lpRepo.save(lp);
                 updated++;
-                results.add(result(row.rowIndex(), extractedName, lp.getId(), lp.getName(),
+                results.add(result(row.rowIndex(), extractedName, lp.getId(), lp.getInvestorName(),
                     best.score(), "Updated", updatedFields, List.of()));
             }
         }

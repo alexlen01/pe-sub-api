@@ -7,12 +7,11 @@ import java.time.LocalDateTime;
 public record LpDto(
     Integer       id,
     Integer       facilityId,
-    Integer       rank,
-    String        name,
+    String        investorName,
     String        parent,
     boolean       spv,
-    boolean       hq,
-    String        type,
+    boolean       highQty,
+    String        invType,
     String        region,
     boolean       ig,
     String        cls,
@@ -43,8 +42,8 @@ public record LpDto(
 ) {
     public static LpDto from(Lp lp) {
         return new LpDto(
-            lp.getId(), lp.getFacilityId(), lp.getRank(), lp.getName(), lp.getParent(),
-            lp.isSpv(), lp.isHq(), lp.getType(), lp.getRegion(), lp.isIg(),
+            lp.getId(), lp.getFacilityId(), lp.getInvestorName(), lp.getParent(),
+            lp.isSpv(), lp.isHighQty(), lp.getInvType(), lp.getRegion(), lp.isIg(),
             lp.getCls(), lp.getClsTag(), lp.getSp(), lp.getMdy(), lp.getFitch(),
             lp.getAum(), lp.getNav(), lp.getPension(), lp.getPensionFunded(),
             lp.getCapCommit(), lp.getPctCapCommit(), lp.getCalledCap(),
