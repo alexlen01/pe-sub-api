@@ -9,9 +9,11 @@ INSERT INTO config (key, value) VALUES ('busa_tiers', '[
 ]');
 
 INSERT INTO config (key, value) VALUES ('agent_tiers', '[
-  {"cls":"Investment Grade", "rate":95},
-  {"cls":"Non-IG Eligible",  "rate":75},
-  {"cls":"Excluded",         "rate":0}
+  {"cls":"Rated",              "rate":90},
+  {"cls":"Unrated AUM >$2bn",  "rate":75},
+  {"cls":"Unrated AUM $1-2bn", "rate":65},
+  {"cls":"Eligible <$1bn",     "rate":50},
+  {"cls":"Excluded",           "rate":0}
 ]');
 
 INSERT INTO config (key, value) VALUES ('agent_rate_params', '[
@@ -83,7 +85,7 @@ INSERT INTO config (key, value) VALUES ('matching_config', '{
 }');
 
 -- ── Field Mapping Dictionary: canonical fields ────────────────────────────────
--- 29 fields across 7 groups.
+-- 30 fields across 7 groups.
 -- is_derived = TRUE: agent-calculated output; captured for display / cross-check
 --                    only; not used as a raw input by the UBS BB engine.
 
@@ -99,24 +101,37 @@ VALUES
       'INVESTOR_NAME', FALSE),
 
   ('Identity & Classification', 1, 2,
-      'LP Classification',
-      'Identity & Classification - LP Classification',
-      'Extract the Agent''s own category label as-is',
-      'LP_CLASSIFICATION', FALSE),
+      'Agent LP Classification',
+      'Identity & Classification - Agent LP Classification',
+      'The agent''s own classification label, taken verbatim from the Agent BB document. '
+          'May appear as a column OR as group-header rows that separate sections of LPs '
+          '(e.g. "Rated Included", "Designated PWM"); when supplied as section rows, the '
+          'value is filled down onto every LP beneath the header. Standard values: Rated '
+          'Included, Non-Rated Included, Designated Institutional, Designated PWM, Largest 5 '
+          'Designated, Aggregate Designated PWM. Do not normalise to the UBS tier.',
+      'AGENT_LP_CLASSIFICATION', FALSE),
 
   ('Identity & Classification', 1, 3,
+      'UBS LP Classification',
+      'Identity & Classification - UBS LP Classification',
+      'UBS internal advance-rate tier computed by the platform (Rated, Unrated >2bn, Unrated 1–2bn, '
+          'Eligible, Excluded). Derived from ratings, AUM, and eligibility — not extracted from the agent '
+          'document. Captured here so the agent label can be cross-checked against the UBS tier.',
+      NULL, TRUE),
+
+  ('Identity & Classification', 1, 4,
       'Transferee',
       'Identity & Classification - Transferee',
       'Y where LP received a transferred commitment; blank otherwise',
       NULL, FALSE),
 
-  ('Identity & Classification', 1, 4,
+  ('Identity & Classification', 1, 5,
       'Parent / Sponsor',
       'Identity & Classification - Parent / Sponsor',
       'Ultimate parent or sponsoring entity of the LP',
       NULL, FALSE),
 
-  ('Identity & Classification', 1, 5,
+  ('Identity & Classification', 1, 6,
       'Eligibility Flag',
       'Identity & Classification - Eligibility Flag',
       'Y/Eligible/Included vs N/Excluded; agent-assigned per-LP; treat as derived — WF template encodes this as a formula column separate from Investor Category',
@@ -192,7 +207,7 @@ VALUES
       NULL, FALSE),
 
   -- ── Group 5: Borrowing Base ──────────────────────────────────────────────────
-  -- Fields 1 is the credit-agreement parameter; fields 2–5 are agent-calculated
+  -- Field 1 is the credit-agreement parameter; fields 2–5 are agent-calculated
   -- outputs captured for display and cross-check against the UBS engine.
 
   ('Borrowing Base', 5, 1,
@@ -290,15 +305,20 @@ INSERT INTO fm_aliases (canonical_field_id, alias_sort, alias_text, tier, bank) 
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Name'), 5, 'Limited Partner',               'Core', NULL),
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Name'), 6, 'Fund Investor',                 'Bank', 'SVB'),
 
-  -- LP Classification
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'LP Classification'), 1, 'LP Type',          'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'LP Classification'), 2, 'Investor Type',    'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'LP Classification'), 3, 'Classification',   'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'LP Classification'), 4, 'Category',         'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'LP Classification'), 5, 'Investor Category','Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'LP Classification'), 6, 'LP Classification','Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'LP Classification'), 7, 'Entity Type',      'Bank', 'BNY'),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'LP Classification'), 8, 'Investor Class',   'Bank', 'JPM'),
+  -- Agent LP Classification
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent LP Classification'), 1, 'LP Type',          'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent LP Classification'), 2, 'Investor Type',    'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent LP Classification'), 3, 'Classification',   'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent LP Classification'), 4, 'Category',         'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent LP Classification'), 5, 'Investor Category','Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent LP Classification'), 6, 'LP Classification','Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent LP Classification'), 7, 'Entity Type',      'Bank', 'BNY'),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent LP Classification'), 8, 'Investor Class',   'Bank', 'JPM'),
+
+  -- UBS LP Classification
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'UBS LP Classification'), 1, 'UBS Classification',      'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'UBS LP Classification'), 2, 'UBS Tier',                'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'UBS LP Classification'), 3, 'Internal Classification', 'Core', NULL),
 
   -- Transferee
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Transferee'), 1, 'Transferee',      'Core', NULL),
@@ -323,12 +343,12 @@ INSERT INTO fm_aliases (canonical_field_id, alias_sort, alias_text, tier, bank) 
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Eligibility Flag'), 2, 'Eligible',    'Bank', 'WF'),
 
   -- Capital Commitments
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 1, 'Capital Commitments',           'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 2, 'Committed Capital',             'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 3, 'Original Commitment',           'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 4, 'Individual Original Commitment', 'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 5, 'Total Commitment',              'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 6, 'Commitment (USD)',              'Bank', 'BNY'),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 1, 'Capital Commitments',            'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 2, 'Committed Capital',              'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 3, 'Original Commitment',            'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 4, 'Individual Original Commitment',  'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 5, 'Total Commitment',               'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 6, 'Commitment (USD)',               'Bank', 'BNY'),
 
   -- % of Capital Commitments
   ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of Capital Commitments'), 1, '% of Capital Commitments', 'Core', NULL),
@@ -358,12 +378,12 @@ INSERT INTO fm_aliases (canonical_field_id, alias_sort, alias_text, tier, bank) 
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Uncalled Capital'), 7, 'Uncalled Capital (USD)',          'Bank', 'BNY'),
 
   -- % of Uncalled Capital
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of Uncalled Capital'), 1, '% of Uncalled Capital',      'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of Uncalled Capital'), 2, '% Uncalled',                 'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of Uncalled Capital'), 3, 'Uncalled %',                 'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of Uncalled Capital'), 4, '% Unfunded',                 'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of Uncalled Capital'), 5, 'Uncalled Ratio',             'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of Uncalled Capital'), 6, '% Total Unfunded Commitment','Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of Uncalled Capital'), 1, '% of Uncalled Capital',       'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of Uncalled Capital'), 2, '% Uncalled',                  'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of Uncalled Capital'), 3, 'Uncalled %',                  'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of Uncalled Capital'), 4, '% Unfunded',                  'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of Uncalled Capital'), 5, 'Uncalled Ratio',              'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of Uncalled Capital'), 6, '% Total Unfunded Commitment', 'Core', NULL),
 
   -- % of LP Called
   ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of LP Called'), 1, '% of LP Called', 'Core', NULL),
@@ -373,17 +393,17 @@ INSERT INTO fm_aliases (canonical_field_id, alias_sort, alias_text, tier, bank) 
   ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of LP Called'), 5, '% Funded',        'Core', NULL),
 
   -- AUM
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'AUM'), 1, 'AUM',                    'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'AUM'), 2, 'Assets Under Management','Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'AUM'), 3, 'Net Assets',              'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'AUM'), 4, 'Net Assets (range)',      'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'AUM'), 5, 'Total AUM',               'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'AUM'), 1, 'AUM',                     'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'AUM'), 2, 'Assets Under Management', 'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'AUM'), 3, 'Net Assets',               'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'AUM'), 4, 'Net Assets (range)',       'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'AUM'), 5, 'Total AUM',                'Core', NULL),
 
   -- NAV
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'NAV'), 1, 'NAV',            'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'NAV'), 2, 'Net Asset Value', 'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'NAV'), 3, 'Fund NAV',        'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'NAV'), 4, 'Total NAV',       'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'NAV'), 1, 'NAV',             'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'NAV'), 2, 'Net Asset Value',  'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'NAV'), 3, 'Fund NAV',         'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'NAV'), 4, 'Total NAV',        'Core', NULL),
 
   -- Pension Assets
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Pension Assets'), 1, 'Pension Assets',      'Core', NULL),
@@ -398,11 +418,11 @@ INSERT INTO fm_aliases (canonical_field_id, alias_sort, alias_text, tier, bank) 
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Pension Funded %'), 4, 'Pension Funded Ratio',  'Core', NULL),
 
   -- Agent Advance Rate
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Advance Rate'), 1, 'Advance Rate',      'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Advance Rate'), 2, 'Agent Advance Rate','Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Advance Rate'), 3, 'Adv. Rate',         'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Advance Rate'), 4, 'Rate',              'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Advance Rate'), 5, 'Applicable Rate',   'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Advance Rate'), 1, 'Advance Rate',       'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Advance Rate'), 2, 'Agent Advance Rate', 'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Advance Rate'), 3, 'Adv. Rate',          'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Advance Rate'), 4, 'Rate',               'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Advance Rate'), 5, 'Applicable Rate',    'Core', NULL),
 
   -- Agent Eligible Commitment
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Eligible Commitment'), 1, 'Eligible Commitment',                                        'Core', NULL),
@@ -420,19 +440,19 @@ INSERT INTO fm_aliases (canonical_field_id, alias_sort, alias_text, tier, bank) 
   ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of Borrowing Base'), 3, 'BB Percentage',       'Core', NULL),
 
   -- Agent Borrowing Base
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Borrowing Base'), 1, 'Agent Borrowing Base',       'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Borrowing Base'), 2, 'Agent BB',                   'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Borrowing Base'), 3, 'Facility BB',                'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Borrowing Base'), 4, 'Agent Base',                 'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Borrowing Base'), 5, 'BB Amount',                  'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Borrowing Base'), 6, 'Borrowing Base Contribution','Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Borrowing Base'), 1, 'Agent Borrowing Base',        'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Borrowing Base'), 2, 'Agent BB',                    'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Borrowing Base'), 3, 'Facility BB',                 'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Borrowing Base'), 4, 'Agent Base',                  'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Borrowing Base'), 5, 'BB Amount',                   'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Borrowing Base'), 6, 'Borrowing Base Contribution', 'Core', NULL),
 
   -- Agent Concentration Limit
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Concentration Limit'), 1, 'Concentration Limit',      'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Concentration Limit'), 2, 'Agent Concentration Limit','Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Concentration Limit'), 3, 'Conc. Limit',              'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Concentration Limit'), 4, 'Excel Concentration',      'Bank', 'BNY'),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Concentration Limit'), 5, 'Max Concentration',        'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Concentration Limit'), 1, 'Concentration Limit',       'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Concentration Limit'), 2, 'Agent Concentration Limit', 'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Concentration Limit'), 3, 'Conc. Limit',               'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Concentration Limit'), 4, 'Excel Concentration',       'Bank', 'BNY'),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Concentration Limit'), 5, 'Max Concentration',         'Core', NULL),
 
   -- Excess Concentration
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Excess Concentration'), 1, 'Excess Concentration', 'Core', NULL),
@@ -440,32 +460,32 @@ INSERT INTO fm_aliases (canonical_field_id, alias_sort, alias_text, tier, bank) 
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Excess Concentration'), 3, 'Concentration Excess', 'Core', NULL),
 
   -- S&P Rating
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'S&P Rating'), 1, 'S&P',              'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'S&P Rating'), 2, 'S&P Rating',       'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'S&P Rating'), 3, 'S&P Credit Rating','Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'S&P Rating'), 4, 'S and P',          'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'S&P Rating'), 5, 'S & P''s Rating',  'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'S&P Rating'), 6, 'S & P',            'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'S&P Rating'), 1, 'S&P',               'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'S&P Rating'), 2, 'S&P Rating',        'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'S&P Rating'), 3, 'S&P Credit Rating', 'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'S&P Rating'), 4, 'S and P',           'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'S&P Rating'), 5, 'S & P''s Rating',   'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'S&P Rating'), 6, 'S & P',             'Core', NULL),
 
   -- Moody's Rating
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Moody''s Rating'), 1, 'Moody''s',        'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Moody''s Rating'), 2, 'Moody''s Rating',  'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Moody''s Rating'), 3, 'Moodys',           'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Moody''s Rating'), 4, 'Applicable Rating','Bank', 'BNY'),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Moody''s Rating'), 1, 'Moody''s',         'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Moody''s Rating'), 2, 'Moody''s Rating',   'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Moody''s Rating'), 3, 'Moodys',            'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Moody''s Rating'), 4, 'Applicable Rating', 'Bank', 'BNY'),
 
   -- Fitch Rating
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fitch Rating'), 1, 'Fitch',              'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fitch Rating'), 2, 'Fitch Rating',       'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fitch Rating'), 3, 'Fitch Credit Rating','Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fitch Rating'), 1, 'Fitch',               'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fitch Rating'), 2, 'Fitch Rating',        'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fitch Rating'), 3, 'Fitch Credit Rating', 'Core', NULL),
 
   -- S&P Numeric Score  (Goldman Sachs)
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'S&P Numeric Score'),     1, 'S&P (numerical ratings scale, 0-9)',      'Bank', 'GS'),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'S&P Numeric Score'),      1, 'S&P (numerical ratings scale, 0-9)',      'Bank', 'GS'),
 
   -- Moody's Numeric Score  (Goldman Sachs)
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Moody''s Numeric Score'),1, 'Moody''s (numerical ratings scale, 0-9)', 'Bank', 'GS'),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Moody''s Numeric Score'), 1, 'Moody''s (numerical ratings scale, 0-9)', 'Bank', 'GS'),
 
   -- Agent Numeric Rating  (Goldman Sachs)
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Numeric Rating'),   1, 'Applicable Rating (numerical ratings scale, 0-9)', 'Bank', 'GS');
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Numeric Rating'),    1, 'Applicable Rating (numerical ratings scale, 0-9)', 'Bank', 'GS');
 
 -- ── Field Mapping Dictionary: blocklist ──────────────────────────────────────
 -- Qualifiers that flag a column as post-processed; blocked from being selected
@@ -516,20 +536,65 @@ FROM   bb_templates
 WHERE  agent_bank IN ('Goldman Sachs Bank USA', 'Silicon Valley Bank', 'Wells Fargo');
 
 -- ── BB template groups: Goldman Sachs LP_GRID group headers ───────────────────
--- T1 layout (top → bottom): Rated → Unrated → Eligible → Excluded.
--- "Eligible Investors" in GS nomenclature = lower-tier unrated LPs that still
--- qualify; maps to the internal "Eligible" cls bucket (~50% advance rate).
--- All subsequent LP rows inherit their group's classification until the next header.
+-- T1 layout (top → bottom): Rated Included → Non-Rated Included →
+-- Designated Institutional → Excluded.
+-- header_text MUST remain the literal text that appears in the agent's grouping
+-- row; only the resolved classification value matters to the extraction service.
 
 INSERT INTO bb_template_groups (tab_id, group_sort, header_text, classification)
 SELECT t.id, g.group_sort, g.header_text, g.classification
 FROM   bb_template_tabs t
 JOIN   bb_templates     tmpl ON tmpl.id = t.template_id
 CROSS JOIN (VALUES
-    (1, 'Rated Investors',    'Rated'),
-    (2, 'Unrated Investors',  'Unrated'),
-    (3, 'Eligible Investors', 'Eligible'),
+    (1, 'Rated Investors',    'Rated Included'),
+    (2, 'Unrated Investors',  'Non-Rated Included'),
+    (3, 'Eligible Investors', 'Designated Institutional'),
     (4, 'Excluded Investors', 'Excluded')
 ) AS g(group_sort, header_text, classification)
 WHERE  tmpl.agent_bank = 'Goldman Sachs Bank USA'
   AND  t.tab_role      = 'LP_GRID';
+
+-- ── LP Rates: simulated feed — effective 2025-01-01 ───────────────────────────
+-- Back-dated to Jan 2025 so findLatestAsOf(asOf) returns these rows for any
+-- test submission with period >= 2025-01. In production this table is populated
+-- by the monthly BATCH_FEED; source = 'SIMULATED' marks these rows.
+--
+-- ubs_adv_rate_pct  : decimal fraction (0.9000 = 90%)
+-- ubs_conc_limit_pct: per-LP cap as fraction of total eligible uncalled
+--   Rated          → 15.00%  (full single-LP cap; highest-quality counterparties)
+--   Unrated >$2bn  → 12.50%  (large unrated; modest haircut vs rated)
+--   Unrated $1–2bn → 10.00%  (mid-tier unrated)
+--   Eligible <$1bn →  7.50%  (small qualifying LPs; standard minimum)
+--   Excluded       →  0.00%  (ineligible; no BB credit)
+
+INSERT INTO lp_rates (
+    lp_id,
+    effective_date,
+    classification,
+    ubs_adv_rate_pct,
+    ubs_conc_limit_pct,
+    source
+)
+SELECT
+    id,
+    '2025-01-01'::DATE,
+    cls,
+    CASE cls
+        WHEN 'Rated'          THEN 0.9000
+        WHEN 'Unrated >2bn'   THEN 0.7500
+        WHEN 'Unrated 1–2bn'  THEN 0.6500
+        WHEN 'Eligible'       THEN 0.5000
+        WHEN 'Excluded'       THEN 0.0000
+        ELSE                       0.5000
+    END,
+    CASE cls
+        WHEN 'Rated'          THEN 0.1500
+        WHEN 'Unrated >2bn'   THEN 0.1250
+        WHEN 'Unrated 1–2bn'  THEN 0.1000
+        WHEN 'Eligible'       THEN 0.0750
+        WHEN 'Excluded'       THEN 0.0000
+        ELSE                       0.0750
+    END,
+    'SIMULATED'
+FROM lp_records
+ON CONFLICT (lp_id, effective_date) DO NOTHING;

@@ -19,15 +19,15 @@ CREATE TABLE facilities (
     updated_at   TIMESTAMP      NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE lps (
+-- Rank is dynamically assigned by Shadow BB (sorted by uncalled capital desc).
+CREATE TABLE lp_records (
     id             SERIAL PRIMARY KEY,
     facility_id    INTEGER      NOT NULL REFERENCES facilities(id),
-    rank           INTEGER      NOT NULL,
-    name           VARCHAR(255) NOT NULL,
+    investor_name  VARCHAR(255) NOT NULL,
     parent         VARCHAR(255),
     spv            BOOLEAN      NOT NULL DEFAULT FALSE,
-    hq             BOOLEAN      NOT NULL DEFAULT TRUE,
-    type           VARCHAR(50)  NOT NULL,
+    high_qty       BOOLEAN      NOT NULL DEFAULT TRUE,
+    inv_type       VARCHAR(50)  NOT NULL,
     region         VARCHAR(100) NOT NULL,
     ig             BOOLEAN      NOT NULL DEFAULT FALSE,
     cls            VARCHAR(50)  NOT NULL,
@@ -71,18 +71,27 @@ CREATE TABLE config (
     updated_at TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 
+-- wizard_step mirrors the 1-indexed WIZARD_STEPS array in the UI:
+--   1 = Select Facility / Upload (default; also set when extraction fails with status='Error')
+--   2 = Upload Document — transient; extraction runs inline so submissions jump directly to 3
+--   3 = Review Extraction (status='Review'; awaiting credit officer action)
+--   4 = Review Matches   (after POST /{id}/confirm)
+--   5 = LP Classification & Rate Assignment (after PATCH /{id}/shadow-bb-state)
+-- shadow_bb_overrides: JSONB map of LP key → {cls, rate} overrides committed on Step 5
 CREATE TABLE submissions (
-    id           SERIAL PRIMARY KEY,
-    facility_id  INTEGER      NOT NULL REFERENCES facilities(id),
-    agent_bank   VARCHAR(255) NOT NULL,
-    period_month VARCHAR(20)  NOT NULL,
-    status       VARCHAR(50)  NOT NULL DEFAULT 'Processing',
-    file_name    VARCHAR(255) NOT NULL,
-    file_path    VARCHAR(512),
-    uploaded_by  INTEGER REFERENCES users(id),
-    notes        TEXT,
-    created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at   TIMESTAMP NOT NULL DEFAULT NOW()
+    id                  SERIAL PRIMARY KEY,
+    facility_id         INTEGER      NOT NULL REFERENCES facilities(id),
+    agent_bank          VARCHAR(255) NOT NULL,
+    period_month        VARCHAR(20)  NOT NULL,
+    status              VARCHAR(50)  NOT NULL DEFAULT 'Processing',
+    file_name           VARCHAR(255) NOT NULL,
+    file_path           VARCHAR(512),
+    uploaded_by         INTEGER REFERENCES users(id),
+    notes               TEXT,
+    wizard_step         INTEGER      NOT NULL DEFAULT 1,
+    shadow_bb_overrides JSONB,
+    created_at          TIMESTAMP    NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE audit_log (
@@ -97,6 +106,27 @@ CREATE TABLE audit_log (
 );
 
 CREATE INDEX idx_audit_log_created_at ON audit_log(created_at DESC);
+
+-- ── LP Rates feed ──────────────────────────────────────────────────────────────
+-- Populated by a batch ingestion process when the rates file arrives (typically monthly).
+-- Stores one row per LP per effective period; the most recent row on or before the
+-- submission date is used by the Run Shadow BB calculation.
+-- Rates are stored as decimals (0.9000 = 90%, 0.0750 = 7.5%) — NOT formatted strings.
+
+CREATE TABLE lp_rates (
+    id                  SERIAL        PRIMARY KEY,
+    lp_id               INTEGER       NOT NULL REFERENCES lp_records(id) ON DELETE CASCADE,
+    effective_date      DATE          NOT NULL,
+    classification      VARCHAR(50)   NOT NULL,
+    ubs_adv_rate_pct    NUMERIC(7,4)  NOT NULL,
+    ubs_conc_limit_pct  NUMERIC(7,4)  NOT NULL,
+    source              VARCHAR(50)   NOT NULL DEFAULT 'BATCH_FEED',
+    created_at          TIMESTAMP     NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_lp_rates_lp_date UNIQUE (lp_id, effective_date)
+);
+
+CREATE INDEX idx_lp_rates_effective_date ON lp_rates (effective_date);
+CREATE INDEX idx_lp_rates_lp_id          ON lp_rates (lp_id);
 
 -- ── Extraction & match-queue tables ───────────────────────────────────────────
 
@@ -123,7 +153,7 @@ CREATE TABLE match_queue_entries (
     facility_id          INTEGER NOT NULL REFERENCES facilities(id),
     row_index            INTEGER NOT NULL,
     extracted_name       VARCHAR(255),
-    matched_lp_id        INTEGER REFERENCES lps(id),
+    matched_lp_id        INTEGER REFERENCES lp_records(id),
     matched_lp_name      VARCHAR(255),
     match_score          INTEGER,
     decision             VARCHAR(50) NOT NULL DEFAULT 'pending',
@@ -195,19 +225,19 @@ CREATE TABLE fm_suggestions (
 --   inherited LP Classification for all LP rows beneath them.
 
 CREATE TABLE bb_templates (
-    id                       SERIAL PRIMARY KEY,
-    agent_bank               VARCHAR(255) NOT NULL,
+    id                        SERIAL PRIMARY KEY,
+    agent_bank                VARCHAR(255) NOT NULL,
     -- sheet_name / header_row_index kept as a single-tab shortcut; superseded by
     -- bb_template_tabs for multi-tab workbooks.
-    sheet_name               VARCHAR(255),
-    header_row_index         INTEGER,
-    auto_learned             BOOLEAN      NOT NULL DEFAULT TRUE,
-    tranche_count            INTEGER      NOT NULL DEFAULT 1,
-    has_grouping_rows        BOOLEAN      NOT NULL DEFAULT FALSE,
-    has_color_flags          BOOLEAN      NOT NULL DEFAULT FALSE,
-    summary_rows_above_header INTEGER     NOT NULL DEFAULT 0,
-    created_at               TIMESTAMP    NOT NULL DEFAULT NOW(),
-    updated_at               TIMESTAMP    NOT NULL DEFAULT NOW()
+    sheet_name                VARCHAR(255),
+    header_row_index          INTEGER,
+    auto_learned              BOOLEAN      NOT NULL DEFAULT TRUE,
+    tranche_count             INTEGER      NOT NULL DEFAULT 1,
+    has_grouping_rows         BOOLEAN      NOT NULL DEFAULT FALSE,
+    has_color_flags           BOOLEAN      NOT NULL DEFAULT FALSE,
+    summary_rows_above_header INTEGER      NOT NULL DEFAULT 0,
+    created_at                TIMESTAMP    NOT NULL DEFAULT NOW(),
+    updated_at                TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 
 CREATE UNIQUE INDEX idx_bb_templates_agent_bank ON bb_templates (LOWER(agent_bank));
@@ -222,15 +252,15 @@ CREATE UNIQUE INDEX idx_bb_templates_agent_bank ON bb_templates (LOWER(agent_ban
 --   are discarded before LP parsing. Default covers most agent templates; override per tab.
 
 CREATE TABLE bb_template_tabs (
-    id               SERIAL PRIMARY KEY,
-    template_id      INTEGER      NOT NULL REFERENCES bb_templates(id) ON DELETE CASCADE,
-    tab_role         VARCHAR(50)  NOT NULL,
-    tab_sort         INTEGER      NOT NULL DEFAULT 1,
-    sheet_name       VARCHAR(255),
-    header_row_index INTEGER,
-    skip_row_keywords JSONB       NOT NULL
+    id                SERIAL PRIMARY KEY,
+    template_id       INTEGER      NOT NULL REFERENCES bb_templates(id) ON DELETE CASCADE,
+    tab_role          VARCHAR(50)  NOT NULL,
+    tab_sort          INTEGER      NOT NULL DEFAULT 1,
+    sheet_name        VARCHAR(255),
+    header_row_index  INTEGER,
+    skip_row_keywords JSONB        NOT NULL
         DEFAULT '["Total","Subtotal","Sub-Total","Grand Total","Sum","Net Total"]',
-    created_at       TIMESTAMP    NOT NULL DEFAULT NOW(),
+    created_at        TIMESTAMP    NOT NULL DEFAULT NOW(),
 
     CONSTRAINT uq_template_tab_role UNIQUE (template_id, tab_role),
     CONSTRAINT chk_tab_role CHECK (tab_role IN ('LP_GRID','CONCENTRATION','CAPITAL_CALL','TOP_SHEET'))
