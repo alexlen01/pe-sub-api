@@ -12,6 +12,12 @@ public interface LpRepository extends JpaRepository<Lp, Integer> {
     List<Lp> findByFacilityIdAndInvestorNameContainingIgnoreCaseOrderByInvestorNameAsc(Integer facilityId, String investorName);
     List<Lp> findAllByOrderByInvestorNameAsc();
 
+    long countByFacilityId(Integer facilityId);
+
+    /** LP record counts per facility — [facilityId, count] rows — for the facility list. */
+    @Query("SELECT l.facilityId, COUNT(l) FROM Lp l GROUP BY l.facilityId")
+    List<Object[]> countGroupedByFacilityId();
+
     @Query("SELECT DISTINCT l.investorName FROM Lp l ORDER BY l.investorName")
     List<String> findAllDistinctNames();
 }

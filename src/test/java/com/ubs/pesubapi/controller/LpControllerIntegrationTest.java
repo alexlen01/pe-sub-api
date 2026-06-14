@@ -4,14 +4,19 @@ import com.ubs.pesubapi.IntegrationTestBase;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.entity.Lp;
 import com.ubs.pesubapi.repository.AuditLogRepository;
+import com.ubs.pesubapi.repository.BbSnapshotRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
+import com.ubs.pesubapi.repository.LpRateRepository;
 import com.ubs.pesubapi.repository.LpRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -21,13 +26,17 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
 
     @Autowired MockMvc mvc;
     @Autowired LpRepository lpRepo;
+    @Autowired LpRateRepository rateRepo;
     @Autowired FacilityRepository facilityRepo;
     @Autowired AuditLogRepository auditLogRepo;
+    @Autowired BbSnapshotRepository snapshotRepo;
 
     private int facilityId;
 
     @BeforeEach
     void setup() {
+        snapshotRepo.deleteAll();
+        rateRepo.deleteAll();
         lpRepo.deleteAll();
         auditLogRepo.deleteAll();
         facilityRepo.deleteAll();
@@ -56,10 +65,10 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
         mvc.perform(get("/api/lps").param("facilityId", String.valueOf(facilityId)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(2)))
-            .andExpect(jsonPath("$[0].investorName").value("Acme Pension Fund"))
+            .andExpect(jsonPath("$[0].name").value("Acme Pension Fund"))
             .andExpect(jsonPath("$[0].cls").value("Rated"))
             .andExpect(jsonPath("$[0].facilityId").value(facilityId))
-            .andExpect(jsonPath("$[1].investorName").value("Beta Capital LLC"));
+            .andExpect(jsonPath("$[1].name").value("Beta Capital LLC"));
     }
 
     @Test
@@ -69,7 +78,7 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
         mvc.perform(get("/api/lps/{id}", saved.getId()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(saved.getId()))
-            .andExpect(jsonPath("$.investorName").value("Delta Fund"))
+            .andExpect(jsonPath("$.name").value("Delta Fund"))
             .andExpect(jsonPath("$.cls").value("Rated"))
             .andExpect(jsonPath("$.facilityId").value(facilityId));
     }
@@ -92,7 +101,7 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.cls").value("Excluded"))
             .andExpect(jsonPath("$.notes").value("Manually excluded"))
-            .andExpect(jsonPath("$.investorName").value("Gamma Pension"));
+            .andExpect(jsonPath("$.name").value("Gamma Pension"));
     }
 
     @Test
@@ -105,7 +114,7 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
                 .param("cls", "Rated"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(1)))
-            .andExpect(jsonPath("$[0].investorName").value("Included LP"));
+            .andExpect(jsonPath("$[0].name").value("Included LP"));
     }
 
     @Test
@@ -118,7 +127,7 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
                 .param("search", "Apollo"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(1)))
-            .andExpect(jsonPath("$[0].investorName").value("Apollo Capital"));
+            .andExpect(jsonPath("$[0].name").value("Apollo Capital"));
     }
 
     @Test
@@ -131,5 +140,73 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$[0].aum").doesNotExist())
             .andExpect(jsonPath("$[0].uc").doesNotExist())
             .andExpect(jsonPath("$[0].capCommit").doesNotExist());
+    }
+
+    // ── Batch classification save (Shadow BB "Save") ────────────────────────────────
+
+    @Test
+    void patchClassification_updatesLpRecordAndUpsertsRate() throws Exception {
+        Lp saved = lpRepo.save(buildLp("Monarch Capital LP", "Eligible"));
+
+        mvc.perform(patch("/api/lps/classification")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "facilityId": %d,
+                      "effectiveDate": "2026-06",
+                      "rows": [{
+                        "name": "Monarch Capital LP",
+                        "cls": "Rated", "sp": "AA", "mdy": "Aa2", "fitch": "AA",
+                        "inc": true, "uc": "$12.0M",
+                        "ubsAdvRatePct": 90.0, "ubsConcLimitPct": 7.5
+                      }]
+                    }
+                    """.formatted(facilityId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.updated").value(1));
+
+        // LP entity fields updated in place
+        mvc.perform(get("/api/lps/{id}", saved.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.cls").value("Rated"))
+            .andExpect(jsonPath("$.sp").value("AA"))
+            .andExpect(jsonPath("$.uc").value("$12.0M"))
+            .andExpect(jsonPath("$.inc").value(true));
+
+        // Advance rate + conc limit upserted into lp_rates as decimal fractions
+        mvc.perform(get("/api/lps/rates").param("effective_date", "2026-06"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].lpName").value("Monarch Capital LP"))
+            .andExpect(jsonPath("$[0].ubsAdvRatePct").value(closeTo(0.9, 0.0001)))
+            .andExpect(jsonPath("$[0].ubsConcLimitPct").value(closeTo(0.075, 0.0001)));
+    }
+
+    @Test
+    void patchClassification_unmatchedNameIgnored_returnsZero() throws Exception {
+        lpRepo.save(buildLp("Real LP", "Eligible"));
+
+        mvc.perform(patch("/api/lps/classification")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "facilityId": %d,
+                      "rows": [{ "name": "Ghost LP That Does Not Exist", "cls": "Rated" }]
+                    }
+                    """.formatted(facilityId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.updated").value(0));
+    }
+
+    // ── Dedup: one record per (facility, investor name) ─────────────────────────────
+
+    @Test
+    void duplicateInvestorNameInFacility_violatesUniqueConstraint() {
+        lpRepo.saveAndFlush(buildLp("Acme Pension Fund", "Rated"));
+
+        assertThatThrownBy(() ->
+            lpRepo.saveAndFlush(buildLp("Acme Pension Fund", "Eligible")))
+            .isInstanceOf(DataIntegrityViolationException.class);
+
+        assertThat(lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)).hasSize(1);
     }
 }

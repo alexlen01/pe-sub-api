@@ -79,6 +79,8 @@ Full OpenAPI spec: `pe-sub-docs/openapi.yaml`.
 | `POST` | `/api/facilities` | Create a facility (`name`, `agentBank`) |
 | `PATCH` | `/api/facilities/{id}/status` | Update facility status |
 
+Each facility DTO includes `lpCount` — the number of LP records persisted for that facility (computed live from `lp_records`, `0` when none). Drives the LP-count shown on the LP Master facility cards.
+
 ### LPs — `/api/lps`
 
 | Method | Path | Description |
@@ -86,7 +88,36 @@ Full OpenAPI spec: `pe-sub-docs/openapi.yaml`.
 | `GET` | `/api/lps` | List LPs — filter by `facilityId`, `cls`, or `search` |
 | `GET` | `/api/lps/{id}` | Get a single LP |
 | `PATCH` | `/api/lps/{id}` | Update LP fields: `cls`, `clsTag`, `abb`, `inc`, `rcl`, `notes` |
+| `PATCH` | `/api/lps/classification` | Batch-save classification & rate edits from the Shadow BB screen onto persisted LP records |
 | `POST` | `/api/lps/ingest` | Ingest extracted LP records from pe-sub-extraction |
+
+> **One LP record per `(facility_id, investor_name)`.** A `UNIQUE` constraint (migration `V1_3`)
+> enforces that an investor appears at most once per facility. The same investor may exist in
+> multiple facilities (one row each); re-submitting the same Agent BB updates the existing rows
+> in place rather than creating duplicates. All write paths (`ingest`, commit-on-decision,
+> `bb/run` upsert) key on `(facility_id, investor_name)` and dedupe incoming rows by name.
+
+#### `PATCH /api/lps/classification`
+
+The "Save" action on the **LP Classification & Rate Assignment** screen. LP records are created
+up front when the analyst commits match decisions (step 4 → 5), so this writes the credit officer's
+edits onto **real** LP Master records — not a draft blob. Request:
+
+```json
+{
+  "facilityId": 12,
+  "effectiveDate": "2026-06",
+  "rows": [
+    { "name": "CalPERS", "cls": "Rated", "sp": "AAA", "inc": true,
+      "uc": "$20.0M", "ubsAdvRatePct": 90.0, "ubsConcLimitPct": 7.5 }
+  ]
+}
+```
+
+Rows are matched to existing records by `(facilityId, name)`; unmatched names are ignored. LP entity
+fields (`cls`, `sp`, `mdy`, `fitch`, `inc`, `uc`) update in place; `ubsAdvRatePct` / `ubsConcLimitPct`
+(percentages) upsert into `lp_rates` for the period as decimal fractions. `effectiveDate` (`YYYY-MM`)
+defaults to the current month. Returns `{ "updated": <count> }`.
 
 #### `POST /api/lps/ingest`
 

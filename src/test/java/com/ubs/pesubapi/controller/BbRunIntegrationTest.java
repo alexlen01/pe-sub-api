@@ -71,9 +71,9 @@ class BbRunIntegrationTest extends IntegrationTestBase {
         String body = """
             {
               "lps": [{
-                "investorName": "CalPERS",
-                "parent": null, "spv": false, "highQty": true,
-                "invType": "Institutional", "region": "North America",
+                "name": "CalPERS",
+                "parent": null, "spv": false, "hq": true,
+                "type": "Institutional", "region": "North America",
                 "ig": true, "cls": "Rated",
                 "sp": "AAA", "mdy": "Aaa", "fitch": "",
                 "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
@@ -114,6 +114,54 @@ class BbRunIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isCreated());
 
         assertThat(lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)).hasSize(3);
+    }
+
+    @Test
+    void run_collapsesDuplicateNamesWithinPayload() throws Exception {
+        // The same investor name appears twice in one payload (e.g. a doubled Agent BB).
+        // It must collapse onto a single record — last value wins — not violate the
+        // (facility_id, investor_name) unique constraint.
+        String body = """
+            {
+              "lps": [
+                {
+                  "name": "CalPERS",
+                  "parent": null, "spv": false, "hq": true,
+                  "type": "Institutional", "region": "North America",
+                  "ig": true, "cls": "Rated",
+                  "sp": "AAA", "mdy": "Aaa", "fitch": "",
+                  "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
+                  "capCommit": "$20.0M", "pctCapCommit": null, "calledCap": null,
+                  "uc": "$20.0M", "pctUncalled": null, "pctCalled": null,
+                  "agentConc": null, "ubsConc": "$25.0M",
+                  "agentRate": "95.0%%", "abb": "$19.0M",
+                  "inc": true, "rcl": false, "notes": null
+                },
+                {
+                  "name": "CalPERS",
+                  "parent": null, "spv": false, "hq": true,
+                  "type": "Institutional", "region": "North America",
+                  "ig": true, "cls": "Excluded",
+                  "sp": "AAA", "mdy": "Aaa", "fitch": "",
+                  "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
+                  "capCommit": "$30.0M", "pctCapCommit": null, "calledCap": null,
+                  "uc": "$30.0M", "pctUncalled": null, "pctCalled": null,
+                  "agentConc": null, "ubsConc": "$25.0M",
+                  "agentRate": "0%%", "abb": "$0",
+                  "inc": false, "rcl": false, "notes": null
+                }
+              ]
+            }
+            """;
+
+        mvc.perform(post("/api/bb/run/{id}", facilityId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+            .andExpect(status().isCreated());
+
+        var lps = lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId);
+        assertThat(lps).hasSize(1);
+        assertThat(lps.getFirst().getCls()).isEqualTo("Excluded");   // last value wins
     }
 
     @Test
@@ -185,9 +233,9 @@ class BbRunIntegrationTest extends IntegrationTestBase {
         String body = """
             {
               "lps": [{
-                "investorName": "Ontario Teachers",
-                "parent": null, "spv": false, "highQty": true,
-                "invType": "Institutional", "region": "North America",
+                "name": "Ontario Teachers",
+                "parent": null, "spv": false, "hq": true,
+                "type": "Institutional", "region": "North America",
                 "ig": true, "cls": "Rated",
                 "sp": "AA", "mdy": "Aa2", "fitch": "",
                 "aum": "$200.0B", "nav": null, "pension": null, "pensionFunded": null,
@@ -216,9 +264,9 @@ class BbRunIntegrationTest extends IntegrationTestBase {
             {
               "lps": [
                 {
-                  "investorName": "CalPERS",
-                  "parent": null, "spv": false, "highQty": true,
-                  "invType": "Institutional", "region": "North America",
+                  "name": "CalPERS",
+                  "parent": null, "spv": false, "hq": true,
+                  "type": "Institutional", "region": "North America",
                   "ig": true, "cls": "Rated",
                   "sp": "AAA", "mdy": "Aaa", "fitch": "",
                   "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
@@ -229,9 +277,9 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                   "inc": true, "rcl": false, "notes": null
                 },
                 {
-                  "investorName": "Stanford Endowment",
-                  "parent": null, "spv": false, "highQty": true,
-                  "invType": "Institutional", "region": "North America",
+                  "name": "Stanford Endowment",
+                  "parent": null, "spv": false, "hq": true,
+                  "type": "Institutional", "region": "North America",
                   "ig": false, "cls": "Unrated >2bn",
                   "sp": "", "mdy": "", "fitch": "",
                   "aum": "$40.0B", "nav": null, "pension": null, "pensionFunded": null,
@@ -242,9 +290,9 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                   "inc": true, "rcl": false, "notes": null
                 },
                 {
-                  "investorName": "Tiny Fund LLC",
-                  "parent": null, "spv": true, "highQty": false,
-                  "invType": "HNW", "region": "Europe",
+                  "name": "Tiny Fund LLC",
+                  "parent": null, "spv": true, "hq": false,
+                  "type": "HNW", "region": "Europe",
                   "ig": false, "cls": "Excluded",
                   "sp": "", "mdy": "", "fitch": "",
                   "aum": null, "nav": null, "pension": null, "pensionFunded": null,

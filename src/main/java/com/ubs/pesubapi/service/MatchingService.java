@@ -29,47 +29,187 @@ public class MatchingService {
     public record MatchCandidate(String name, int score, String action) {}
     public record MatchTestResult(String input, String normalised, List<MatchCandidate> matches) {}
 
+    /**
+     * The full master candidate list, indexed once so it can be reused across every row of
+     * an upload (and across threads — it is immutable and read-only after construction).
+     * Three structures make the per-row match fast without dropping any candidate from
+     * consideration:
+     * <ul>
+     *   <li><b>exact</b> — normalised name → first original (list order). An incoming row
+     *       whose name already exists verbatim in master (e.g. the same Agent BB uploaded
+     *       again) resolves in O(1) with score 100, skipping all fuzzy scoring.</li>
+     *   <li><b>lengthOrder / lengthOf</b> — candidate indices sorted by normalised length,
+     *       enabling a length-band prefilter. Given the configured weights and the review
+     *       threshold, a candidate whose length differs too far from the input cannot reach
+     *       that threshold even with a perfect Jaro-Winkler score, so it can be skipped
+     *       without changing any Accept/Queue/Reject decision (see {@link #lengthBand}).</li>
+     * </ul>
+     */
+    public static final class Prepared {
+        private final Config                cfg;
+        private final List<NormalizedName>  candidates;
+        private final Map<String, String>   exact;       // normalized → first original (list order)
+        private final int[]                 lengthOrder; // candidate indices, sorted by normalised length
+        private final int[]                 lengthOf;    // normalised length, parallel to lengthOrder
+        private final double                bandFactor;  // (1 - levMin); <= 0 disables length banding
+
+        private Prepared(Config cfg, List<NormalizedName> candidates) {
+            this.cfg        = cfg;
+            this.candidates = candidates;
+
+            Map<String, String> exactMap = new HashMap<>(candidates.size() * 2);
+            Integer[] order = new Integer[candidates.size()];
+            for (int i = 0; i < candidates.size(); i++) {
+                order[i] = i;
+                exactMap.putIfAbsent(candidates.get(i).normalized(), candidates.get(i).original());
+            }
+            this.exact = exactMap;
+
+            Arrays.sort(order, Comparator.comparingInt(i -> candidates.get(i).normalized().length()));
+            this.lengthOrder = new int[order.length];
+            this.lengthOf    = new int[order.length];
+            for (int k = 0; k < order.length; k++) {
+                lengthOrder[k] = order[k];
+                lengthOf[k]    = candidates.get(order[k]).normalized().length();
+            }
+
+            // Max achievable score given a candidate's lev similarity is jwWeight·1 + levWeight·lev.
+            // To possibly reach the review threshold T, lev ≥ (T - jwWeight) / levWeight = levMin.
+            // lev = 1 - editDist/maxLen, and editDist ≥ |Δlen|, so |Δlen| ≤ (1 - levMin)·maxLen.
+            double t      = cfg.reviewQueue() / 100.0;
+            double levMin = cfg.levWeight() > 0 ? (t - cfg.jwWeight()) / cfg.levWeight() : 0.0;
+            this.bandFactor = (cfg.levWeight() > 0 && levMin > 0.0) ? (1.0 - levMin) : 0.0;
+        }
+
+        /** Candidate indices whose length could clear the review threshold for an input of {@code len}. */
+        private int[] lengthBand(int len) {
+            if (bandFactor <= 0.0 || bandFactor >= 1.0) {            // no safe pruning possible
+                return lengthOrder;
+            }
+            int lo = (int) Math.floor((1.0 - bandFactor) * len);     // b ≥ (1 - band)·a
+            int hi = (int) Math.ceil(len / (1.0 - bandFactor));      // b ≤ a / (1 - band)
+            int from = lowerBound(lengthOf, lo);
+            int to   = upperBound(lengthOf, hi);
+            return Arrays.copyOfRange(lengthOrder, from, to);
+        }
+    }
+
+    private record NormalizedName(String original, String normalized) {}
+
     // ── Public API ────────────────────────────────────────────────────────────
+
+    /** Parse config and index the candidate list once for reuse via {@link #matchBest}. */
+    public Prepared prepare(List<String> candidates) {
+        Config cfg = parseConfig();
+        return new Prepared(cfg, normalizeAll(candidates, cfg));
+    }
+
+    /** Best candidate for {@code name} against a previously {@link #prepare}d list. */
+    public MatchCandidate matchBest(String name, Prepared prepared) {
+        if (prepared.candidates.isEmpty()) return null;
+        String norm = normalize(name, prepared.cfg);
+
+        // Fast path: identical name already in master — score 100, no fuzzy scoring.
+        String exactHit = prepared.exact.get(norm);
+        if (exactHit != null) return new MatchCandidate(exactHit, 100, action(100, prepared.cfg));
+
+        // Fuzzy path: score only the length-band survivors. Pruned candidates cannot reach
+        // the review threshold, so Accept/Queue decisions and matched names are unchanged.
+        return scan(norm, prepared, prepared.lengthBand(norm.length()));
+    }
 
     public MatchCandidate matchBestInList(String name, List<String> candidates) {
         if (candidates.isEmpty()) return null;
-        Config cfg  = parseConfig();
-        String norm = normalize(name, cfg);
-        return candidates.stream()
-            .map(candidate -> {
-                int    s      = score(norm, normalize(candidate, cfg), cfg);
-                String action = s >= cfg.autoAccept() ? "Accept" : s >= cfg.reviewQueue() ? "Queue" : "Reject";
-                return new MatchCandidate(candidate, s, action);
-            })
-            .max(Comparator.comparingInt(MatchCandidate::score))
-            .orElse(null);
+        return matchBest(name, prepare(candidates));
+    }
+
+    private List<NormalizedName> normalizeAll(List<String> names, Config cfg) {
+        List<NormalizedName> out = new ArrayList<>(names.size());
+        for (String n : names) out.add(new NormalizedName(n, normalize(n, cfg)));
+        return out;
+    }
+
+    /**
+     * Score {@code norm} against the candidates at {@code indices}, keeping the highest score and,
+     * on ties, the lowest candidate index — i.e. the earliest in the original master-list order,
+     * matching a sequential full scan's tie-break.
+     */
+    private MatchCandidate scan(String norm, Prepared p, int[] indices) {
+        int bestScore = -1, bestIdx = -1;
+        for (int idx : indices) {
+            int s = score(norm, p.candidates.get(idx).normalized(), p.cfg);
+            if (s > bestScore || (s == bestScore && idx < bestIdx)) {
+                bestScore = s;
+                bestIdx   = idx;
+            }
+        }
+        if (bestIdx < 0) return null;
+        return new MatchCandidate(p.candidates.get(bestIdx).original(), bestScore, action(bestScore, p.cfg));
+    }
+
+    /** Exhaustive scan over every candidate — no exact map, no length banding. Test seam / reference. */
+    MatchCandidate matchBestExhaustive(String name, Prepared prepared) {
+        if (prepared.candidates.isEmpty()) return null;
+        String norm = normalize(name, prepared.cfg);
+        int[] all = new int[prepared.candidates.size()];
+        for (int i = 0; i < all.length; i++) all[i] = i;
+        return scan(norm, prepared, all);
+    }
+
+    private static String action(int s, Config cfg) {
+        return s >= cfg.autoAccept() ? "Accept" : s >= cfg.reviewQueue() ? "Queue" : "Reject";
+    }
+
+    /** First index in sorted {@code a} whose value is ≥ {@code key}. */
+    private static int lowerBound(int[] a, int key) {
+        int lo = 0, hi = a.length;
+        while (lo < hi) { int mid = (lo + hi) >>> 1; if (a[mid] < key) lo = mid + 1; else hi = mid; }
+        return lo;
+    }
+
+    /** First index in sorted {@code a} whose value is > {@code key}. */
+    private static int upperBound(int[] a, int key) {
+        int lo = 0, hi = a.length;
+        while (lo < hi) { int mid = (lo + hi) >>> 1; if (a[mid] <= key) lo = mid + 1; else hi = mid; }
+        return lo;
     }
 
     public @NonNull List<MatchQueueEntry> buildMatchQueueEntries(
             int submissionId, int facilityId, JsonNode extractedLps) {
         if (extractedLps == null || !extractedLps.isArray()) return new ArrayList<>();
         List<String> masterNames = lpRepo.findAllDistinctNames();
-        List<MatchQueueEntry> entries = new ArrayList<>();
+        Prepared prepared = prepare(masterNames);
+
+        // Collect the non-blank rows with their original array position (the row index).
+        record Row(int rowIndex, String agentName) {}
+        List<Row> rows = new ArrayList<>();
         int index = 0;
         for (JsonNode lpNode : extractedLps) {
             String agentName = lpNode.path("name").asText("").trim();
-            if (agentName.isBlank()) { index++; continue; }
-            MatchCandidate best = masterNames.isEmpty() ? null : matchBestInList(agentName, masterNames);
-            String matchedName = (best != null && !"Reject".equals(best.action())) ? best.name() : null;
-            int    matchScore  = best != null ? best.score() : 0;
-            String decision    = (best != null && "Accept".equals(best.action())) ? "Accepted" : "Pending";
-            MatchQueueEntry entry = new MatchQueueEntry();
-            entry.setSubmissionId(submissionId);
-            entry.setFacilityId(facilityId);
-            entry.setRowIndex(index);
-            entry.setExtractedName(agentName);
-            entry.setMatchedLpName(matchedName);
-            entry.setMatchScore(matchScore);
-            entry.setNew(matchedName == null);
-            entry.setDecision(decision);
-            entries.add(entry);
+            if (!agentName.isBlank()) rows.add(new Row(index, agentName));
             index++;
         }
+
+        // Fuzzy matching is CPU-bound and each row is independent; Prepared is immutable, so
+        // scoring rows in parallel is safe. Persistence stays out of the parallel section.
+        List<MatchQueueEntry> entries = rows.parallelStream()
+            .map(row -> {
+                MatchCandidate best = masterNames.isEmpty() ? null : matchBest(row.agentName(), prepared);
+                String matchedName = (best != null && !"Reject".equals(best.action())) ? best.name() : null;
+                int    matchScore  = best != null ? best.score() : 0;
+                String decision    = (best != null && "Accept".equals(best.action())) ? "Accepted" : "Pending";
+                MatchQueueEntry entry = new MatchQueueEntry();
+                entry.setSubmissionId(submissionId);
+                entry.setFacilityId(facilityId);
+                entry.setRowIndex(row.rowIndex());
+                entry.setExtractedName(row.agentName());
+                entry.setMatchedLpName(matchedName);
+                entry.setMatchScore(matchScore);
+                entry.setNew(matchedName == null);
+                entry.setDecision(decision);
+                return entry;
+            })
+            .collect(Collectors.toCollection(ArrayList::new));
         return entries;
     }
 
@@ -95,23 +235,26 @@ public class MatchingService {
 
     // ── Normalisation ─────────────────────────────────────────────────────────
 
+    private static final Pattern NON_ALNUM  = Pattern.compile("[^a-z0-9 ]");
+    private static final Pattern WHITESPACE = Pattern.compile("\\s+");
+
     private String normalize(String name, Config cfg) {
         if (name == null || name.isBlank()) return "";
         String s = name.trim();
 
         if (cfg.abbrevExpand()) {
             for (var abbr : cfg.abbreviations()) {
-                s = s.replaceAll("(?i)\\b" + Pattern.quote(abbr.token()) + "\\b", abbr.expansion());
+                s = abbr.pattern().matcher(s).replaceAll(abbr.expansion());
             }
         }
         if (cfg.caseFold()) s = s.toLowerCase(Locale.ROOT);
         if (cfg.stripSuffixes()) {
-            for (String suffix : cfg.stripList()) {
-                s = s.replaceAll("(?i),?\\s*\\b" + Pattern.quote(suffix) + "\\b\\.?\\s*$", "").trim();
+            for (Pattern suffix : cfg.stripList()) {
+                s = suffix.matcher(s).replaceAll("").trim();
             }
         }
-        if (cfg.punctuation()) s = s.replaceAll("[^a-z0-9 ]", " ");
-        return s.replaceAll("\\s+", " ").trim();
+        if (cfg.punctuation()) s = NON_ALNUM.matcher(s).replaceAll(" ");
+        return WHITESPACE.matcher(s).replaceAll(" ").trim();
     }
 
     // ── Scoring ───────────────────────────────────────────────────────────────
@@ -195,12 +338,12 @@ public class MatchingService {
 
     // ── Config parsing ────────────────────────────────────────────────────────
 
-    private record Abbreviation(String token, String expansion) {}
+    private record Abbreviation(Pattern pattern, String expansion) {}
     private record Config(
         int autoAccept, int reviewQueue,
         double jwWeight, double levWeight,
         boolean caseFold, boolean punctuation, boolean stripSuffixes, boolean abbrevExpand,
-        List<String> stripList, List<Abbreviation> abbreviations
+        List<Pattern> stripList, List<Abbreviation> abbreviations
     ) {}
 
     private Config parseConfig() {
@@ -216,14 +359,19 @@ public class MatchingService {
         boolean stripSuf     = t.path("stripSuffixes").asBoolean(true);
         boolean abbrevExp    = t.path("abbrevExpand").asBoolean(true);
 
-        List<String> stripList = new ArrayList<>();
+        List<Pattern> stripList = new ArrayList<>();
         for (JsonNode s : root.path("legalSuffixes")) {
-            if (s.path("strip").asBoolean()) stripList.add(s.path("abbr").asText());
+            if (s.path("strip").asBoolean()) {
+                stripList.add(Pattern.compile(
+                    "(?i),?\\s*\\b" + Pattern.quote(s.path("abbr").asText()) + "\\b\\.?\\s*$"));
+            }
         }
 
         List<Abbreviation> abbreviations = new ArrayList<>();
         for (JsonNode a : root.path("knownAbbreviations")) {
-            abbreviations.add(new Abbreviation(a.path("token").asText(), a.path("expansion").asText()));
+            abbreviations.add(new Abbreviation(
+                Pattern.compile("(?i)\\b" + Pattern.quote(a.path("token").asText()) + "\\b"),
+                a.path("expansion").asText()));
         }
 
         return new Config(autoAccept, reviewQueue, jwWeight, levWeight,

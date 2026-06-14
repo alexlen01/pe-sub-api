@@ -97,7 +97,7 @@ public class BbCalculationService {
             double pct = lp.ubbM() / totalUBB;
             if (pct > 0.15) {
                 breaches.add(new BbBreach("single-lp", "breach",
-                    lp.investorName() + " exceeds 15% single-LP concentration", pct, 0.15));
+                    lp.name() + " exceeds 15% single-LP concentration", pct, 0.15));
             }
         }
 
@@ -126,7 +126,7 @@ public class BbCalculationService {
 
         // Non-US aggregate > 30%
         double nonUsUBB = included.stream()
-            .filter(lp -> !lp.highQty())
+            .filter(lp -> !lp.hq())
             .mapToDouble(ComputedLp::ubbM).sum();
         if (nonUsUBB / totalUBB > 0.30) {
             breaches.add(new BbBreach("non-us", "breach",

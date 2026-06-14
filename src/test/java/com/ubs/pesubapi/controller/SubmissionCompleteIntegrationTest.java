@@ -58,16 +58,16 @@ class SubmissionCompleteIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void complete_setsSubmissionProcessedAndFacilityCertified() throws Exception {
+    void complete_setsSubmissionProcessedAndFacilityActive() throws Exception {
         mvc.perform(post("/api/submissions/{id}/complete", submissionId))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("Processed"))
             .andExpect(jsonPath("$.wizardStep").value(6))
             .andExpect(jsonPath("$.facilityName").value("Apex Growth Fund III"));
 
-        // Facility status must be Certified in the database
+        // Facility status must be Active in the database
         Facility f = facilityRepo.findById(facilityId).orElseThrow();
-        assert "Certified".equals(f.getStatus()) : "Expected Certified, got: " + f.getStatus();
+        assert "Active".equals(f.getStatus()) : "Expected Active, got: " + f.getStatus();
         assert f.getLastRunAt() != null : "lastRunAt must be stamped";
     }
 

@@ -2,10 +2,12 @@ package com.ubs.pesubapi.controller;
 
 import com.ubs.pesubapi.dto.IngestRequest;
 import com.ubs.pesubapi.dto.IngestResult;
+import com.ubs.pesubapi.dto.LpClassificationRequest;
 import com.ubs.pesubapi.dto.LpDto;
 import com.ubs.pesubapi.entity.Lp;
 import com.ubs.pesubapi.repository.LpRepository;
 import com.ubs.pesubapi.service.AuditLogService;
+import com.ubs.pesubapi.service.LpClassificationService;
 import com.ubs.pesubapi.service.LpIngestService;
 import com.ubs.pesubapi.service.NotificationService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,17 +23,20 @@ import java.util.Objects;
 @RequestMapping("/api/lps")
 public class LpController {
 
-    private final LpRepository        repo;
-    private final NotificationService notifier;
-    private final AuditLogService     auditService;
-    private final LpIngestService     ingestService;
+    private final LpRepository           repo;
+    private final NotificationService    notifier;
+    private final AuditLogService        auditService;
+    private final LpIngestService        ingestService;
+    private final LpClassificationService classificationService;
 
     public LpController(LpRepository repo, NotificationService notifier,
-                        AuditLogService auditService, LpIngestService ingestService) {
-        this.repo          = repo;
-        this.notifier      = notifier;
-        this.auditService  = auditService;
-        this.ingestService = ingestService;
+                        AuditLogService auditService, LpIngestService ingestService,
+                        LpClassificationService classificationService) {
+        this.repo                  = repo;
+        this.notifier              = notifier;
+        this.auditService          = auditService;
+        this.ingestService         = ingestService;
+        this.classificationService = classificationService;
     }
 
     @PostMapping("/ingest")
@@ -60,6 +65,24 @@ public class LpController {
             lps = repo.findAllByOrderByInvestorNameAsc();
         }
         return lps.stream().map(LpDto::from).toList();
+    }
+
+    /**
+     * Batch-applies the credit officer's classification & rate edits onto persisted LP Master
+     * records (the "Save" action on the LP Classification & Rate Assignment screen). Rows are
+     * matched to existing records by (facilityId, name); unmatched rows are ignored.
+     */
+    @PatchMapping("/classification")
+    public Map<String, Integer> patchClassification(@RequestBody LpClassificationRequest req,
+                                                     HttpServletRequest request) {
+        int updated = classificationService.applyClassifications(req);
+        if (updated > 0 && req.facilityId() != null) {
+            auditService.log("LP Classification Saved",
+                updated + " LP record" + (updated != 1 ? "s" : "")
+                    + " updated from Shadow BB classification",
+                req.facilityId(), "J. Smith", auditService.extractIp(request));
+        }
+        return Map.of("updated", updated);
     }
 
     @GetMapping("/{id}")

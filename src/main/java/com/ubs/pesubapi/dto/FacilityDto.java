@@ -11,13 +11,18 @@ public record FacilityDto(
     String        agentBank,
     String        status,
     BigDecimal    concLimitM,
+    int           lpCount,
     LocalDateTime lastRunAt,
     LocalDateTime createdAt,
     LocalDateTime updatedAt
 ) {
     public static FacilityDto from(Facility f) {
+        return from(f, 0);
+    }
+
+    public static FacilityDto from(Facility f, int lpCount) {
         return new FacilityDto(
             f.getId(), f.getName(), f.getAgentBank(), f.getStatus(),
-            f.getConcLimitM(), f.getLastRunAt(), f.getCreatedAt(), f.getUpdatedAt());
+            f.getConcLimitM(), lpCount, f.getLastRunAt(), f.getCreatedAt(), f.getUpdatedAt());
     }
 }

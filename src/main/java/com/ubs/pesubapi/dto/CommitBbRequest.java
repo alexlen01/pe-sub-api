@@ -11,11 +11,11 @@ public record CommitBbRequest(List<CommitLpRow> lps) {
 
     public record CommitLpRow(
         // Identity & Classification (BB_PROCESS_FLOW Step 4)
-        String  investorName,
+        String  name,
         String  parent,
         boolean spv,
-        boolean highQty,
-        String  invType,
+        boolean hq,
+        String  type,
         String  region,
         boolean ig,
         String  cls,

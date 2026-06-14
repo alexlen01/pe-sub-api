@@ -1,0 +1,97 @@
+package com.ubs.pesubapi.service;
+
+import com.ubs.pesubapi.dto.LpClassificationRequest;
+import com.ubs.pesubapi.entity.Lp;
+import com.ubs.pesubapi.entity.LpRate;
+import com.ubs.pesubapi.repository.LpRateRepository;
+import com.ubs.pesubapi.repository.LpRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.YearMonth;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+/**
+ * Materialises the classification & rate edits made on the "LP Classification & Rate Assignment"
+ * screen onto persisted LP Master records. This is what the screen's "Save" button calls: it writes
+ * to the real LP records (created earlier on Commit Decisions), not to a draft override blob.
+ * LP entity fields (cls, ratings, inclusion, uncalled) update in place; advance rate and
+ * concentration limit upsert into lp_rates for the submission period.
+ */
+@Service
+public class LpClassificationService {
+
+    private final LpRepository     lpRepo;
+    private final LpRateRepository rateRepo;
+
+    public LpClassificationService(LpRepository lpRepo, LpRateRepository rateRepo) {
+        this.lpRepo   = lpRepo;
+        this.rateRepo = rateRepo;
+    }
+
+    @Transactional
+    public int applyClassifications(LpClassificationRequest req) {
+        if (req.facilityId() == null || req.rows() == null) return 0;
+        LocalDate effectiveDate = parseMonth(req.effectiveDate());
+
+        Map<String, Lp> byName = lpRepo.findByFacilityIdOrderByInvestorNameAsc(req.facilityId()).stream()
+            .collect(Collectors.toMap(Lp::getInvestorName, lp -> lp, (a, b) -> a));
+
+        int updated = 0;
+        for (LpClassificationRequest.Row row : req.rows()) {
+            if (row.name() == null) continue;
+            Lp lp = byName.get(row.name());
+            if (lp == null) continue;   // only persisted LP Master records are updated
+
+            if (row.cls()   != null) lp.setCls(row.cls());
+            if (row.sp()    != null) lp.setSp(row.sp());
+            if (row.mdy()   != null) lp.setMdy(row.mdy());
+            if (row.fitch() != null) lp.setFitch(row.fitch());
+            if (row.inc()   != null) lp.setInc(row.inc());
+            if (row.uc()    != null) lp.setUc(row.uc());
+            lp.setUpdatedAt(LocalDateTime.now());
+            lpRepo.save(lp);
+            updated++;
+
+            if (row.ubsAdvRatePct() != null || row.ubsConcLimitPct() != null) {
+                upsertRate(lp, effectiveDate, row);
+            }
+        }
+        return updated;
+    }
+
+    private void upsertRate(Lp lp, LocalDate effectiveDate, LpClassificationRequest.Row row) {
+        LpRate rate = rateRepo.findByLpIdAndEffectiveDate(lp.getId(), effectiveDate)
+            .orElseGet(LpRate::new);
+        rate.setLpId(lp.getId());
+        rate.setEffectiveDate(effectiveDate);
+        rate.setClassification(row.cls() != null ? row.cls()
+            : (lp.getCls() != null ? lp.getCls() : "Eligible"));
+        if (row.ubsAdvRatePct() != null) {
+            rate.setUbsAdvRatePct(toFraction(row.ubsAdvRatePct()));
+        } else if (rate.getUbsAdvRatePct() == null) {
+            rate.setUbsAdvRatePct(BigDecimal.ZERO);
+        }
+        if (row.ubsConcLimitPct() != null) {
+            rate.setUbsConcLimitPct(toFraction(row.ubsConcLimitPct()));
+        } else if (rate.getUbsConcLimitPct() == null) {
+            rate.setUbsConcLimitPct(BigDecimal.ZERO);
+        }
+        rate.setSource("SHADOW_BB");
+        rateRepo.save(rate);
+    }
+
+    /** Percentage (90.0) → decimal fraction (0.9000) as stored in lp_rates. */
+    private BigDecimal toFraction(double pct) {
+        return BigDecimal.valueOf(pct).movePointLeft(2);
+    }
+
+    private LocalDate parseMonth(String ym) {
+        if (ym == null || ym.isBlank()) return LocalDate.now().withDayOfMonth(1);
+        return YearMonth.parse(ym).atDay(1);
+    }
+}

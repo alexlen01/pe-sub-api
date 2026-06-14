@@ -126,6 +126,42 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void listAndGet_reportLpCountFromLpRecords() throws Exception {
+        com.ubs.pesubapi.entity.Facility f = new com.ubs.pesubapi.entity.Facility();
+        f.setName("Counted Fund");          // TEST ONLY
+        f.setAgentBank("Wells Fargo");
+        int id = facilityRepo.save(f).getId();
+
+        lpRepo.save(buildLp(id, "Acme Pension Fund"));
+        lpRepo.save(buildLp(id, "Beta Capital LLC"));
+
+        // Empty facility — lpCount must be 0, never null/absent
+        com.ubs.pesubapi.entity.Facility empty = new com.ubs.pesubapi.entity.Facility();
+        empty.setName("Empty Fund");        // TEST ONLY
+        empty.setAgentBank("Citibank");
+        facilityRepo.save(empty);
+
+        mvc.perform(get("/api/facilities"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[?(@.name=='Counted Fund')].lpCount", contains(2)))
+            .andExpect(jsonPath("$[?(@.name=='Empty Fund')].lpCount", contains(0)));
+
+        mvc.perform(get("/api/facilities/{id}", id))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.lpCount").value(2));
+    }
+
+    private com.ubs.pesubapi.entity.Lp buildLp(int facilityId, String investorName) {
+        com.ubs.pesubapi.entity.Lp lp = new com.ubs.pesubapi.entity.Lp();
+        lp.setFacilityId(facilityId);
+        lp.setInvestorName(investorName);
+        lp.setInvType("Institutional");
+        lp.setRegion("US");
+        lp.setCls("Eligible");
+        return lp;
+    }
+
+    @Test
     void listFacilities_returnsNoDatabaseEntityFields() throws Exception {
         mvc.perform(post("/api/facilities")
                 .contentType(MediaType.APPLICATION_JSON)

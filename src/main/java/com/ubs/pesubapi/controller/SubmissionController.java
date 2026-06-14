@@ -524,6 +524,11 @@ public class SubmissionController {
             @PathVariable int id,
             @RequestBody ShadowBbStateRequest req) {
         return submissions.findById(id).map(sub -> {
+            // On first transition to step 5, commit accepted match-queue entries to LP Master.
+            if (sub.getWizardStep() < 5) {
+                extractionRepo.findBySubmissionId(id).ifPresent(ext ->
+                    ingestService.commitAcceptedMatches(id, sub.getFacilityId(), ext.getExtractedLps()));
+            }
             sub.setWizardStep(5);
             if (req.overrides() != null) {
                 sub.setShadowBbOverrides(req.overrides());
@@ -539,7 +544,7 @@ public class SubmissionController {
 
     // ── POST /api/submissions/:id/complete ──────────────────────────────────
     // Marks the Shadow BB calculation as accepted: submission → Processed (step 6),
-    // facility → Certified, lastRunAt stamped.  Idempotent: calling it twice is safe.
+    // facility → Active, lastRunAt stamped.  Idempotent: calling it twice is safe.
 
     @Transactional
     @PostMapping("/{id}/complete")
@@ -559,7 +564,7 @@ public class SubmissionController {
             Optional<Facility> fOpt = facilities.findById(facilityId);
             if (fOpt.isPresent()) {
                 Facility f = fOpt.get();
-                f.setStatus("Certified");
+                f.setStatus("Active");
                 f.setLastRunAt(LocalDateTime.now());
                 facilities.save(f);
                 facilityName = f.getName();

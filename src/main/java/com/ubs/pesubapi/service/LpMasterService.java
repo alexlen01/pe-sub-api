@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -24,30 +25,33 @@ public class LpMasterService {
      * Upserts LP records for a facility from a Shadow BB run.
      * Matches by (facilityId, investorName): updates existing LPs in place (preserving their IDs
      * so FK references from match_queue_entries are not broken), inserts new LPs.
+     * Incoming rows are themselves deduped by name so the same Agent BB submitted twice (or a
+     * name repeated within one payload) collapses onto a single record — last value wins —
+     * never violating the uq_lp_records_facility_investor constraint.
      * Rank is computed dynamically in Shadow BB (uncalled capital desc) and not stored.
      */
     @Transactional
     public List<Lp> upsertAll(int facilityId, List<CommitLpRow> rows) {
-        List<Lp> existing = lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId);
-        Map<String, Lp> byName = existing.stream()
-            .collect(Collectors.toMap(Lp::getInvestorName, lp -> lp, (a, b) -> a));
+        Map<String, Lp> byName = lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).stream()
+            .collect(Collectors.toMap(Lp::getInvestorName, lp -> lp, (a, b) -> a, LinkedHashMap::new));
 
-        List<Lp> toSave = new ArrayList<>(rows.size());
+        Map<String, Lp> toSave = new LinkedHashMap<>();
         for (CommitLpRow row : rows) {
-            Lp lp = byName.getOrDefault(row.investorName(), new Lp());
+            String name = row.name() != null ? row.name() : "";
+            Lp lp = byName.computeIfAbsent(name, n -> new Lp());
             apply(lp, facilityId, row);
-            toSave.add(lp);
+            toSave.put(name, lp);
         }
-        return lpRepo.saveAll(toSave);
+        return lpRepo.saveAll(new ArrayList<>(toSave.values()));
     }
 
     private void apply(Lp lp, int facilityId, CommitLpRow row) {
         lp.setFacilityId(facilityId);
-        lp.setInvestorName(row.investorName() != null ? row.investorName() : "");
+        lp.setInvestorName(row.name() != null ? row.name() : "");
         lp.setParent(row.parent());
         lp.setSpv(row.spv());
-        lp.setHighQty(row.highQty());
-        lp.setInvType(row.invType() != null ? row.invType() : "Institutional");
+        lp.setHighQty(row.hq());
+        lp.setInvType(row.type() != null ? row.type() : "Institutional");
         lp.setRegion(row.region() != null ? row.region() : "");
         lp.setIg(row.ig());
         lp.setCls(row.cls() != null ? row.cls() : "Eligible");

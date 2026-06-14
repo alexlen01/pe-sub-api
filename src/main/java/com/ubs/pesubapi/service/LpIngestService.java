@@ -1,5 +1,6 @@
 package com.ubs.pesubapi.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.ubs.pesubapi.dto.IngestRequest;
 import com.ubs.pesubapi.dto.IngestResult;
 import com.ubs.pesubapi.entity.Lp;
@@ -12,6 +13,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -38,6 +40,7 @@ public class LpIngestService {
         List<String> names   = facilityLps.stream().map(Lp::getInvestorName).toList();
         Map<String, Lp> byName = facilityLps.stream()
             .collect(Collectors.toMap(Lp::getInvestorName, lp -> lp, (a, b) -> a));
+        MatchingService.Prepared prepared = matchingService.prepare(names);
 
         List<IngestResult.RecordResult> results = new ArrayList<>();
         int updated = 0, queued = 0, skipped = 0;
@@ -52,13 +55,20 @@ public class LpIngestService {
             }
 
             String extractedName = row.investorName().value();
-            MatchingService.MatchCandidate best = matchingService.matchBestInList(extractedName, names);
+            MatchingService.MatchCandidate best = matchingService.matchBest(extractedName, prepared);
 
             if (best == null || "Reject".equals(best.action())) {
-                skipped++;
+                queued++;
                 int score = best != null ? best.score() : 0;
+                List<String> reasons = best == null
+                    ? List.of("New LP — no matching record found in facility LP Master")
+                    : List.of("New LP — best match score " + score + " is below review threshold");
                 results.add(result(row.rowIndex(), extractedName, null, null, score,
-                    "Skipped", List.of(), List.of("No LP match found in facility (score: " + score + ")")));
+                    "Queued", List.of(), reasons));
+                if (submissionId > 0) {
+                    persistQueueEntry(submissionId, request.facilityId(), row.rowIndex(),
+                        extractedName, null, null, score, reasons);
+                }
                 continue;
             }
 
@@ -94,6 +104,87 @@ public class LpIngestService {
             ? request.extraction().template().format() : "UNKNOWN";
         return new IngestResult(request.facilityId(), LocalDateTime.now(),
             fmt, results, updated, queued, skipped);
+    }
+
+    /**
+     * Commits accepted match-queue entries to LP Master.
+     * Called when the analyst advances from step 4 (Match Queue) to step 5 (Run Shadow BB).
+     * - Accepted + existing match  → update financial fields on the matched LP record.
+     * - Accepted + is_new          → create a new LP record with defaults and extracted fields.
+     */
+    public void commitAcceptedMatches(int submissionId, int facilityId, JsonNode extractedLps) {
+        if (extractedLps == null || !extractedLps.isArray()) return;
+
+        Map<Integer, JsonNode> byRow = new HashMap<>();
+        extractedLps.forEach(row -> byRow.put(row.path("rowIndex").asInt(-1), row));
+
+        // Index existing facility LPs by name so an accepted "new" entry whose name already exists
+        // (e.g. the same Agent BB committed twice) updates the record in place rather than inserting
+        // a duplicate. Records created earlier in this same pass are tracked here too, so duplicate
+        // accepted names within one submission also collapse onto a single record.
+        Map<String, Lp> byName = lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).stream()
+            .collect(Collectors.toMap(Lp::getInvestorName, lp -> lp, (a, b) -> a, HashMap::new));
+
+        for (MatchQueueEntry entry : matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(submissionId)) {
+            if (!"Accepted".equals(entry.getDecision())) continue;
+            JsonNode row = byRow.get(entry.getRowIndex());
+            if (row == null) continue;
+
+            Lp lp;
+            Integer matchedId = entry.getMatchedLpId();
+            if (!entry.isNew() && matchedId != null) {
+                lp = lpRepo.findById(matchedId).orElse(null);
+                if (lp == null) continue;
+            } else {
+                String name = entry.getMasterNameOverride() != null && !entry.getMasterNameOverride().isBlank()
+                    ? entry.getMasterNameOverride()
+                    : entry.getExtractedName();
+                if (name == null || name.isBlank()) continue;
+
+                lp = byName.get(name);
+                if (lp == null) {
+                    lp = new Lp();
+                    lp.setFacilityId(facilityId);
+                    lp.setInvestorName(name);
+                    lp.setInvType("Institutional");
+                    lp.setRegion("US");
+                    lp.setCls("Eligible");
+                }
+            }
+            applyExtractedJsonRow(lp, row);
+            lp = lpRepo.save(lp);
+            byName.put(lp.getInvestorName(), lp);
+        }
+    }
+
+    private void applyExtractedJsonRow(Lp lp, JsonNode row) {
+        String aum     = textOrNull(row, "aum");
+        String commit  = textOrNull(row, "commit");
+        String uncalled = textOrNull(row, "uncalled");
+        String rate    = textOrNull(row, "agentRate");
+        String conc    = textOrNull(row, "agentConc");
+        String parent  = textOrNull(row, "parent");
+        String nav     = textOrNull(row, "nav");
+        String sp      = textOrNull(row, "sp");
+        String mdy     = textOrNull(row, "moodys");
+        String fitch   = textOrNull(row, "fitch");
+
+        if (aum     != null) lp.setAum(aum);
+        if (commit  != null) lp.setCapCommit(commit);
+        if (uncalled != null) lp.setUc(uncalled);
+        if (rate    != null) lp.setAgentRate(rate);
+        if (conc    != null) lp.setAgentConc(conc);
+        if (parent  != null) lp.setParent(parent);
+        if (nav     != null) lp.setNav(nav);
+        if (sp      != null) lp.setSp(sp);
+        if (mdy     != null) lp.setMdy(mdy);
+        if (fitch   != null) lp.setFitch(fitch);
+        lp.setUpdatedAt(LocalDateTime.now());
+    }
+
+    private String textOrNull(JsonNode node, String field) {
+        String v = node.path(field).asText(null);
+        return (v == null || v.isBlank() || "null".equals(v)) ? null : v;
     }
 
     private void persistQueueEntry(int submissionId, int facilityId, int rowIndex,

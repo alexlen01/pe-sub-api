@@ -3,6 +3,7 @@ package com.ubs.pesubapi.controller;
 import com.ubs.pesubapi.dto.FacilityDto;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.repository.FacilityRepository;
+import com.ubs.pesubapi.repository.LpRepository;
 import com.ubs.pesubapi.service.NotificationService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -11,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -21,22 +23,30 @@ public class FacilityController {
     record CreateFacilityRequest(@NotBlank String name, @NotBlank String agentBank) {}
 
     private final FacilityRepository repo;
+    private final LpRepository lpRepo;
     private final NotificationService notifier;
 
-    public FacilityController(FacilityRepository repo, NotificationService notifier) {
+    public FacilityController(FacilityRepository repo, LpRepository lpRepo, NotificationService notifier) {
         this.repo     = repo;
+        this.lpRepo   = lpRepo;
         this.notifier = notifier;
     }
 
     @GetMapping
     public List<FacilityDto> list() {
-        return repo.findAll(Sort.by("name")).stream().map(FacilityDto::from).toList();
+        Map<Integer, Integer> lpCounts = new HashMap<>();
+        for (Object[] row : lpRepo.countGroupedByFacilityId()) {
+            lpCounts.put((Integer) row[0], ((Long) row[1]).intValue());
+        }
+        return repo.findAll(Sort.by("name")).stream()
+            .map(f -> FacilityDto.from(f, lpCounts.getOrDefault(f.getId(), 0)))
+            .toList();
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<FacilityDto> get(@PathVariable int id) {
         return repo.findById(id)
-            .map(FacilityDto::from)
+            .map(f -> FacilityDto.from(f, (int) lpRepo.countByFacilityId(id)))
             .map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());
     }
@@ -63,7 +73,7 @@ public class FacilityController {
             f.setUpdatedAt(LocalDateTime.now());
             Facility saved = repo.save(f);
             notifier.broadcast(f.getName() + " status updated to " + newStatus);
-            return ResponseEntity.ok(FacilityDto.from(saved));
+            return ResponseEntity.ok(FacilityDto.from(saved, (int) lpRepo.countByFacilityId(id)));
         }).orElse(ResponseEntity.notFound().build());
     }
 }
