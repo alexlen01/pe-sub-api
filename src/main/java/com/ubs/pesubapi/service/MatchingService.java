@@ -192,7 +192,7 @@ public class MatchingService {
 
         // Fuzzy matching is CPU-bound and each row is independent; Prepared is immutable, so
         // scoring rows in parallel is safe. Persistence stays out of the parallel section.
-        List<MatchQueueEntry> entries = rows.parallelStream()
+        List<MatchQueueEntry> entries = new ArrayList<>(rows.parallelStream()
             .map(row -> {
                 MatchCandidate best = masterNames.isEmpty() ? null : matchBest(row.agentName(), prepared);
                 String matchedName = (best != null && !"Reject".equals(best.action())) ? best.name() : null;
@@ -209,7 +209,7 @@ public class MatchingService {
                 entry.setDecision(decision);
                 return entry;
             })
-            .collect(Collectors.toCollection(ArrayList::new));
+            .toList());
         return entries;
     }
 

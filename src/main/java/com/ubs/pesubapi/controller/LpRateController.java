@@ -3,12 +3,12 @@ package com.ubs.pesubapi.controller;
 import com.ubs.pesubapi.dto.LpRateBatchRequest;
 import com.ubs.pesubapi.dto.LpRateDto;
 import com.ubs.pesubapi.service.LpRateService;
+import com.ubs.pesubapi.util.EffectivePeriod;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
-import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
@@ -50,7 +50,8 @@ public class LpRateController {
     private LocalDate parseEffectiveDate(String param) {
         if (param == null || param.isBlank()) return LocalDate.now();
         try {
-            return YearMonth.parse(param).atDay(1);
+            // Tolerates YYYY-MM and the YYYY-MM-DD the UI forwards from submission periodMonth.
+            return EffectivePeriod.firstOfMonth(param);
         } catch (DateTimeParseException ex) {
             throw new org.springframework.web.server.ResponseStatusException(
                 org.springframework.http.HttpStatus.BAD_REQUEST,

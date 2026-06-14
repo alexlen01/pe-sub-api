@@ -182,6 +182,35 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void patchClassification_acceptsFullDateEffectiveDate() throws Exception {
+        // The Upload screen's date picker stores periodMonth as YYYY-MM-DD, which the Save
+        // action forwards verbatim as effectiveDate. It must normalise to the first of the month
+        // (not 500 on YearMonth.parse) and key the upserted rate by that month.
+        lpRepo.save(buildLp("Solstice Capital LP", "Eligible"));
+
+        mvc.perform(patch("/api/lps/classification")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "facilityId": %d,
+                      "effectiveDate": "2026-06-14",
+                      "rows": [{
+                        "name": "Solstice Capital LP",
+                        "cls": "Rated", "ubsAdvRatePct": 90.0, "ubsConcLimitPct": 7.5
+                      }]
+                    }
+                    """.formatted(facilityId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.updated").value(1));
+
+        // Rate upserted against the month (2026-06-01), retrievable as-of that month
+        mvc.perform(get("/api/lps/rates").param("effective_date", "2026-06"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].lpName").value("Solstice Capital LP"))
+            .andExpect(jsonPath("$[0].effectiveDate").value("2026-06-01"));
+    }
+
+    @Test
     void patchClassification_unmatchedNameIgnored_returnsZero() throws Exception {
         lpRepo.save(buildLp("Real LP", "Eligible"));
 

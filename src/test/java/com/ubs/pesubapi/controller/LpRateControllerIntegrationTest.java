@@ -79,6 +79,19 @@ class LpRateControllerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void getRate_acceptsFullDateEffectiveDate() throws Exception {
+        // The UI forwards the submission's periodMonth (YYYY-MM-DD from a date picker) verbatim;
+        // it must resolve to the month, not 400 on YearMonth.parse.
+        rateRepo.save(buildRate(lpId, "2026-05-01", "Rated", 0.90, 0.075));
+
+        mvc.perform(get("/api/lps/rates").param("effective_date", "2026-05-20"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$", hasSize(1)))
+            .andExpect(jsonPath("$[0].lpName").value("Monarch Alternative Capital LP"))
+            .andExpect(jsonPath("$[0].effectiveDate").value("2026-05-01"));
+    }
+
+    @Test
     void getRate_doesNotReturnFutureRates() throws Exception {
         LpRate future = buildRate(lpId, "2026-07-01", "Rated", 0.90, 0.075);
         rateRepo.save(future);

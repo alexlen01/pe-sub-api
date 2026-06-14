@@ -5,13 +5,13 @@ import com.ubs.pesubapi.entity.Lp;
 import com.ubs.pesubapi.entity.LpRate;
 import com.ubs.pesubapi.repository.LpRateRepository;
 import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.util.EffectivePeriod;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.YearMonth;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -90,8 +90,9 @@ public class LpClassificationService {
         return BigDecimal.valueOf(pct).movePointLeft(2);
     }
 
+    /** Submission period → first of the month; null/blank defaults to the current month. */
     private LocalDate parseMonth(String ym) {
         if (ym == null || ym.isBlank()) return LocalDate.now().withDayOfMonth(1);
-        return YearMonth.parse(ym).atDay(1);
+        return EffectivePeriod.firstOfMonth(ym);
     }
 }
