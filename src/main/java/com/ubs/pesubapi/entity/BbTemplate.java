@@ -11,8 +11,11 @@ public class BbTemplate {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
-    @Column(name = "agent_bank", nullable = false, unique = true)
+    @Column(name = "agent_bank", nullable = false)
     private String agentBank;
+
+    @Column(name = "template_class", nullable = false)
+    private String templateClass = "A";
 
     @Column(name = "sheet_name")
     private String sheetName;
@@ -49,6 +52,7 @@ public class BbTemplate {
 
     public Integer getId()                   { return id; }
     public String  getAgentBank()            { return agentBank; }
+    public String  getTemplateClass()        { return templateClass; }
     public String  getSheetName()            { return sheetName; }
     public Integer getHeaderRowIndex()       { return headerRowIndex; }
     public boolean isAutoLearned()           { return autoLearned; }
@@ -60,6 +64,7 @@ public class BbTemplate {
     public LocalDateTime getUpdatedAt()      { return updatedAt; }
 
     public void setAgentBank(String v)              { this.agentBank             = v; }
+    public void setTemplateClass(String v)          { this.templateClass         = v; }
     public void setSheetName(String v)              { this.sheetName             = v; }
     public void setHeaderRowIndex(Integer v)        { this.headerRowIndex        = v; }
     public void setAutoLearned(boolean v)           { this.autoLearned           = v; }

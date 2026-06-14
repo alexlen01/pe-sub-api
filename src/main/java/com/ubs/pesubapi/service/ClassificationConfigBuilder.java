@@ -60,7 +60,12 @@ public class ClassificationConfigBuilder {
     public String buildJson(String agentBank) {
         if (agentBank == null || agentBank.isBlank()) return null;
 
-        Optional<BbTemplate> template = templateRepo.findByAgentBankIgnoreCase(agentBank);
+        // When an agent uses multiple template classes (e.g. Wells Fargo Class A and B),
+        // group-header classification only applies to the template that has grouping rows.
+        Optional<BbTemplate> template = templateRepo.findAllByAgentBankIgnoreCase(agentBank)
+            .stream()
+            .filter(BbTemplate::isHasGroupingRows)
+            .findFirst();
         if (template.isEmpty()) return null;
 
         Optional<BbTemplateTab> lpGrid =

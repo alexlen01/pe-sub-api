@@ -26,8 +26,32 @@ public class MatchingService {
 
     // ── Public types ──────────────────────────────────────────────────────────
 
-    public record MatchCandidate(String name, int score, String action) {}
+    /**
+     * Confidence band a combined score falls into, per Solution Design §6.4.
+     * <ul>
+     *   <li>{@code AUTO_ACCEPT} — score ≥ autoAccept (default 95): committed without review.</li>
+     *   <li>{@code REVIEW_HIGH} — reviewQueue ≤ score &lt; autoAccept (default 80–94): CO confirms
+     *       the algorithm's single top candidate.</li>
+     *   <li>{@code REVIEW_LOW}  — noMatch ≤ score &lt; reviewQueue (default 50–79): CO reviews a
+     *       ranked candidate list and selects one or creates a new LP.</li>
+     *   <li>{@code NO_MATCH}    — score &lt; noMatch (default 50): queued as a potential new LP record.</li>
+     * </ul>
+     * Note: only {@code AUTO_ACCEPT} is resolved automatically; the other three bands are all
+     * queued for the credit officer — nothing is auto-rejected.
+     */
+    public enum Band { AUTO_ACCEPT, REVIEW_HIGH, REVIEW_LOW, NO_MATCH }
+
+    public record MatchCandidate(String name, int score, String action, Band band) {}
     public record MatchTestResult(String input, String normalised, List<MatchCandidate> matches) {}
+
+    /** One scored LP Master candidate with its per-metric breakdown, for the Match Analysis panel (§6.5). */
+    public record ScoredCandidate(String name, int jw, int lev, int combined, Band band) {}
+
+    /**
+     * Full match-analysis payload persisted as {@code match_details} JSONB on each queue entry (§6.5):
+     * the normalised agent name, the winning band, and the ranked top-N candidate breakdown.
+     */
+    public record MatchAnalysis(String agentName, String normalized, Band band, List<ScoredCandidate> candidates) {}
 
     /**
      * The full master candidate list, indexed once so it can be reused across every row of
@@ -74,14 +98,15 @@ public class MatchingService {
             }
 
             // Max achievable score given a candidate's lev similarity is jwWeight·1 + levWeight·lev.
-            // To possibly reach the review threshold T, lev ≥ (T - jwWeight) / levWeight = levMin.
+            // To possibly reach the lowest "show a candidate" threshold T (noMatch — below it the
+            // item is queued as a new LP with no candidate), lev ≥ (T - jwWeight) / levWeight = levMin.
             // lev = 1 - editDist/maxLen, and editDist ≥ |Δlen|, so |Δlen| ≤ (1 - levMin)·maxLen.
-            double t      = cfg.reviewQueue() / 100.0;
+            double t      = cfg.noMatch() / 100.0;
             double levMin = cfg.levWeight() > 0 ? (t - cfg.jwWeight()) / cfg.levWeight() : 0.0;
             this.bandFactor = (cfg.levWeight() > 0 && levMin > 0.0) ? (1.0 - levMin) : 0.0;
         }
 
-        /** Candidate indices whose length could clear the review threshold for an input of {@code len}. */
+        /** Candidate indices whose length could clear the lowest match threshold (noMatch) for an input of {@code len}. */
         private int[] lengthBand(int len) {
             if (bandFactor <= 0.0 || bandFactor >= 1.0) {            // no safe pruning possible
                 return lengthOrder;
@@ -111,7 +136,7 @@ public class MatchingService {
 
         // Fast path: identical name already in master — score 100, no fuzzy scoring.
         String exactHit = prepared.exact.get(norm);
-        if (exactHit != null) return new MatchCandidate(exactHit, 100, action(100, prepared.cfg));
+        if (exactHit != null) return candidate(exactHit, 100, prepared.cfg);
 
         // Fuzzy path: score only the length-band survivors. Pruned candidates cannot reach
         // the review threshold, so Accept/Queue decisions and matched names are unchanged.
@@ -144,7 +169,7 @@ public class MatchingService {
             }
         }
         if (bestIdx < 0) return null;
-        return new MatchCandidate(p.candidates.get(bestIdx).original(), bestScore, action(bestScore, p.cfg));
+        return candidate(p.candidates.get(bestIdx).original(), bestScore, p.cfg);
     }
 
     /** Exhaustive scan over every candidate — no exact map, no length banding. Test seam / reference. */
@@ -156,8 +181,30 @@ public class MatchingService {
         return scan(norm, prepared, all);
     }
 
-    private static String action(int s, Config cfg) {
-        return s >= cfg.autoAccept() ? "Accept" : s >= cfg.reviewQueue() ? "Queue" : "Reject";
+    /** Build a candidate carrying its score, confidence band, and human-facing action label. */
+    private static MatchCandidate candidate(String name, int score, Config cfg) {
+        Band band = band(score, cfg);
+        return new MatchCandidate(name, score, action(band), band);
+    }
+
+    /** Classify a combined score into one of the four confidence bands (§6.4). */
+    private static Band band(int s, Config cfg) {
+        if (s >= cfg.autoAccept())  return Band.AUTO_ACCEPT;
+        if (s >= cfg.reviewQueue()) return Band.REVIEW_HIGH;
+        if (s >= cfg.noMatch())     return Band.REVIEW_LOW;
+        return Band.NO_MATCH;
+    }
+
+    /**
+     * Human-facing action label for a band. {@code AUTO_ACCEPT} → "Accept"; the two review bands →
+     * "Review" (queued, candidate shown); {@code NO_MATCH} → "New" (queued as a potential new LP).
+     */
+    private static String action(Band band) {
+        return switch (band) {
+            case AUTO_ACCEPT            -> "Accept";
+            case REVIEW_HIGH, REVIEW_LOW -> "Review";
+            case NO_MATCH               -> "New";
+        };
     }
 
     /** First index in sorted {@code a} whose value is ≥ {@code key}. */
@@ -192,12 +239,19 @@ public class MatchingService {
 
         // Fuzzy matching is CPU-bound and each row is independent; Prepared is immutable, so
         // scoring rows in parallel is safe. Persistence stays out of the parallel section.
+        Config cfg = prepared.cfg;
         List<MatchQueueEntry> entries = new ArrayList<>(rows.parallelStream()
             .map(row -> {
-                MatchCandidate best = masterNames.isEmpty() ? null : matchBest(row.agentName(), prepared);
-                String matchedName = (best != null && !"Reject".equals(best.action())) ? best.name() : null;
-                int    matchScore  = best != null ? best.score() : 0;
-                String decision    = (best != null && "Accept".equals(best.action())) ? "Accepted" : "Pending";
+                // Full match analysis drives the decision (§6.4) and the persisted breakdown (§6.5).
+                MatchAnalysis analysis = masterNames.isEmpty() ? null : analyze(row.agentName(), prepared, 5);
+                ScoredCandidate top = (analysis != null && !analysis.candidates().isEmpty())
+                    ? analysis.candidates().getFirst() : null;
+                Band   band        = top != null ? top.band() : Band.NO_MATCH;
+                boolean isNew      = band == Band.NO_MATCH;          // below noMatch → potential new LP
+                String matchedName = (top != null && !isNew) ? top.name() : null;      // review/accept bands show a candidate
+                int    matchScore  = top != null ? top.combined() : 0;
+                String decision    = band == Band.AUTO_ACCEPT ? "Accepted" : "Pending";
+
                 MatchQueueEntry entry = new MatchQueueEntry();
                 entry.setSubmissionId(submissionId);
                 entry.setFacilityId(facilityId);
@@ -205,8 +259,10 @@ public class MatchingService {
                 entry.setExtractedName(row.agentName());
                 entry.setMatchedLpName(matchedName);
                 entry.setMatchScore(matchScore);
-                entry.setNew(matchedName == null);
+                entry.setNew(isNew);
                 entry.setDecision(decision);
+                entry.setReasons(queueReasons(band, matchScore, cfg));
+                if (analysis != null) entry.setMatchDetails(mapper.valueToTree(analysis));
                 return entry;
             })
             .toList());
@@ -219,13 +275,7 @@ public class MatchingService {
         List<String> lpNames = lpRepo.findAllDistinctNames();
 
         List<MatchCandidate> matches = lpNames.stream()
-            .map(lpName -> {
-                int    score  = score(norm, normalize(lpName, cfg), cfg);
-                String action = score >= cfg.autoAccept()  ? "Accept"
-                              : score >= cfg.reviewQueue() ? "Queue"
-                              :                              "Reject";
-                return new MatchCandidate(lpName, score, action);
-            })
+            .map(lpName -> candidate(lpName, score(norm, normalize(lpName, cfg), cfg), cfg))
             .sorted(Comparator.comparingInt(MatchCandidate::score).reversed())
             .limit(10)
             .collect(Collectors.toList());
@@ -233,10 +283,76 @@ public class MatchingService {
         return new MatchTestResult(inputName, norm, matches);
     }
 
+    /**
+     * Ranked match analysis for one agent name against a prepared candidate list (§6.5). Scores the
+     * length-band survivors, returns the top-{@code topN} by combined score — tie-broken to the
+     * earliest LP Master order, mirroring {@link #scan}'s winner — with each candidate's Jaro-Winkler,
+     * Levenshtein and combined scores and confidence band. The overall band is the top candidate's.
+     */
+    public MatchAnalysis analyze(String agentName, Prepared prepared, int topN) {
+        Config cfg  = prepared.cfg;
+        String norm = normalize(agentName, cfg);
+        if (prepared.candidates.isEmpty())
+            return new MatchAnalysis(agentName, norm, Band.NO_MATCH, List.of());
+
+        int[]     indices    = prepared.lengthBand(norm.length());
+        Integer[] order      = new Integer[indices.length];
+        int[]     combinedOf = new int[indices.length];
+        for (int k = 0; k < indices.length; k++) {
+            order[k]      = k;
+            combinedOf[k] = score(norm, prepared.candidates.get(indices[k]).normalized(), cfg);
+        }
+        // combined desc, then earliest master order on ties — same winner as the single-best scan.
+        Arrays.sort(order, (x, y) -> combinedOf[(int) x] != combinedOf[(int) y]
+            ? Integer.compare(combinedOf[(int) y], combinedOf[(int) x])
+            : Integer.compare(indices[(int) x], indices[(int) y]));
+
+        List<ScoredCandidate> top = new ArrayList<>(Math.min(topN, order.length));
+        for (int k = 0; k < order.length && top.size() < topN; k++) {
+            NormalizedName c = prepared.candidates.get(indices[order[k]]);
+            int combined = combinedOf[order[k]];
+            int jw  = (int) Math.round(jaroWinkler(norm, c.normalized()) * 100);
+            int lev = (int) Math.round(levenshteinSimilarity(norm, c.normalized()) * 100);
+            top.add(new ScoredCandidate(c.original(), jw, lev, combined, band(combined, cfg)));
+        }
+        Band overall = top.isEmpty() ? Band.NO_MATCH : top.getFirst().band();
+        return new MatchAnalysis(agentName, norm, overall, top);
+    }
+
+    /** {@link #analyze} serialised to a JSON tree for persisting as {@code match_details} JSONB. */
+    public JsonNode analyzeTree(String agentName, Prepared prepared, int topN) {
+        return mapper.valueToTree(analyze(agentName, prepared, topN));
+    }
+
+    /** Human-readable reasons for the Match Queue, derived from the winning confidence band (§6.4). */
+    private static List<String> queueReasons(Band band, int score, Config cfg) {
+        return switch (band) {
+            case AUTO_ACCEPT -> List.of("Auto-accepted — score " + score + " ≥ " + cfg.autoAccept());
+            case REVIEW_HIGH -> List.of("High-confidence review — score " + score + " in "
+                + cfg.reviewQueue() + "–" + (cfg.autoAccept() - 1) + "; confirm top candidate");
+            case REVIEW_LOW  -> List.of("Low-confidence review — score " + score + " in "
+                + cfg.noMatch() + "–" + (cfg.reviewQueue() - 1) + "; select a candidate or create a new LP");
+            case NO_MATCH    -> List.of("No match — best score " + score + " < " + cfg.noMatch()
+                + "; confirm creation of a new LP Master record");
+        };
+    }
+
     // ── Normalisation ─────────────────────────────────────────────────────────
 
     private static final Pattern NON_ALNUM  = Pattern.compile("[^a-z0-9 ]");
     private static final Pattern WHITESPACE = Pattern.compile("\\s+");
+
+    /**
+     * Pipeline step 6 (§6.2): retirement-suffix normalization. Pension/retirement LP names are
+     * abbreviated inconsistently by agent banks ("Texas Teachers Ret. Sys."). These rules fold the
+     * common forms onto a canonical spelling so they match the LP Master. Dot- and space-separated
+     * variants are both handled; the "Ret. Sys." rule must run before the bare "Ret." rule.
+     */
+    private record RetireRule(Pattern pattern, String replacement) {}
+    private static final List<RetireRule> RETIREMENT_RULES = List.of(
+        new RetireRule(Pattern.compile("(?i)\\bret(?:irement)?\\.?\\s+sys(?:tem|\\.)?(?=\\s|$)"), "retirement system"),
+        new RetireRule(Pattern.compile("(?i)\\bret\\.(?=\\s|$)"),                                  "retirement")
+    );
 
     private String normalize(String name, Config cfg) {
         if (name == null || name.isBlank()) return "";
@@ -245,6 +361,11 @@ public class MatchingService {
         if (cfg.abbrevExpand()) {
             for (var abbr : cfg.abbreviations()) {
                 s = abbr.pattern().matcher(s).replaceAll(abbr.expansion());
+            }
+        }
+        if (cfg.retirementNormalize()) {
+            for (RetireRule rule : RETIREMENT_RULES) {
+                s = rule.pattern().matcher(s).replaceAll(rule.replacement());
             }
         }
         if (cfg.caseFold()) s = s.toLowerCase(Locale.ROOT);
@@ -340,9 +461,10 @@ public class MatchingService {
 
     private record Abbreviation(Pattern pattern, String expansion) {}
     private record Config(
-        int autoAccept, int reviewQueue,
+        int autoAccept, int reviewQueue, int noMatch,
         double jwWeight, double levWeight,
         boolean caseFold, boolean punctuation, boolean stripSuffixes, boolean abbrevExpand,
+        boolean retirementNormalize,
         List<Pattern> stripList, List<Abbreviation> abbreviations
     ) {}
 
@@ -352,12 +474,14 @@ public class MatchingService {
 
         int     autoAccept   = t.path("autoAccept").asInt(95);
         int     reviewQueue  = t.path("reviewQueue").asInt(80);
+        int     noMatch      = t.path("noMatch").asInt(50);
         double  jwWeight     = t.path("jwWeight").asDouble(0.6);
         double  levWeight    = t.path("levWeight").asDouble(0.4);
         boolean caseFold     = t.path("caseFold").asBoolean(true);
         boolean punctuation  = t.path("punctuation").asBoolean(true);
         boolean stripSuf     = t.path("stripSuffixes").asBoolean(true);
         boolean abbrevExp    = t.path("abbrevExpand").asBoolean(true);
+        boolean retireNorm   = t.path("retirementNormalize").asBoolean(true);
 
         List<Pattern> stripList = new ArrayList<>();
         for (JsonNode s : root.path("legalSuffixes")) {
@@ -374,7 +498,7 @@ public class MatchingService {
                 a.path("expansion").asText()));
         }
 
-        return new Config(autoAccept, reviewQueue, jwWeight, levWeight,
-            caseFold, punctuation, stripSuf, abbrevExp, stripList, abbreviations);
+        return new Config(autoAccept, reviewQueue, noMatch, jwWeight, levWeight,
+            caseFold, punctuation, stripSuf, abbrevExp, retireNorm, stripList, abbreviations);
     }
 }

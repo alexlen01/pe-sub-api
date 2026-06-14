@@ -226,6 +226,53 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.updated").value(0));
     }
 
+    @Test
+    void patchClassification_withoutAuditFlag_writesNoAuditEntry() throws Exception {
+        // Per-row auto-save (audit omitted/false) persists data but must NOT log — otherwise the
+        // audit trail gets one entry per keystroke.
+        lpRepo.save(buildLp("Monarch Capital LP", "Eligible"));
+
+        mvc.perform(patch("/api/lps/classification")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "facilityId": %d,
+                      "rows": [{ "name": "Monarch Capital LP", "cls": "Rated" }]
+                    }
+                    """.formatted(facilityId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.updated").value(1));
+
+        assertThat(auditLogRepo.count()).isZero();
+    }
+
+    @Test
+    void patchClassification_withAuditFlag_writesOneAggregatedEntry() throws Exception {
+        // The flush sent when the user leaves the screen carries audit:true and the full set of
+        // edited rows, producing exactly one entry recording the aggregate count.
+        lpRepo.save(buildLp("Monarch Capital LP", "Eligible"));
+        lpRepo.save(buildLp("Solstice Capital LP", "Eligible"));
+
+        mvc.perform(patch("/api/lps/classification")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "facilityId": %d,
+                      "audit": true,
+                      "rows": [
+                        { "name": "Monarch Capital LP",  "cls": "Rated" },
+                        { "name": "Solstice Capital LP", "cls": "Rated" }
+                      ]
+                    }
+                    """.formatted(facilityId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.updated").value(2));
+
+        assertThat(auditLogRepo.count()).isEqualTo(1);
+        assertThat(auditLogRepo.findAll().getFirst().getDetail())
+            .contains("2 LP records updated from Shadow BB classification");
+    }
+
     // ── Dedup: one record per (facility, investor name) ─────────────────────────────
 
     @Test

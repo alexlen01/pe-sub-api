@@ -99,7 +99,8 @@ public class MatchingController {
         String decision,
         String status,
         boolean isNew,
-        List<String> reasons
+        List<String> reasons,
+        com.fasterxml.jackson.databind.JsonNode matchDetails
     ) {}
 
     private MatchQueueItemDto toDto(MatchQueueEntry e, String facilityName) {
@@ -109,7 +110,7 @@ public class MatchingController {
             e.getId(), e.getSubmissionId(), e.getFacilityId(), facilityName,
             e.getExtractedName(), displayName,
             e.getMatchScore(), e.getDecision(), e.getDecision(),
-            e.isNew(), e.getReasons()
+            e.isNew(), e.getReasons(), e.getMatchDetails()
         );
     }
 

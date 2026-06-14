@@ -53,12 +53,15 @@ class MatchingServiceTest {
     }
 
     @Test
-    void unrelatedNameIsRejected() {
+    void unrelatedNameIsNotAutoAccepted() {
+        // An unrelated name must never be auto-accepted. Per §6.4 it is still queued (no candidate
+        // is auto-rejected) — either as a low-confidence review or as a potential new LP.
         var best = service.matchBestInList("Completely Different Fund",
             List.of("Blue Owl GP Stakes V"));
 
         assertThat(best).isNotNull();
-        assertThat(best.action()).isEqualTo("Reject");
+        assertThat(best.action()).isNotEqualTo("Accept");
+        assertThat(best.band()).isNotEqualTo(MatchingService.Band.AUTO_ACCEPT);
     }
 
     @Test
@@ -109,7 +112,7 @@ class MatchingServiceTest {
         // Guarantees the length-band prefilter never drops a candidate that would change the
         // outcome: for every input, the banded matchBest must agree with a full exhaustive scan
         // on the action and matched name, and on score whenever a real match is found
-        // (a below-threshold "Reject" row's reported score may legitimately differ).
+        // (a below-threshold "New"/NO_MATCH row's reported score may legitimately differ).
         List<String> candidates = List.of(
             "Blue Owl GP Stakes V", "Blue Owl GP Stakes IV", "Blue Owl Capital",
             "Blackstone Strategic Partners", "Blackstone Strategic Partners IX",
@@ -130,12 +133,75 @@ class MatchingServiceTest {
 
             assertThat(banded.action())
                 .as("action for '%s'", input).isEqualTo(exhaustive.action());
-            if (!"Reject".equals(exhaustive.action())) {
+            if (!"New".equals(exhaustive.action())) {
                 assertThat(banded.name())
                     .as("matched name for '%s'", input).isEqualTo(exhaustive.name());
                 assertThat(banded.score())
                     .as("score for '%s'", input).isEqualTo(exhaustive.score());
             }
         }
+    }
+
+    @Test
+    void retirementSuffixNormalisationMatchesCanonicalName() {
+        // §6.2 step 6: "Ret. Sys." must fold to "retirement system" so an agent abbreviation
+        // resolves to the canonical LP Master spelling. Both normalise identically → exact accept.
+        var best = service.matchBestInList("Texas Teachers Ret. Sys.",
+            List.of("Texas Teachers Retirement System", "Ares Capital Corp"));
+
+        assertThat(best).isNotNull();
+        assertThat(best.name()).isEqualTo("Texas Teachers Retirement System");
+        assertThat(best.score()).isEqualTo(100);
+        assertThat(best.action()).isEqualTo("Accept");
+        assertThat(best.band()).isEqualTo(MatchingService.Band.AUTO_ACCEPT);
+
+        // The bare "Ret." form folds to "retirement" as well.
+        var bare = service.matchBestInList("Maple Ret.", List.of("Maple Retirement"));
+        assertThat(bare.score()).isEqualTo(100);
+    }
+
+    @Test
+    void fourBandClassificationSpansAcceptReviewAndNoMatch() {
+        // One exact name (Accept) and one unrelated name (queued, not auto-accepted) confirm the
+        // band boundaries are wired through to MatchCandidate.band().
+        var exact = service.matchBestInList("Ares Capital Corp",
+            List.of("Ares Capital Corp", "Blue Owl GP Stakes V"));
+        assertThat(exact.band()).isEqualTo(MatchingService.Band.AUTO_ACCEPT);
+
+        var unrelated = service.matchBestInList("Zzzz Qqqq Xxxx",
+            List.of("Ares Capital Corp", "Blue Owl GP Stakes V"));
+        assertThat(unrelated.band()).isEqualTo(MatchingService.Band.NO_MATCH);
+        assertThat(unrelated.action()).isEqualTo("New");
+    }
+
+    @Test
+    void analyzeReturnsRankedTopCandidatesWithPerMetricBreakdown() {
+        List<String> candidates = List.of(
+            "Blue Owl GP Stakes V", "Blue Owl GP Stakes IV", "Blue Owl Capital",
+            "Ares Capital Corp", "Apollo Global Management", "KKR North America XIII");
+        var prepared = service.prepare(candidates);
+
+        var analysis = service.analyze("Blue Owl GP Stakes V", prepared, 5);
+
+        assertThat(analysis.normalized()).isEqualTo("blue owl gp stakes v");
+        assertThat(analysis.band()).isEqualTo(MatchingService.Band.AUTO_ACCEPT);
+        assertThat(analysis.candidates()).isNotEmpty().hasSizeLessThanOrEqualTo(5);
+        // Top candidate is the verbatim match with a full combined score and populated metrics.
+        var top = analysis.candidates().getFirst();
+        assertThat(top.name()).isEqualTo("Blue Owl GP Stakes V");
+        assertThat(top.combined()).isEqualTo(100);
+        assertThat(top.jw()).isBetween(0, 100);
+        assertThat(top.lev()).isBetween(0, 100);
+        // Ranked strictly non-increasing by combined score.
+        var combined = analysis.candidates().stream().map(MatchingService.ScoredCandidate::combined).toList();
+        for (int i = 1; i < combined.size(); i++)
+            assertThat(combined.get(i)).isLessThanOrEqualTo(combined.get(i - 1));
+    }
+
+    @Test
+    void analyzeOnEmptyCandidateListIsNoMatch() {
+        var analysis = service.analyze("Blue Owl GP Stakes V", service.prepare(List.of()), 5);
+        assertThat(analysis.band()).isEqualTo(MatchingService.Band.NO_MATCH);
+        assertThat(analysis.candidates()).isEmpty();
     }
 }

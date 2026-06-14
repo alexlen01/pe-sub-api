@@ -1,5 +1,6 @@
 package com.ubs.pesubapi.entity;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -55,6 +56,11 @@ public class MatchQueueEntry {
     @Column(name = "reasons", columnDefinition = "jsonb")
     private List<String> reasons;
 
+    /** Ranked candidate breakdown (normalised agent name, top-5 JW/Lev/combined scores, band) — §6.5. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "match_details", columnDefinition = "jsonb")
+    private JsonNode matchDetails;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -81,6 +87,7 @@ public class MatchQueueEntry {
     public String getMasterNameOverride()  { return masterNameOverride; }
     public boolean isNew()             { return isNew; }
     public List<String> getReasons()   { return reasons; }
+    public JsonNode getMatchDetails()  { return matchDetails; }
     public LocalDateTime getCreatedAt(){ return createdAt; }
     public LocalDateTime getUpdatedAt(){ return updatedAt; }
 
@@ -97,4 +104,5 @@ public class MatchQueueEntry {
     public void setMasterNameOverride(String v){ this.masterNameOverride = v; }
     public void setNew(boolean v)             { this.isNew = v; }
     public void setReasons(List<String> v)    { this.reasons = v; }
+    public void setMatchDetails(JsonNode v)   { this.matchDetails = v; }
 }

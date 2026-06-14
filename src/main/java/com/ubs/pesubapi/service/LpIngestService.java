@@ -57,17 +57,19 @@ public class LpIngestService {
             String extractedName = row.investorName().value();
             MatchingService.MatchCandidate best = matchingService.matchBest(extractedName, prepared);
 
-            if (best == null || "Reject".equals(best.action())) {
+            // NO_MATCH band (or no candidates) → queue as a potential new LP record (§6.4).
+            if (best == null || best.band() == MatchingService.Band.NO_MATCH) {
                 queued++;
                 int score = best != null ? best.score() : 0;
                 List<String> reasons = best == null
                     ? List.of("New LP — no matching record found in facility LP Master")
-                    : List.of("New LP — best match score " + score + " is below review threshold");
+                    : List.of("New LP — best match score " + score + " is below the no-match threshold");
                 results.add(result(row.rowIndex(), extractedName, null, null, score,
                     "Queued", List.of(), reasons));
                 if (submissionId > 0) {
                     persistQueueEntry(submissionId, request.facilityId(), row.rowIndex(),
-                        extractedName, null, null, score, reasons);
+                        extractedName, null, null, score, reasons,
+                        matchingService.analyzeTree(extractedName, prepared, 5));
                 }
                 continue;
             }
@@ -89,7 +91,8 @@ public class LpIngestService {
                     best.score(), "Queued", List.of(), reasons));
                 if (submissionId > 0) {
                     persistQueueEntry(submissionId, request.facilityId(), row.rowIndex(),
-                        extractedName, lp.getId(), lp.getInvestorName(), best.score(), reasons);
+                        extractedName, lp.getId(), lp.getInvestorName(), best.score(), reasons,
+                        matchingService.analyzeTree(extractedName, prepared, 5));
                 }
             } else {
                 List<String> updatedFields = applyFields(lp, row);
@@ -190,7 +193,7 @@ public class LpIngestService {
     private void persistQueueEntry(int submissionId, int facilityId, int rowIndex,
                                    String extractedName, Integer matchedLpId,
                                    String matchedLpName, int matchScore,
-                                   List<String> reasons) {
+                                   List<String> reasons, JsonNode matchDetails) {
         MatchQueueEntry entry = new MatchQueueEntry();
         entry.setSubmissionId(submissionId);
         entry.setFacilityId(facilityId);
@@ -202,6 +205,7 @@ public class LpIngestService {
         entry.setDecision("Pending");
         entry.setNew(matchedLpId == null);
         entry.setReasons(reasons);
+        entry.setMatchDetails(matchDetails);
         matchQueueRepo.save(entry);
     }
 

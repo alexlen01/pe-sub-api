@@ -103,7 +103,8 @@ public class SubmissionController {
     private record TemplateHints(String sheetName, Integer headerRowIndex) {}
 
     private TemplateHints hintsFor(String agentBank) {
-        return templateRepo.findByAgentBankIgnoreCase(agentBank)
+        return templateRepo.findAllByAgentBankIgnoreCase(agentBank).stream()
+            .findFirst()
             .map(t -> new TemplateHints(t.getSheetName(), t.getHeaderRowIndex()))
             .orElse(new TemplateHints(null, null));
     }
@@ -483,7 +484,7 @@ public class SubmissionController {
 
         Optional<SubmissionExtraction> extOpt = extractionRepo.findBySubmissionId(id);
 
-        if (templateRepo.findByAgentBankIgnoreCase(agentBank).isEmpty()) {
+        if (templateRepo.findAllByAgentBankIgnoreCase(agentBank).isEmpty()) {
             if (extOpt.isPresent() && extOpt.get().getSheetName() != null) {
                 SubmissionExtraction ext = extOpt.get();
                 BbTemplate t = new BbTemplate();

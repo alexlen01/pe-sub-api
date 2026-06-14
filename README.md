@@ -124,9 +124,20 @@ defaults to the current month. Returns `{ "updated": <count> }`.
 Called internally by `LpIngestService` after pe-sub-extraction returns results. For each extracted LP row:
 
 1. Runs fuzzy name matching (Jaro-Winkler + Levenshtein) against the facility's existing LP records.
-2. **Updated** — match score ≥ auto-accept threshold; writes `aum`, `capCommit`, `uc`, `agentRate`, `agentConc` on the matched LP.
-3. **Queued** — medium-confidence match or low-confidence extraction fields; placed in `match_queue_entries` for credit officer review.
-4. **Skipped** — below review-queue threshold or no investor name extracted.
+2. **Updated** — match score ≥ auto-accept threshold (`AUTO_ACCEPT` band); writes `aum`, `capCommit`, `uc`, `agentRate`, `agentConc` on the matched LP.
+3. **Queued** — `REVIEW_HIGH`/`REVIEW_LOW` band (candidate shown) or `NO_MATCH` band (potential new LP), or low-confidence extraction fields; placed in `match_queue_entries` for credit officer review with a `match_details` breakdown.
+4. **Skipped** — no investor name extracted.
+
+#### LP name matching algorithm (Solution Design §6)
+
+The matching engine (`MatchingService`) implements the design's §6 pipeline:
+
+- **Normalisation (§6.2)** — case fold, punctuation strip, whitespace collapse, legal-suffix strip, abbreviation expansion, and **retirement-suffix normalisation** (`Ret. Sys.` → `retirement system`, `Ret.` → `retirement`). Each step is config-toggleable under `matching_config`.
+- **Similarity scoring (§6.3)** — combined score = `JW × jwWeight + Lev × levWeight` (defaults 0.6 / 0.4), each computed on the normalised forms. A length-band pre-filter restricts full scoring to plausible candidates (the in-app equivalent of the design's `pg_trgm` pre-filter; see note below).
+- **Confidence bands (§6.4)** — four configurable bands: `AUTO_ACCEPT` (≥ `autoAccept`, default 95), `REVIEW_HIGH` (≥ `reviewQueue`, default 80), `REVIEW_LOW` (≥ `noMatch`, default 50), `NO_MATCH` (< `noMatch`). Only `AUTO_ACCEPT` resolves automatically; the other three are queued — nothing is auto-rejected.
+- **Match analysis output (§6.5)** — each queue entry persists a `match_details` JSONB payload (normalised agent name, winning band, ranked top-5 candidates with JW / Lev / combined scores) returned by `GET /api/matching/queue`.
+
+> **Deviation:** the design specifies a PostgreSQL `pg_trgm` trigram pre-filter to cap the candidate set. This implementation uses an in-memory length-band pre-filter that is provably loss-free against the configured thresholds (see `MatchingServiceTest`); `pg_trgm` remains the recommended path once LP Master scales past in-memory scanning.
 
 ### Borrowing Base — `/api/bb`
 

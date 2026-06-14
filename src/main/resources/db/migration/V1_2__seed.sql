@@ -51,14 +51,16 @@ INSERT INTO config (key, value) VALUES ('global_settings', '[
 
 INSERT INTO config (key, value) VALUES ('matching_config', '{
   "thresholds": {
-    "autoAccept":    95,
-    "reviewQueue":   80,
-    "jwWeight":      0.6,
-    "levWeight":     0.4,
-    "stripSuffixes": true,
-    "caseFold":      true,
-    "punctuation":   true,
-    "abbrevExpand":  true
+    "autoAccept":          95,
+    "reviewQueue":         80,
+    "noMatch":             50,
+    "jwWeight":            0.6,
+    "levWeight":           0.4,
+    "stripSuffixes":       true,
+    "caseFold":            true,
+    "punctuation":         true,
+    "abbrevExpand":        true,
+    "retirementNormalize": true
   },
   "legalSuffixes": [
     { "abbr": "LP",   "full": "Limited Partnership",                   "strip": true  },

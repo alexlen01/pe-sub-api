@@ -11,9 +11,9 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Reads against the seeded BB template registry (V1_2 + V1_6 migrations). Goldman Sachs
- * is seeded with an LP_GRID tab and group headers mapped to Agent LP Classification
- * values; SVB and Wells Fargo have an LP_GRID tab but no group headers.
+ * Reads against the seeded BB template registry (V1_2 + V1_5 migrations).
+ * Wells Fargo Class A is seeded with an LP_GRID tab and group headers mapped to
+ * Agent LP Classification values; Wells Fargo Class B and SVB have no group headers.
  */
 class ClassificationConfigBuilderTest extends IntegrationTestBase {
 
@@ -22,12 +22,12 @@ class ClassificationConfigBuilderTest extends IntegrationTestBase {
 
     @Test
     void buildJson_mapsSeededGroupHeadersToAgentClassification() throws Exception {
-        String json = builder.buildJson("Goldman Sachs Bank USA");
+        // Wells Fargo Class A carries the group-header classification rows (formerly the
+        // Goldman Sachs prior-agent template for Blue Owl GP Stakes V, renamed in V1_5).
+        String json = builder.buildJson("Wells Fargo");
         assertThat(json).isNotNull();
 
         Map<String, String> config = mapper.readValue(json, new TypeReference<>() {});
-        // V1_6 maps the literal GS group-header text to the Agent LP Classification taxonomy.
-        // header_text stays as the agent document's wording; only the classification changes.
         assertThat(config)
             .containsEntry("Rated Investors", "Rated Included")
             .containsEntry("Unrated Investors", "Non-Rated Included")
@@ -37,7 +37,7 @@ class ClassificationConfigBuilderTest extends IntegrationTestBase {
 
     @Test
     void buildJson_caseInsensitiveAgentBankMatch() {
-        assertThat(builder.buildJson("goldman sachs bank usa")).isNotNull();
+        assertThat(builder.buildJson("wells fargo")).isNotNull();
     }
 
     @Test

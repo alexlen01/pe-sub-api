@@ -177,4 +177,32 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$[0].createdAt").isNotEmpty())
             .andExpect(jsonPath("$[0].updatedAt").isNotEmpty());
     }
+
+    @Test
+    void createFacility_accountMetadataFieldsPresentAsNullInResponse() throws Exception {
+        // account_number, loan_amount, maturity_date, bank_status, bank_status_date are
+        // populated by the V1_7 seed, not by the create endpoint. Verify they are present
+        // in the DTO response as JSON null values (proving the fields round-trip the API).
+        mvc.perform(post("/api/facilities")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name": "Metadata Round-Trip Fund", "agentBank": "JPMorgan"}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.accountNumber").value((Object) null))
+            .andExpect(jsonPath("$.loanAmount").value((Object) null))
+            .andExpect(jsonPath("$.maturityDate").value((Object) null))
+            .andExpect(jsonPath("$.bankStatus").value((Object) null))
+            .andExpect(jsonPath("$.bankStatusDate").value((Object) null));
+
+        int id = facilityRepo.findByName("Metadata Round-Trip Fund").orElseThrow().getId();
+
+        mvc.perform(get("/api/facilities/{id}", id))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.accountNumber").value((Object) null))
+            .andExpect(jsonPath("$.loanAmount").value((Object) null))
+            .andExpect(jsonPath("$.maturityDate").value((Object) null))
+            .andExpect(jsonPath("$.bankStatus").value((Object) null))
+            .andExpect(jsonPath("$.bankStatusDate").value((Object) null));
+    }
 }

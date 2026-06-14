@@ -90,6 +90,9 @@ public class Lp {
     @Column(nullable = false)
     private boolean rcl = false;
 
+    @Column(name = "recallable_dist")
+    private String recallableDist;
+
     @Column(nullable = false)
     private boolean tf = false;
 
@@ -138,6 +141,7 @@ public class Lp {
     public String getAbb()              { return abb; }
     public boolean isInc()              { return inc; }
     public boolean isRcl()              { return rcl; }
+    public String getRecallableDist()   { return recallableDist; }
     public boolean isTf()               { return tf; }
     public String getNotes()            { return notes; }
     public LocalDateTime getCreatedAt() { return createdAt; }
@@ -163,8 +167,9 @@ public class Lp {
     public void setNotes(String notes)       { this.notes = notes; }
     public void setAbb(String abb)           { this.abb = abb; }
     public void setInc(boolean inc)          { this.inc = inc; }
-    public void setRcl(boolean rcl)          { this.rcl = rcl; }
-    public void setUpdatedAt(LocalDateTime t){ this.updatedAt = t; }
+    public void setRcl(boolean rcl)                    { this.rcl = rcl; }
+    public void setRecallableDist(String v)            { this.recallableDist = v; }
+    public void setUpdatedAt(LocalDateTime t)          { this.updatedAt = t; }
 
     // Setters for extraction ingest
     public void setAum(String aum)               { this.aum = aum; }

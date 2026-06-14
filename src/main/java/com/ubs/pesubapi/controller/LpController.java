@@ -68,15 +68,19 @@ public class LpController {
     }
 
     /**
-     * Batch-applies the credit officer's classification & rate edits onto persisted LP Master
-     * records (the "Save" action on the LP Classification & Rate Assignment screen). Rows are
-     * matched to existing records by (facilityId, name); unmatched rows are ignored.
+     * Applies the credit officer's classification & rate edits onto persisted LP Master records
+     * (the LP Classification & Rate Assignment screen). Rows are matched to existing records by
+     * (facilityId, name); unmatched rows are ignored.
+     *
+     * <p>The screen auto-saves each edited row as the user types — those calls are silent. Only the
+     * aggregated flush sent when the user leaves the screen carries {@code audit: true}, which
+     * writes a single audit entry recording the number of LP records touched in the session.
      */
     @PatchMapping("/classification")
     public Map<String, Integer> patchClassification(@RequestBody LpClassificationRequest req,
                                                      HttpServletRequest request) {
         int updated = classificationService.applyClassifications(req);
-        if (updated > 0 && req.facilityId() != null) {
+        if (updated > 0 && req.facilityId() != null && Boolean.TRUE.equals(req.audit())) {
             auditService.log("LP Classification Saved",
                 updated + " LP record" + (updated != 1 ? "s" : "")
                     + " updated from Shadow BB classification",
