@@ -108,8 +108,15 @@ public class BbController {
         double totalCalledCap = lps.stream().mapToDouble(lp -> parseMoney(lp.getCalledCap())).sum();
         double totalUncalled  = lps.stream().mapToDouble(lp -> parseMoney(lp.getUc())).sum();
         double pctCalled      = totalCapCommit > 0 ? totalCalledCap / totalCapCommit : 0;
-        long   igCount        = lps.stream().filter(com.ubs.pesubapi.entity.Lp::isIg).count();
-        double igRatio        = totalLPs > 0 ? (double) igCount / totalLPs : 0;
+
+        // Uncalled-weighted population shares (SHADOW_BB_ANALYSIS Table 1):
+        // each metric = Σ(uncalled of matching LPs) ÷ Σ(total uncalled), not a headcount ratio.
+        double instUncalled   = lps.stream().filter(lp -> "Institutional".equals(lp.getInvType())).mapToDouble(lp -> parseMoney(lp.getUc())).sum();
+        double hnwUncalled    = lps.stream().filter(lp -> "HNW".equals(lp.getInvType())).mapToDouble(lp -> parseMoney(lp.getUc())).sum();
+        double igUncalled     = lps.stream().filter(com.ubs.pesubapi.entity.Lp::isIg).mapToDouble(lp -> parseMoney(lp.getUc())).sum();
+        double pctInstitutional = totalUncalled > 0 ? instUncalled / totalUncalled : 0;
+        double pctHNW           = totalUncalled > 0 ? hnwUncalled  / totalUncalled : 0;
+        double igRatio          = totalUncalled > 0 ? igUncalled   / totalUncalled : 0;
 
         List<Double> sortedUc = lps.stream()
             .mapToDouble(lp -> parseMoney(lp.getUc()))
@@ -118,8 +125,9 @@ public class BbController {
         double top20Uc        = sortedUc.stream().limit(20).mapToDouble(d -> d).sum();
         double pctTop10       = totalUncalled > 0 ? top10Uc / totalUncalled : 0;
         double pctTop20       = totalUncalled > 0 ? top20Uc / totalUncalled : 0;
-        long   gt2MCount      = lps.stream().filter(lp -> parseMoney(lp.getUc()) > 2).count();
-        double pctUncalledGt2M = totalLPs > 0 ? (double) gt2MCount / totalLPs : 0;
+        // % of Uncalled Capital from LPs with AUM > $25bn (parseMoney returns $millions, so $25bn = 25_000).
+        double gt25bnUncalled       = lps.stream().filter(lp -> parseMoney(lp.getAum()) > 25_000).mapToDouble(lp -> parseMoney(lp.getUc())).sum();
+        double pctUncalledGt25bnAum = totalUncalled > 0 ? gt25bnUncalled / totalUncalled : 0;
 
         double agentBBRaw = 0, ubsBBRaw = 0;
         Optional<BbSnapshot> latest = snapshotRepo.findTopByFacilityIdOrderByCalculatedAtDesc(facilityId);
@@ -203,12 +211,12 @@ public class BbController {
         out.put("pctCalled",           pctCalled);
         out.put("totalAllUncalled",    totalUncalled);
         out.put("totalLPs",            totalLPs);
-        out.put("pctInstitutional",    lps.stream().filter(lp -> "Institutional".equals(lp.getInvType())).count() / (double) totalLPs);
-        out.put("pctHNW",              lps.stream().filter(lp -> "HNW".equals(lp.getInvType())).count() / (double) totalLPs);
+        out.put("pctInstitutional",    pctInstitutional);
+        out.put("pctHNW",              pctHNW);
         out.put("pctTop10",            pctTop10);
         out.put("pctTop20",            pctTop20);
         out.put("igRatio",             igRatio);
-        out.put("pctUncalledGt2M",     pctUncalledGt2M);
+        out.put("pctUncalledGt25bnAum", pctUncalledGt25bnAum);
         out.put("facilitySize",        0.0);
         out.put("ubsParticipation",    0.0);
         out.put("ubsParticipationPct", 0.0);
@@ -231,6 +239,7 @@ public class BbController {
             double mult = 1;
             if (clean.toUpperCase().endsWith("M")) { mult = 1;     clean = clean.substring(0, clean.length() - 1); }
             else if (clean.toUpperCase().endsWith("B")) { mult = 1000; clean = clean.substring(0, clean.length() - 1); }
+            else if (clean.toUpperCase().endsWith("T")) { mult = 1_000_000; clean = clean.substring(0, clean.length() - 1); }
             else if (clean.toUpperCase().endsWith("K")) { mult = 0.001; clean = clean.substring(0, clean.length() - 1); }
             return Double.parseDouble(clean) * mult;
         } catch (NumberFormatException e) {
@@ -248,7 +257,7 @@ public class BbController {
         Map<String, Object> out = new LinkedHashMap<>();
         for (String k : List.of("totalCapCommit", "totalCalledCap", "pctCalled", "totalAllUncalled",
                 "totalLPs", "pctInstitutional", "pctHNW", "pctTop10", "pctTop20", "igRatio",
-                "pctUncalledGt2M", "facilitySize", "ubsParticipation", "ubsParticipationPct",
+                "pctUncalledGt25bnAum", "facilitySize", "ubsParticipation", "ubsParticipationPct",
                 "facilityLTV", "availableCommit", "facilityAdvRate", "agentBBRaw", "ubsBBRaw",
                 "ubsAdvRate")) {
             out.put(k, 0.0);

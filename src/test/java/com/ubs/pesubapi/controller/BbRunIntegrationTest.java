@@ -200,6 +200,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
             // LP Portfolio table
             .andExpect(jsonPath("$.totalLPs").value(3))
             .andExpect(jsonPath("$.totalAllUncalled").isNumber())
+            .andExpect(jsonPath("$.pctUncalledGt25bnAum").isNumber())
             // Borrowing Base table
             .andExpect(jsonPath("$.ubsBBRaw").isNumber())
             .andExpect(jsonPath("$.agentBBRaw").isNumber())
