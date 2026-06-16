@@ -57,6 +57,16 @@
       <artifactId>embedded-database-spring-test</artifactId>
       <version>2.6.0</version>
       <scope>test</scope>
+      <!-- This starter transitively drags in org.testcontainers:{postgresql,mssqlserver,
+           mysql,mariadb} for its DOCKER provider. We only use the ZONKY provider (in-process
+           embedded-postgres binary, no Docker), so exclude the entire org.testcontainers
+           group to keep the dependency graph Docker-free. -->
+      <exclusions>
+        <exclusion>
+          <groupId>org.testcontainers</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <!-- The ZONKY provider; declared optional by the starter above, so required explicitly. -->
     <dependency>

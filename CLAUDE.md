@@ -45,7 +45,7 @@ cd $PROJ
 
 ## Test Coverage Requirements
 
-- Every endpoint must have an integration test hitting a real in-memory or Testcontainers PostgreSQL instance — no mocked repositories.
+- Every endpoint must have an integration test hitting a real PostgreSQL instance via Zonky's embedded-postgres (Docker-free; extend `IntegrationTestBase`) — no mocked repositories.
 - Any field added to an entity must have a corresponding assertion that it round-trips through the API (POST → GET → field present).
 - Hardcoded values in seed/test data must be clearly marked `// TEST ONLY` and must not appear in production code paths.
 
