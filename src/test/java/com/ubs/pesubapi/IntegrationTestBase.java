@@ -1,29 +1,18 @@
 package com.ubs.pesubapi;
 
+import io.zonky.test.db.AutoConfigureEmbeddedDatabase;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
 
-// Singleton container: started once for the whole test run via the static initializer.
-// @Testcontainers / @Container are intentionally absent — they would stop the container
-// after each test class, breaking subsequent classes that share the same Spring context.
+// Zonky embedded PostgreSQL: a real Postgres binary started in-process — no Docker daemon
+// required — so JSONB columns and ::cast Flyway migrations behave exactly as in production.
+//
+// provider = ZONKY  -> spin up the bundled embedded-postgres binary for this platform.
+// refresh  = NEVER (default) -> the database is bound to the shared Spring test context and
+//            lives for the whole run, mirroring the previous singleton-container behaviour.
+//            Test classes remain responsible for their own teardown.
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
+@AutoConfigureEmbeddedDatabase(provider = AutoConfigureEmbeddedDatabase.DatabaseProvider.ZONKY)
 public abstract class IntegrationTestBase {
-
-    static final PostgreSQLContainer<?> postgres;
-
-    static {
-        postgres = new PostgreSQLContainer<>("postgres:16-alpine");
-        postgres.start();
-    }
-
-    @DynamicPropertySource
-    static void postgresProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url",      postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-    }
 }

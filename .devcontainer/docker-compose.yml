@@ -1,8 +1,0 @@
-services:
-  app:
-    image: mcr.microsoft.com/devcontainers/java:21
-    volumes:
-      - ..:/workspace:cached
-    command: sleep infinity
-    depends_on:
-      - db

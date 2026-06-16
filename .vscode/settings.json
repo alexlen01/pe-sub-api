@@ -1,6 +1,5 @@
 {
   "yaml.schemas": {
-    "kubernetes": "*.k8s.yaml",
     "https://json.schemastore.org/docker-compose.json": ["docker-compose*.yml", "compose*.yml"]
   }
 }
