@@ -87,7 +87,7 @@ INSERT INTO config (key, value) VALUES ('matching_config', '{
 }');
 
 -- ── Field Mapping Dictionary: canonical fields ────────────────────────────────
--- 30 fields across 7 groups.
+-- 31 fields across 7 groups.
 -- is_derived = TRUE: agent-calculated output; captured for display / cross-check
 --                    only; not used as a raw input by the UBS BB engine.
 
@@ -103,8 +103,8 @@ VALUES
       'INVESTOR_NAME', FALSE),
 
   ('Identity & Classification', 1, 2,
-      'Agent LP Classification',
-      'Identity & Classification - Agent LP Classification',
+      'Investor Type',
+      'Identity & Classification - Investor Type',
       'The agent''s own classification label, taken verbatim from the Agent BB document. '
           'May appear as a column OR as group-header rows that separate sections of LPs '
           '(e.g. "Rated Included", "Designated PWM"); when supplied as section rows, the '
@@ -114,26 +114,18 @@ VALUES
       'AGENT_LP_CLASSIFICATION', FALSE),
 
   ('Identity & Classification', 1, 3,
-      'UBS LP Classification',
-      'Identity & Classification - UBS LP Classification',
-      'UBS internal advance-rate tier computed by the platform (Rated, Unrated >2bn, Unrated 1–2bn, '
-          'Eligible, Excluded). Derived from ratings, AUM, and eligibility — not extracted from the agent '
-          'document. Captured here so the agent label can be cross-checked against the UBS tier.',
-      NULL, TRUE),
-
-  ('Identity & Classification', 1, 4,
       'Transferee',
       'Identity & Classification - Transferee',
       'Y where LP received a transferred commitment; blank otherwise',
       NULL, FALSE),
 
-  ('Identity & Classification', 1, 5,
+  ('Identity & Classification', 1, 4,
       'Parent / Sponsor',
       'Identity & Classification - Parent / Sponsor',
       'Ultimate parent or sponsoring entity of the LP',
       NULL, FALSE),
 
-  ('Identity & Classification', 1, 6,
+  ('Identity & Classification', 1, 5,
       'Eligibility Flag',
       'Identity & Classification - Eligibility Flag',
       'Y/Eligible/Included vs N/Excluded; agent-assigned per-LP; treat as derived — WF template encodes this as a formula column separate from Investor Category',
@@ -213,14 +205,14 @@ VALUES
   -- outputs captured for display and cross-check against the UBS engine.
 
   ('Borrowing Base', 5, 1,
-      'Agent Advance Rate',
-      'Borrowing Base - Agent Advance Rate',
+      'Advance Rate',
+      'Borrowing Base - Advance Rate',
       NULL,
       'AGENT_RATE', FALSE),
 
   ('Borrowing Base', 5, 2,
-      'Agent Eligible Commitment',
-      'Borrowing Base - Agent Eligible Commitment',
+      'Eligible Commitment',
+      'Borrowing Base - Eligible Commitment',
       'LP uncalled commitment after per-LP concentration haircut applied; agent-calculated; maps to "Eligible Commitment" (GS/WF) and "Remaining Callable Capital Adjusted for Concentration Limit" (SVB)',
       NULL, TRUE),
 
@@ -237,22 +229,34 @@ VALUES
       NULL, TRUE),
 
   ('Borrowing Base', 5, 5,
-      'Agent Borrowing Base',
-      'Borrowing Base - Agent Borrowing Base',
-      'LP-level borrowing base as reported by the facility agent (= Agent Eligible Commitment × Agent Advance Rate)',
+      'Borrowing Base',
+      'Borrowing Base - Borrowing Base',
+      'LP-level borrowing base as reported by the facility agent (= Eligible Commitment × Advance Rate)',
       NULL, TRUE),
 
   -- ── Group 6: Concentration ───────────────────────────────────────────────────
   ('Concentration', 6, 1,
-      'Agent Concentration Limit',
-      'Concentration - Agent Concentration Limit',
+      'Concentration Limit',
+      'Concentration - Concentration Limit',
       NULL,
       'CONCENTRATION_LIMIT', FALSE),
 
   ('Concentration', 6, 2,
+      'Concentration (%)',
+      'Concentration - Concentration (%)',
+      'LP''s concentration expressed as a percentage of the relevant base, as reported by the agent.',
+      NULL, FALSE),
+
+  ('Concentration', 6, 3,
       'Excess Concentration',
       'Concentration - Excess Concentration',
       'Dollar amount by which LP uncalled exceeds the per-LP concentration cap; agent-calculated as max(0, uncalled − cap × total_eligible)',
+      NULL, TRUE),
+
+  ('Concentration', 6, 4,
+      'Excess Concentration (%)',
+      'Concentration - Excess Concentration (%)',
+      'Excess concentration expressed as a percentage; agent-calculated overage relative to the per-LP concentration cap.',
       NULL, TRUE),
 
   -- ── Group 7: Ratings ─────────────────────────────────────────────────────────
@@ -290,8 +294,8 @@ VALUES
       NULL, TRUE),
 
   ('Ratings', 7, 6,
-      'Agent Numeric Rating',
-      'Ratings - Agent Numeric Rating',
+      'Numeric Rating',
+      'Ratings - Numeric Rating',
       'Goldman Sachs composite 0–9 score (higher of S&P / Moody''s numeric) that drives the advance rate tier; GS-specific; bank-scoped alias "Applicable Rating (numerical ratings scale, 0-9)" — distinct from BNY''s letter-rating alias "Applicable Rating" → Moody''s Rating',
       NULL, TRUE);
 
@@ -307,20 +311,15 @@ INSERT INTO fm_aliases (canonical_field_id, alias_sort, alias_text, tier, bank) 
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Name'), 5, 'Limited Partner',               'Core', NULL),
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Name'), 6, 'Fund Investor',                 'Bank', 'SVB'),
 
-  -- Agent LP Classification
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent LP Classification'), 1, 'LP Type',          'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent LP Classification'), 2, 'Investor Type',    'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent LP Classification'), 3, 'Classification',   'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent LP Classification'), 4, 'Category',         'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent LP Classification'), 5, 'Investor Category','Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent LP Classification'), 6, 'LP Classification','Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent LP Classification'), 7, 'Entity Type',      'Bank', 'BNY'),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent LP Classification'), 8, 'Investor Class',   'Bank', 'JPM'),
-
-  -- UBS LP Classification
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'UBS LP Classification'), 1, 'UBS Classification',      'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'UBS LP Classification'), 2, 'UBS Tier',                'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'UBS LP Classification'), 3, 'Internal Classification', 'Core', NULL),
+  -- Investor Type
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Type'), 1, 'LP Type',          'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Type'), 2, 'Investor Type',    'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Type'), 3, 'Classification',   'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Type'), 4, 'Category',         'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Type'), 5, 'Investor Category','Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Type'), 6, 'LP Classification','Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Type'), 7, 'Entity Type',      'Bank', 'BNY'),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Type'), 8, 'Investor Class',   'Bank', 'JPM'),
 
   -- Transferee
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Transferee'), 1, 'Transferee',      'Core', NULL),
@@ -351,6 +350,7 @@ INSERT INTO fm_aliases (canonical_field_id, alias_sort, alias_text, tier, bank) 
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 4, 'Individual Original Commitment',  'Core', NULL),
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 5, 'Total Commitment',               'Core', NULL),
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 6, 'Commitment (USD)',               'Bank', 'BNY'),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 7, 'Total Capital Commitments ($)',  'Core', NULL),
 
   -- % of Capital Commitments
   ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of Capital Commitments'), 1, '% of Capital Commitments', 'Core', NULL),
@@ -378,6 +378,7 @@ INSERT INTO fm_aliases (canonical_field_id, alias_sort, alias_text, tier, bank) 
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Uncalled Capital'), 5, 'Remaining Callable Capital',     'Bank', 'SVB'),
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Uncalled Capital'), 6, 'Remaining Commitment',           'Core', NULL),
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Uncalled Capital'), 7, 'Uncalled Capital (USD)',          'Bank', 'BNY'),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Uncalled Capital'), 8, 'Unfunded Capital Commitments ($)','Core', NULL),
 
   -- % of Uncalled Capital
   ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of Uncalled Capital'), 1, '% of Uncalled Capital',       'Core', NULL),
@@ -419,17 +420,18 @@ INSERT INTO fm_aliases (canonical_field_id, alias_sort, alias_text, tier, bank) 
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Pension Funded %'), 3, 'Funded Status',         'Core', NULL),
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Pension Funded %'), 4, 'Pension Funded Ratio',  'Core', NULL),
 
-  -- Agent Advance Rate
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Advance Rate'), 1, 'Advance Rate',       'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Advance Rate'), 2, 'Agent Advance Rate', 'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Advance Rate'), 3, 'Adv. Rate',          'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Advance Rate'), 4, 'Rate',               'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Advance Rate'), 5, 'Applicable Rate',    'Core', NULL),
+  -- Advance Rate
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Advance Rate'), 1, 'Advance Rate',       'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Advance Rate'), 2, 'Agent Advance Rate', 'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Advance Rate'), 3, 'Adv. Rate',          'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Advance Rate'), 4, 'Rate',               'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Advance Rate'), 5, 'Applicable Rate',    'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Advance Rate'), 6, 'Advance Rate (%)',   'Core', NULL),
 
-  -- Agent Eligible Commitment
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Eligible Commitment'), 1, 'Eligible Commitment',                                        'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Eligible Commitment'), 2, 'Remaining Callable Capital Adjusted for Concentration Limit', 'Bank', 'SVB'),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Eligible Commitment'), 3, 'Eligible Uncalled',                                           'Core', NULL),
+  -- Eligible Commitment
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Eligible Commitment'), 1, 'Eligible Commitment',                                        'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Eligible Commitment'), 2, 'Remaining Callable Capital Adjusted for Concentration Limit', 'Bank', 'SVB'),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Eligible Commitment'), 3, 'Eligible Uncalled',                                           'Core', NULL),
 
   -- % of Eligible Uncalled
   ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of Eligible Uncalled'), 1, '% Eligible Unfunded Commitment', 'Core', NULL),
@@ -441,25 +443,36 @@ INSERT INTO fm_aliases (canonical_field_id, alias_sort, alias_text, tier, bank) 
   ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of Borrowing Base'), 2, '% BB',                'Core', NULL),
   ((SELECT id FROM fm_canonical_fields WHERE canonical = '% of Borrowing Base'), 3, 'BB Percentage',       'Core', NULL),
 
-  -- Agent Borrowing Base
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Borrowing Base'), 1, 'Agent Borrowing Base',        'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Borrowing Base'), 2, 'Agent BB',                    'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Borrowing Base'), 3, 'Facility BB',                 'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Borrowing Base'), 4, 'Agent Base',                  'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Borrowing Base'), 5, 'BB Amount',                   'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Borrowing Base'), 6, 'Borrowing Base Contribution', 'Core', NULL),
+  -- Borrowing Base
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Borrowing Base'), 1, 'Agent Borrowing Base',        'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Borrowing Base'), 2, 'Agent BB',                    'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Borrowing Base'), 3, 'Facility BB',                 'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Borrowing Base'), 4, 'Agent Base',                  'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Borrowing Base'), 5, 'BB Amount',                   'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Borrowing Base'), 6, 'Borrowing Base Contribution', 'Core', NULL),
 
-  -- Agent Concentration Limit
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Concentration Limit'), 1, 'Concentration Limit',       'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Concentration Limit'), 2, 'Agent Concentration Limit', 'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Concentration Limit'), 3, 'Conc. Limit',               'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Concentration Limit'), 4, 'Excel Concentration',       'Bank', 'BNY'),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Concentration Limit'), 5, 'Max Concentration',         'Core', NULL),
+  -- Concentration Limit
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Concentration Limit'), 1, 'Concentration Limit',       'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Concentration Limit'), 2, 'Agent Concentration Limit', 'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Concentration Limit'), 3, 'Conc. Limit',               'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Concentration Limit'), 4, 'Excel Concentration',       'Bank', 'BNY'),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Concentration Limit'), 5, 'Max Concentration',         'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Concentration Limit'), 6, 'Aggregate Concentration',   'Core', NULL),
+
+  -- Concentration (%)
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Concentration (%)'), 1, 'Concentration (%)', 'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Concentration (%)'), 2, 'Concentration %',   'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Concentration (%)'), 3, 'LP Concentration',  'Core', NULL),
 
   -- Excess Concentration
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Excess Concentration'), 1, 'Excess Concentration', 'Core', NULL),
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Excess Concentration'), 2, 'Conc. Overage',        'Core', NULL),
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Excess Concentration'), 3, 'Concentration Excess', 'Core', NULL),
+
+  -- Excess Concentration (%)
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Excess Concentration (%)'), 1, 'Excess Concentration (%)', 'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Excess Concentration (%)'), 2, 'Excess Concentration %',   'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Excess Concentration (%)'), 3, '% Excess Concentration',   'Core', NULL),
 
   -- S&P Rating
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'S&P Rating'), 1, 'S&P',               'Core', NULL),
@@ -486,14 +499,14 @@ INSERT INTO fm_aliases (canonical_field_id, alias_sort, alias_text, tier, bank) 
   -- Moody's Numeric Score  (Goldman Sachs)
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Moody''s Numeric Score'), 1, 'Moody''s (numerical ratings scale, 0-9)', 'Bank', 'GS'),
 
-  -- Agent Numeric Rating  (Goldman Sachs)
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Agent Numeric Rating'),    1, 'Applicable Rating (numerical ratings scale, 0-9)', 'Bank', 'GS');
+  -- Numeric Rating  (Goldman Sachs)
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Numeric Rating'),    1, 'Applicable Rating (numerical ratings scale, 0-9)', 'Bank', 'GS');
 
 -- ── Field Mapping Dictionary: blocklist ──────────────────────────────────────
 -- Qualifiers that flag a column as post-processed; blocked from being selected
 -- as the source for any raw-input canonical field (e.g. Uncalled Capital).
 -- Derived-field aliases are evaluated BEFORE this list, so "Eligible Commitment"
--- correctly routes to Agent Eligible Commitment rather than being discarded.
+-- correctly routes to Eligible Commitment rather than being discarded.
 
 INSERT INTO fm_blocklist (qualifier, reason) VALUES
   ('Adjusted',            'Post-processed — concentration or eligibility already applied'),

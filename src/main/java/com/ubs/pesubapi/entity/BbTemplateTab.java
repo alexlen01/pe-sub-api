@@ -34,6 +34,10 @@ public class BbTemplateTab {
     @Column(name = "header_row_index")
     private Integer headerRowIndex;
 
+    // Number of physical rows the column header occupies (stacked headers, e.g. CP VII = 2).
+    @Column(name = "header_row_span", nullable = false)
+    private int headerRowSpan = 1;
+
     @Convert(converter = StringListConverter.class)
     @Column(name = "skip_row_keywords", columnDefinition = "jsonb")
     private List<String> skipRowKeywords = List.of("Total", "Subtotal", "Sub-Total", "Grand Total", "Sum", "Net Total");
@@ -50,6 +54,7 @@ public class BbTemplateTab {
     public int           getTabSort()         { return tabSort; }
     public String        getSheetName()       { return sheetName; }
     public Integer       getHeaderRowIndex()  { return headerRowIndex; }
+    public int           getHeaderRowSpan()   { return headerRowSpan; }
     public List<String>  getSkipRowKeywords() { return skipRowKeywords; }
     public LocalDateTime getCreatedAt()       { return createdAt; }
 
@@ -58,5 +63,6 @@ public class BbTemplateTab {
     public void setTabSort(int v)                 { this.tabSort         = v; }
     public void setSheetName(String v)            { this.sheetName       = v; }
     public void setHeaderRowIndex(Integer v)      { this.headerRowIndex  = v; }
+    public void setHeaderRowSpan(int v)           { this.headerRowSpan   = v; }
     public void setSkipRowKeywords(List<String> v){ this.skipRowKeywords = v; }
 }

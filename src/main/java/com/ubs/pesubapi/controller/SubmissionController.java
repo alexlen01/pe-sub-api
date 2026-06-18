@@ -6,12 +6,15 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ubs.pesubapi.dto.ExtractionResponse;
 import com.ubs.pesubapi.dto.IngestRequest;
 import com.ubs.pesubapi.entity.BbTemplate;
+import com.ubs.pesubapi.entity.BbTemplateTab;
+import com.ubs.pesubapi.entity.BbTemplateTab.TabRole;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.entity.Submission;
 import com.ubs.pesubapi.entity.SubmissionExtraction;
 import com.ubs.pesubapi.entity.FmAlias;
 import com.ubs.pesubapi.entity.FmCanonicalField;
 import com.ubs.pesubapi.repository.BbTemplateRepository;
+import com.ubs.pesubapi.repository.BbTemplateTabRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.FmAliasRepository;
 import com.ubs.pesubapi.repository.FmCanonicalFieldRepository;
@@ -69,6 +72,7 @@ public class SubmissionController {
     private final FmCanonicalFieldRepository     canonicalFieldRepo;
     private final FmAliasRepository              aliasRepo;
     private final BbTemplateRepository           templateRepo;
+    private final BbTemplateTabRepository        tabRepo;
     private final ObjectMapper                   mapper;
 
     @Value("${app.uploads.path:C:/Users/alexl/apps/pe-sub/uploads}")
@@ -85,6 +89,7 @@ public class SubmissionController {
                                 FmCanonicalFieldRepository canonicalFieldRepo,
                                 FmAliasRepository aliasRepo,
                                 BbTemplateRepository templateRepo,
+                                BbTemplateTabRepository tabRepo,
                                 ObjectMapper mapper) {
         this.submissions        = submissions;
         this.facilities         = facilities;
@@ -97,16 +102,30 @@ public class SubmissionController {
         this.canonicalFieldRepo = canonicalFieldRepo;
         this.aliasRepo          = aliasRepo;
         this.templateRepo       = templateRepo;
+        this.tabRepo            = tabRepo;
         this.mapper             = mapper;
     }
 
-    private record TemplateHints(String sheetName, Integer headerRowIndex) {}
+    private record TemplateHints(String sheetName, Integer headerRowIndex, Integer headerRowSpan) {}
 
+    // Resolves extraction hints for an agent bank's template. The LP_GRID tab is the
+    // canonical source of sheet name / header row / header span; the bb_templates
+    // top-level columns are a single-tab shortcut fallback (used by auto-learned templates).
     private TemplateHints hintsFor(String agentBank) {
         return templateRepo.findAllByAgentBankIgnoreCase(agentBank).stream()
             .findFirst()
-            .map(t -> new TemplateHints(t.getSheetName(), t.getHeaderRowIndex()))
-            .orElse(new TemplateHints(null, null));
+            .map(t -> {
+                BbTemplateTab grid = tabRepo
+                    .findByTemplateIdAndTabRole(t.getId(), TabRole.LP_GRID)
+                    .orElse(null);
+                String  sheet = grid != null && grid.getSheetName() != null
+                    ? grid.getSheetName() : t.getSheetName();
+                Integer header = grid != null && grid.getHeaderRowIndex() != null
+                    ? grid.getHeaderRowIndex() : t.getHeaderRowIndex();
+                Integer span = grid != null ? grid.getHeaderRowSpan() : null;
+                return new TemplateHints(sheet, header, span);
+            })
+            .orElse(new TemplateHints(null, null, null));
     }
 
     // ── POST /api/submissions ────────────────────────────────────────────────
@@ -160,7 +179,7 @@ public class SubmissionController {
         TemplateHints hints = hintsFor(sub.getAgentBank());
         ExtractionResponse extraction =
             extractionClient.extract(String.valueOf(facilityId), filePath,
-                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank());
+                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan());
 
         if (extraction == null) {
             log.warn("Extraction skipped for submission {} — pe-sub-extraction unreachable", sub.getId());

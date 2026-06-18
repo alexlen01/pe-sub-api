@@ -30,6 +30,19 @@ docker compose up -d     # fresh PostgreSQL
 mvn spring-boot:run      # Flyway applies all migrations on first start
 ```
 
+## BB template registry
+
+`bb_templates` → `bb_template_tabs` → `bb_template_groups` describe how each Agent BB
+workbook is laid out, so `ExtractionClientService` can pass `sheetNameHint`,
+`headerRowHint`, `headerRowSpan`, and a group-header `classificationConfig` to
+pe-sub-extraction. `header_row_index` is 0-based; `header_row_span` (V1_6) is the number
+of physical rows a stacked column header occupies (e.g. Carlyle CP VII rows 84–85 → span 2).
+
+`V1_6__bb_sample_templates.sql` seeds the five sampled formats from
+`pe-sub-platform/public/BB_Templates.xlsx` (KKR Ascendant, Audax VII, CCP VII, AEP VII,
+CP VII). These are identified by **fund/deal** in the sample, so `agent_bank` holds the
+fund label as the template key until the owning facility is onboarded with its real bank.
+
 ## Other commands
 
 ```bash

@@ -53,6 +53,12 @@ public class ExtractionClientService {
     public ExtractionResponse extract(String facilityId, Path filePath,
                                       String sheetNameHint, Integer headerRowHint,
                                       String agentBank) {
+        return extract(facilityId, filePath, sheetNameHint, headerRowHint, agentBank, null);
+    }
+
+    public ExtractionResponse extract(String facilityId, Path filePath,
+                                      String sheetNameHint, Integer headerRowHint,
+                                      String agentBank, Integer headerRowSpan) {
         try {
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             body.add("facilityId", facilityId);
@@ -62,6 +68,8 @@ public class ExtractionClientService {
             if (aliasJson    != null) body.add("aliasConfig",   aliasJson);
             if (sheetNameHint != null) body.add("sheetNameHint", sheetNameHint);
             if (headerRowHint != null) body.add("headerRowHint", String.valueOf(headerRowHint));
+            // Only send a span > 1 (stacked header); 1 is the engine default.
+            if (headerRowSpan != null && headerRowSpan > 1) body.add("headerRowSpan", String.valueOf(headerRowSpan));
 
             String classificationJson = classificationConfigBuilder.buildJson(agentBank);
             if (classificationJson != null) body.add("classificationConfig", classificationJson);
