@@ -47,12 +47,26 @@ public class LpClassificationService {
             Lp lp = byName.get(row.name());
             if (lp == null) continue;   // only persisted LP Master records are updated
 
-            if (row.cls()   != null) lp.setCls(row.cls());
-            if (row.sp()    != null) lp.setSp(row.sp());
-            if (row.mdy()   != null) lp.setMdy(row.mdy());
-            if (row.fitch() != null) lp.setFitch(row.fitch());
-            if (row.inc()   != null) lp.setInc(row.inc());
-            if (row.uc()    != null) lp.setUc(row.uc());
+            if (row.parent()         != null) lp.setParent(row.parent());
+            if (row.spv()            != null) lp.setSpv(row.spv());
+            if (row.type()           != null) lp.setInvType(row.type());
+            if (row.ig()             != null) lp.setIg(row.ig());
+            if (row.cls()            != null) lp.setCls(row.cls());
+            if (row.agentCls()       != null) lp.setAgentCls(row.agentCls());
+            if (row.sp()             != null) lp.setSp(row.sp());
+            if (row.mdy()            != null) lp.setMdy(row.mdy());
+            if (row.fitch()          != null) lp.setFitch(row.fitch());
+            if (row.lpSizeBil()      != null) lp.setLpSizeBil(row.lpSizeBil());
+            if (row.lpSizeCriteria() != null) lp.setLpSizeCriteria(row.lpSizeCriteria());
+            if (row.capCommit()      != null) lp.setCapCommit(row.capCommit());
+            if (row.inc()            != null) lp.setInc(row.inc());
+            if (row.uc()             != null) lp.setUc(row.uc());
+            if (row.notes()          != null) lp.setNotes(row.notes());
+            // Rates: persist the display strings on the LP, and upsert the decimal fractions
+            // into lp_rates below for the submission period.
+            if (row.ubsAdvRatePct()  != null) lp.setUbsRate(formatPct(row.ubsAdvRatePct()));
+            if (row.agentRatePct()   != null) lp.setAgentRate(formatPct(row.agentRatePct()));
+            if (row.agentConcLimitPct() != null) lp.setAgentConc(formatPct(row.agentConcLimitPct()));
             lp.setUpdatedAt(LocalDateTime.now());
             lpRepo.save(lp);
             updated++;
@@ -88,6 +102,11 @@ public class LpClassificationService {
     /** Percentage (90.0) → decimal fraction (0.9000) as stored in lp_rates. */
     private BigDecimal toFraction(double pct) {
         return BigDecimal.valueOf(pct).movePointLeft(2);
+    }
+
+    /** Percentage (90.0) → display string ("90%") as stored on the LP record. */
+    private String formatPct(double pct) {
+        return (pct == Math.rint(pct) ? String.valueOf((long) pct) : String.valueOf(pct)) + "%";
     }
 
     /** Submission period → first of the month; null/blank defaults to the current month. */

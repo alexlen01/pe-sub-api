@@ -40,6 +40,27 @@ public class Lp {
     @Column(name = "cls_tag")
     private String clsTag;
 
+    // ── Shadow BB 28-column alignment (Shadow_BB.xlsx) ──
+    @Column(name = "agent_cls")
+    private String agentCls;            // Agent LP Classification (verbatim from Agent BB)
+
+    @Column(name = "ubs_rate")
+    private String ubsRate;             // UBS Advance Rate (manual input, e.g. "90%")
+
+    @Column(name = "lp_size_bil")
+    private String lpSizeBil;           // LP Size ($ Bil), e.g. "$134B"
+
+    @Column(name = "lp_size_criteria")
+    private String lpSizeCriteria;      // Basis: AUM | NAV | Assets
+
+    @Column(name = "agent_excess_conc")
+    private String agentExcessConc;     // Agent Excess Concentration Base (calculated)
+
+    @Column(name = "ubs_excess_conc")
+    private String ubsExcessConc;       // UBS Excess Concentration Base (calculated)
+
+    private String ubb;                 // UBS Borrowing Base
+
     @Column(nullable = false)
     private String sp = "";
 
@@ -122,6 +143,13 @@ public class Lp {
     public boolean isIg()               { return ig; }
     public String getCls()              { return cls; }
     public String getClsTag()           { return clsTag; }
+    public String getAgentCls()         { return agentCls; }
+    public String getUbsRate()          { return ubsRate; }
+    public String getLpSizeBil()        { return lpSizeBil; }
+    public String getLpSizeCriteria()   { return lpSizeCriteria; }
+    public String getAgentExcessConc()  { return agentExcessConc; }
+    public String getUbsExcessConc()    { return ubsExcessConc; }
+    public String getUbb()              { return ubb; }
     public String getSp()               { return sp; }
     public String getMdy()              { return mdy; }
     public String getFitch()            { return fitch; }
@@ -187,4 +215,13 @@ public class Lp {
     public void setPctUncalled(String v)               { this.pctUncalled = v; }
     public void setPctCalled(String v)                 { this.pctCalled = v; }
     public void setUbsConc(String ubsConc)             { this.ubsConc = ubsConc; }
+
+    // Setters for Shadow BB 28-column alignment
+    public void setAgentCls(String v)                  { this.agentCls = v; }
+    public void setUbsRate(String v)                   { this.ubsRate = v; }
+    public void setLpSizeBil(String v)                 { this.lpSizeBil = v; }
+    public void setLpSizeCriteria(String v)            { this.lpSizeCriteria = v; }
+    public void setAgentExcessConc(String v)           { this.agentExcessConc = v; }
+    public void setUbsExcessConc(String v)             { this.ubsExcessConc = v; }
+    public void setUbb(String v)                       { this.ubb = v; }
 }

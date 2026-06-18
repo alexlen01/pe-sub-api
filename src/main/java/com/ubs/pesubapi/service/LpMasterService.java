@@ -55,11 +55,14 @@ public class LpMasterService {
         lp.setRegion(row.region() != null ? row.region() : "");
         lp.setIg(row.ig());
         lp.setCls(row.cls() != null ? row.cls() : "Eligible");
+        lp.setAgentCls(row.agentCls());
         lp.setSp(row.sp()    != null ? row.sp()    : "");
         lp.setMdy(row.mdy()  != null ? row.mdy()   : "");
         lp.setFitch(row.fitch() != null ? row.fitch() : "");
         lp.setAum(row.aum());
         lp.setNav(row.nav());
+        lp.setLpSizeBil(row.lpSizeBil());
+        lp.setLpSizeCriteria(row.lpSizeCriteria());
         lp.setPension(row.pension());
         lp.setPensionFunded(row.pensionFunded());
         lp.setCapCommit(row.capCommit());
@@ -72,6 +75,9 @@ public class LpMasterService {
         lp.setUbsConc(row.ubsConc());
         lp.setAgentRate(row.agentRate());
         lp.setAbb(row.abb());
+        lp.setUbb(row.ubb());
+        lp.setAgentExcessConc(row.agentExcessConc());
+        lp.setUbsExcessConc(row.ubsExcessConc());
         lp.setInc(row.inc());
         lp.setRcl(row.rcl());
         lp.setNotes(row.notes());

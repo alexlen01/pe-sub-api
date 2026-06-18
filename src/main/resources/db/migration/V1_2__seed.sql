@@ -1,3 +1,10 @@
+-- ╔══════════════════════════════════════════════════════════════════════════╗
+-- ║  Consolidated seed — squash of the original V1_2 / V1_5 / V1_6 data steps.  ║
+-- ║  Rows are inserted in their FINAL state: the BB template registry already    ║
+-- ║  reflects the V1_5 rename (Goldman Sachs Bank USA → Wells Fargo Class A)     ║
+-- ║  and class assignments, plus the V1_6 sampled-template profiles.             ║
+-- ╚══════════════════════════════════════════════════════════════════════════╝
+
 -- ── Config ────────────────────────────────────────────────────────────────────
 
 INSERT INTO config (key, value) VALUES ('busa_tiers', '[
@@ -522,40 +529,65 @@ INSERT INTO fm_suggestions (extracted_header, canonical_field, suggested_by, sou
   ('Outstanding Callable Balance', 'Uncalled Capital', 'J. Martinez', 'User', NULL),
   ('Applicable Rating',            'Moody''s Rating',  'AI Engine',   'AI',   82);
 
--- ── BB template registry: known agent banks ───────────────────────────────────
--- sheet_name / header_row_index on bb_templates left NULL; canonical location
--- for per-tab sheet names is bb_template_tabs.
+-- ── BB template registry: known agent banks (final state) ──────────────────────
+-- Folds in the V1_5 rename + class assignments and the V1_6 sampled profiles.
+-- sheet_name / header_row_index on bb_templates left NULL; per-tab sheet names live
+-- on bb_template_tabs. The auto-learned bank rows are keyed by real agent bank; the
+-- sampled-profile rows are keyed by FUND / DEAL (agent bank was not recorded for them).
 
 INSERT INTO bb_templates
-    (agent_bank, tranche_count, has_grouping_rows, has_color_flags, summary_rows_above_header, auto_learned)
+    (agent_bank, template_class, sheet_name, header_row_index, auto_learned,
+     tranche_count, has_grouping_rows, has_color_flags, summary_rows_above_header)
 VALUES
-    -- Goldman Sachs: 2 tranches (A + B), row-grouped by investor type,
-    -- colour-coded LP flags (pink = Reclassified, blue = Transferee)
-    ('Goldman Sachs Bank USA', 2, TRUE,  TRUE,  0, FALSE),
+    -- Wells Fargo Class A — formerly seeded under "Goldman Sachs Bank USA"; the Class A
+    -- template was submitted under GS letterhead when GS was the prior administrative agent
+    -- for Blue Owl GP Stakes V. 2 tranches (A + B), group-header rows, colour-coded LP flags.
+    ('Wells Fargo',         'A', NULL, NULL, FALSE, 2, TRUE,  TRUE,  0),
+    -- Silicon Valley Bank Class C — single tranche, flat layout; fund name + reporting date
+    -- rows appear above the column header (summary_rows_above_header = 2).
+    ('Silicon Valley Bank', 'C', NULL, NULL, FALSE, 1, FALSE, FALSE, 2),
+    -- Wells Fargo Class B — single tranche; per-row "Investor Category"; single summary table.
+    ('Wells Fargo',         'B', NULL, NULL, FALSE, 1, FALSE, FALSE, 0),
 
-    -- SVB: single tranche, flat layout; fund name + reporting date rows
-    -- appear above the column header (summary_rows_above_header = 2)
-    ('Silicon Valley Bank',    1, FALSE, FALSE, 2, FALSE),
+    -- ── Sampled Agent BB profiles (pe-sub-platform/public/BB_Templates.xlsx) ───────
+    -- header_row_index is 0-based (extraction engine convention): Excel row N → N-1.
+    -- KKR Ascendant — single "Borrowing Base" tab; 6 LP-category sections; summary rows 2-9.
+    ('KKR Ascendant Fund',  'A', NULL, NULL, FALSE, 1, TRUE,  FALSE, 9),
+    -- Audax VII — multiple "Investor List" tabs (one per borrower); flat list, no sections.
+    ('Audax Fund VII',      'A', NULL, NULL, FALSE, 1, FALSE, FALSE, 12),
+    -- Comvest CCP VII — multiple "Investor List" tabs; 5 feeder-vehicle sections.
+    ('CCP VII Lev M & M',   'A', NULL, NULL, FALSE, 1, TRUE,  FALSE, 6),
+    -- Aurora AEP VII — single "BB" tab; 4 LP-category sections; cell-format legend (colour flags).
+    ('AEP VII',             'A', NULL, NULL, FALSE, 1, TRUE,  TRUE,  10),
+    -- Carlyle CP VII — multiple "BB" tabs; flat list; deep title (row 83); stacked header (84-85).
+    ('CP VII',              'A', NULL, NULL, FALSE, 1, FALSE, FALSE, 83);
 
-    -- Wells Fargo: single tranche; summary table above LP grid;
-    -- header row auto-detected via header_row_index on the tab
-    ('Wells Fargo',            1, FALSE, FALSE, 0, FALSE);
+-- ── BB template tabs: LP_GRID tab per template ────────────────────────────────
+-- Bank rows leave sheet_name / header_row_index NULL until confirmed from a real
+-- workbook; sampled-profile rows carry the captured sheet name + 0-based header row
+-- (+ span for stacked headers). Joined on (agent_bank, template_class) since the two
+-- Wells Fargo rows share an agent bank.
 
--- ── BB template tabs: LP_GRID tab for each known bank ─────────────────────────
--- sheet_name and header_row_index are NULL until confirmed from a real workbook;
--- the extraction service updates them on first successful parse.
+INSERT INTO bb_template_tabs (template_id, tab_role, tab_sort, sheet_name, header_row_index, header_row_span)
+SELECT t.id, 'LP_GRID', 1, v.sheet_name, v.header_row_index, v.header_row_span
+FROM   bb_templates t
+JOIN  (VALUES
+    ('Wells Fargo',         'A', NULL::varchar, NULL::integer, 1),
+    ('Wells Fargo',         'B', NULL,          NULL,          1),
+    ('Silicon Valley Bank', 'C', NULL,          NULL,          1),
+    ('KKR Ascendant Fund',  'A', 'Borrowing Base', 9,          1),
+    ('Audax Fund VII',      'A', 'Investor List',  12,         1),
+    ('CCP VII Lev M & M',   'A', 'Investor List',  6,          1),
+    ('AEP VII',             'A', 'BB',             10,         1),
+    ('CP VII',              'A', 'BB',             83,         2)
+) AS v(agent_bank, template_class, sheet_name, header_row_index, header_row_span)
+  ON t.agent_bank = v.agent_bank AND t.template_class = v.template_class;
 
-INSERT INTO bb_template_tabs (template_id, tab_role, tab_sort, sheet_name, header_row_index)
-SELECT id, 'LP_GRID', 1, NULL, NULL
-FROM   bb_templates
-WHERE  agent_bank IN ('Goldman Sachs Bank USA', 'Silicon Valley Bank', 'Wells Fargo');
+-- ── BB template groups ────────────────────────────────────────────────────────
+-- header_text MUST remain the literal text that appears in the agent's grouping row;
+-- only the resolved classification value matters to the extraction service.
 
--- ── BB template groups: Goldman Sachs LP_GRID group headers ───────────────────
--- T1 layout (top → bottom): Rated Included → Non-Rated Included →
--- Designated Institutional → Excluded.
--- header_text MUST remain the literal text that appears in the agent's grouping
--- row; only the resolved classification value matters to the extraction service.
-
+-- Wells Fargo Class A (formerly Goldman Sachs) LP_GRID group headers (top → bottom).
 INSERT INTO bb_template_groups (tab_id, group_sort, header_text, classification)
 SELECT t.id, g.group_sort, g.header_text, g.classification
 FROM   bb_template_tabs t
@@ -566,13 +598,56 @@ CROSS JOIN (VALUES
     (3, 'Eligible Investors', 'Designated Institutional'),
     (4, 'Excluded Investors', 'Excluded')
 ) AS g(group_sort, header_text, classification)
-WHERE  tmpl.agent_bank = 'Goldman Sachs Bank USA'
+WHERE  tmpl.agent_bank = 'Wells Fargo' AND tmpl.template_class = 'A'
   AND  t.tab_role      = 'LP_GRID';
+
+-- KKR Ascendant — 6 LP-category sections (top → bottom).
+INSERT INTO bb_template_groups (tab_id, group_sort, header_text, classification)
+SELECT tb.id, g.group_sort, g.header_text, g.classification
+FROM   bb_template_tabs tb
+JOIN   bb_templates     tmpl ON tmpl.id = tb.template_id
+CROSS JOIN (VALUES
+    (1, 'Rated Included Investors',     'Rated Included Investors'),
+    (2, 'Non-Rated Included Investors', 'Non-Rated Included Investors'),
+    (3, 'Designated Investors',         'Designated Investors'),
+    (4, 'Borrowing Base Investors',     'Borrowing Base Investors'),
+    (5, 'Hurdle Investors',             'Hurdle Investors'),
+    (6, 'Excluded Investors',           'Excluded Investors')
+) AS g(group_sort, header_text, classification)
+WHERE  tmpl.agent_bank = 'KKR Ascendant Fund' AND tb.tab_role = 'LP_GRID';
+
+-- Comvest CCP VII — 5 feeder-vehicle sections.
+INSERT INTO bb_template_groups (tab_id, group_sort, header_text, classification)
+SELECT tb.id, g.group_sort, g.header_text, g.classification
+FROM   bb_template_tabs tb
+JOIN   bb_templates     tmpl ON tmpl.id = tb.template_id
+CROSS JOIN (VALUES
+    (1, 'Levered (Delaware) Feeder', 'Levered (Delaware) Feeder'),
+    (2, '(Cayman) Feeder, L.P.',     '(Cayman) Feeder, L.P.'),
+    (3, '(Delaware) Feeder, L.P.',   '(Delaware) Feeder, L.P.'),
+    (4, 'Lux Intermediate',          'Lux Intermediate'),
+    (5, 'Lux Non-Treaty Feeder',     'Lux Non-Treaty Feeder')
+) AS g(group_sort, header_text, classification)
+WHERE  tmpl.agent_bank = 'CCP VII Lev M & M' AND tb.tab_role = 'LP_GRID';
+
+-- Aurora AEP VII — 4 LP-category sections.
+INSERT INTO bb_template_groups (tab_id, group_sort, header_text, classification)
+SELECT tb.id, g.group_sort, g.header_text, g.classification
+FROM   bb_template_tabs tb
+JOIN   bb_templates     tmpl ON tmpl.id = tb.template_id
+CROSS JOIN (VALUES
+    (1, 'Rated Included Investors',     'Rated Included Investors'),
+    (2, 'Non-Rated Included Investors', 'Non-Rated Included Investors'),
+    (3, 'Designated Investors',         'Designated Investors'),
+    (4, 'Excluded Investors',           'Excluded Investors')
+) AS g(group_sort, header_text, classification)
+WHERE  tmpl.agent_bank = 'AEP VII' AND tb.tab_role = 'LP_GRID';
 
 -- ── LP Rates: simulated feed — effective 2025-01-01 ───────────────────────────
 -- Back-dated to Jan 2025 so findLatestAsOf(asOf) returns these rows for any
 -- test submission with period >= 2025-01. In production this table is populated
--- by the monthly BATCH_FEED; source = 'SIMULATED' marks these rows.
+-- by the monthly BATCH_FEED; source = 'SIMULATED' marks these rows. No-op until
+-- lp_records are populated (this seed creates no LP rows).
 --
 -- ubs_adv_rate_pct  : decimal fraction (0.9000 = 90%)
 -- ubs_conc_limit_pct: per-LP cap as fraction of total eligible uncalled

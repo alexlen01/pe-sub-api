@@ -21,13 +21,29 @@ public record LpClassificationRequest(
 ) {
     public record Row(
         String  name,
-        String  cls,
+        // Identity & classification (manual)
+        String  parent,
+        Boolean spv,
+        String  type,             // Institutional vs HNW
+        Boolean ig,               // Investment Grade?
+        String  cls,              // UBS LP Classification
+        String  agentCls,         // Agent LP Classification
         String  sp,
         String  mdy,
         String  fitch,
-        Boolean inc,
+        // Scale (manual)
+        String  lpSizeBil,        // LP Size ($ Bil)
+        String  lpSizeCriteria,   // AUM | NAV | Assets
+        // Commitment / capital (manual)
+        String  capCommit,
         String  uc,
-        Double  ubsAdvRatePct,    // percent, e.g. 90.0; null → rate left unchanged
-        Double  ubsConcLimitPct   // percent, e.g. 7.5;  null → limit left unchanged
+        // Rates & limits (manual; percentages, e.g. 90.0 / 7.5)
+        Double  ubsAdvRatePct,    // null → rate left unchanged
+        Double  agentRatePct,     // null → unchanged
+        Double  ubsConcLimitPct,  // null → limit left unchanged
+        Double  agentConcLimitPct,// null → unchanged
+        // Status (manual)
+        Boolean inc,
+        String  notes
     ) {}
 }

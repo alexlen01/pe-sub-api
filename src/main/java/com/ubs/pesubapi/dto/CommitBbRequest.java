@@ -18,7 +18,8 @@ public record CommitBbRequest(List<CommitLpRow> lps) {
         String  type,
         String  region,
         boolean ig,
-        String  cls,
+        String  cls,            // UBS LP Classification
+        String  agentCls,       // Agent LP Classification
         // Ratings
         String  sp,
         String  mdy,
@@ -26,6 +27,8 @@ public record CommitBbRequest(List<CommitLpRow> lps) {
         // Financial Scale
         String  aum,
         String  nav,
+        String  lpSizeBil,      // LP Size ($ Bil)
+        String  lpSizeCriteria, // AUM | NAV | Assets
         String  pension,
         String  pensionFunded,
         // Commitment Data
@@ -38,9 +41,12 @@ public record CommitBbRequest(List<CommitLpRow> lps) {
         String  pctCalled,
         // Concentration & BB
         String  agentConc,
-        String  ubsConc,      // per-LP UBS dollar limit, e.g. "$25.0M"
+        String  ubsConc,           // per-LP UBS dollar limit, e.g. "$25.0M"
         String  agentRate,
-        String  abb,
+        String  abb,               // Agent Borrowing Base
+        String  ubb,               // UBS Borrowing Base
+        String  agentExcessConc,   // Agent Excess Concentration Base
+        String  ubsExcessConc,     // UBS Excess Concentration Base
         // Status
         boolean inc,
         boolean rcl,
