@@ -59,6 +59,14 @@ public class ExtractionClientService {
     public ExtractionResponse extract(String facilityId, Path filePath,
                                       String sheetNameHint, Integer headerRowHint,
                                       String agentBank, Integer headerRowSpan) {
+        return extract(facilityId, filePath, sheetNameHint, headerRowHint,
+            agentBank, headerRowSpan, null);
+    }
+
+    public ExtractionResponse extract(String facilityId, Path filePath,
+                                      String sheetNameHint, Integer headerRowHint,
+                                      String agentBank, Integer headerRowSpan,
+                                      String forceTemplate) {
         try {
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             body.add("facilityId", facilityId);
@@ -77,6 +85,10 @@ public class ExtractionClientService {
             // The selected agent bank is the authoritative format fallback when the workbook
             // itself carries no recognisable bank name (e.g. fund-branded templates).
             if (agentBank != null && !agentBank.isBlank()) body.add("agentBank", agentBank);
+
+            // An operator-forced fund template (picked from the Document Recognition dropdown)
+            // overrides column-signature auto-matching in the extraction engine.
+            if (forceTemplate != null && !forceTemplate.isBlank()) body.add("forceTemplate", forceTemplate);
 
             return extractionClient.post()
                 .uri("/api/extract?forward=false")

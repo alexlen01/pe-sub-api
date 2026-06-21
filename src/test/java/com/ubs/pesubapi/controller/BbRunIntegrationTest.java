@@ -257,6 +257,33 @@ class BbRunIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.result.lps[0].uecM").value(closeTo(4.0, 0.01)));
     }
 
+    // ── Facility list surfaces the latest snapshot's BB figures ─────────────────────
+
+    @Test
+    void facilityList_includesLatestShadowBbFigures() throws Exception {
+        // Before any run the BB figures are null (no snapshot yet).
+        mvc.perform(get("/api/facilities"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].ubsBB").value(nullValue()))
+            .andExpect(jsonPath("$[0].agentBB").value(nullValue()));
+
+        mvc.perform(post("/api/bb/run/{id}", facilityId)
+                .contentType(MediaType.APPLICATION_JSON).content(lpPayload(facilityId)))
+            .andExpect(status().isCreated());
+
+        // After a run the most recent snapshot's totals surface on the facility list & detail.
+        mvc.perform(get("/api/facilities"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].agentBB").isNumber())
+            .andExpect(jsonPath("$[0].ubsBB").isNumber())
+            .andExpect(jsonPath("$[0].bbDelta").isNumber())
+            .andExpect(jsonPath("$[0].ear").isNumber());
+
+        mvc.perform(get("/api/facilities/{id}", facilityId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.ubsBB").isNumber());
+    }
+
     // ── UBS LP Classification taxonomy resolves a non-zero advance rate ─────────────
 
     @Test

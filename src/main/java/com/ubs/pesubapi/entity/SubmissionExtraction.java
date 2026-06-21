@@ -30,6 +30,9 @@ public class SubmissionExtraction {
     @Column(name = "header_row_index")
     private Integer headerRowIndex;
 
+    @Column(name = "forced_template")
+    private String forcedTemplate;
+
     @Column(name = "total_rows", nullable = false)
     private int totalRows;
 
@@ -60,6 +63,7 @@ public class SubmissionExtraction {
     public String getTemplateVersion()        { return templateVersion; }
     public String getSheetName()              { return sheetName; }
     public Integer getHeaderRowIndex()        { return headerRowIndex; }
+    public String getForcedTemplate()         { return forcedTemplate; }
     public int getTotalRows()                 { return totalRows; }
     public int getFlaggedCount()              { return flaggedCount; }
     public JsonNode getExtractedLps()         { return extractedLps; }
@@ -72,6 +76,7 @@ public class SubmissionExtraction {
     public void setTemplateVersion(String v)        { this.templateVersion = v; }
     public void setSheetName(String v)              { this.sheetName = v; }
     public void setHeaderRowIndex(Integer v)        { this.headerRowIndex = v; }
+    public void setForcedTemplate(String v)         { this.forcedTemplate = v; }
     public void setTotalRows(int v)                 { this.totalRows = v; }
     public void setFlaggedCount(int v)              { this.flaggedCount = v; }
     public void setExtractedLps(JsonNode v)         { this.extractedLps = v; }

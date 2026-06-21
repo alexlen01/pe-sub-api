@@ -9,4 +9,5 @@ public interface MatchQueueEntryRepository extends JpaRepository<MatchQueueEntry
     List<MatchQueueEntry> findBySubmissionIdOrderByRowIndexAsc(Integer submissionId);
     List<MatchQueueEntry> findByFacilityIdOrderByRowIndexAsc(Integer facilityId);
     void deleteBySubmissionId(Integer submissionId);
+    void deleteByFacilityId(Integer facilityId);
 }

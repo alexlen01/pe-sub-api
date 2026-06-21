@@ -50,9 +50,29 @@ fund label as the template key until the owning facility is onboarded with its r
 Borrowing Base inputs `facility_size` / `ubs_participation` (`V1_4__facility_size_participation.sql`,
 stored as full-dollar `NUMERIC`). `POST /api/facilities` only sets name + agent bank; all of these
 are populated afterwards via `PATCH /api/facilities/{id}` (partial update — only the fields present
-in the body are applied), which the UI's Facility Edit screen calls. The Shadow BB result figures
-shown alongside them on the dashboard are **not** stored on the facility; they live in `bb_snapshots`,
-keyed by `facility_id` (see `POST /api/bb/run/{facilityId}` and `GET /api/bb/snapshots/{facilityId}/latest`).
+in the body are applied), which the UI's Facility Edit screen calls. `PATCH /api/facilities/{id}`
+now also accepts `name` and `agent_bank` (both blank-guarded — a `NOT NULL` column is never cleared);
+renaming to a name already used by **another** facility returns `409 Conflict`. The Shadow BB result
+figures shown alongside them on the dashboard are **not** stored on the facility; they live in
+`bb_snapshots`, keyed by `facility_id` (see `POST /api/bb/run/{facilityId}` and
+`GET /api/bb/snapshots/{facilityId}/latest`). For convenience the facility DTO (`GET /api/facilities`
+and `/{id}`) surfaces the **latest** snapshot's `agentBB` / `ubsBB` / `bbDelta` / `ear` (in $millions,
+`null` until a BB is run) via `BbSnapshotRepository.findLatestPerFacility()` — one query, no N+1 — so
+the dashboard never hardcodes these and the UI needs no extra round-trip per facility.
+
+## Deactivating & deleting a facility
+
+A facility may only be **deactivated** or **deleted** while it holds **no LP records** — committed LP
+data is never silently destroyed.
+
+- **Deactivate** — `PATCH /api/facilities/{id}/status` with `{"status": "Inactive"}`. Transitioning to
+  `Inactive` while LP records exist returns `409 Conflict`. Reactivate by patching the status back
+  (e.g. `"Not Started"`); reactivation is unconditional. Other status transitions are unaffected.
+- **Delete** — `DELETE /api/facilities/{id}` (handled by `FacilityService.delete`, `@Transactional`).
+  Returns `204 No Content` on success, `404` if the facility does not exist, `409` if it still has
+  LP records. The delete cascades to the facility's non-LP dependents (submissions and their
+  extractions, match-queue entries, Shadow BB snapshots); `audit_log` rows are **preserved** with
+  their `facility_id` nulled so history survives the deletion.
 
 ## Shadow BB summary (`GET /api/bb/summary-ext/{facilityId}`)
 

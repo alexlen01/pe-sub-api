@@ -188,7 +188,7 @@ public class SubmissionController {
             return;
         }
 
-        storeExtractionResult(sub.getId(), extraction);
+        storeExtractionResult(sub.getId(), extraction, null);
 
         IngestRequest ingestRequest = toIngestRequest(facilityId, extraction);
         ingestService.ingest(sub.getId(), ingestRequest);
@@ -203,10 +203,11 @@ public class SubmissionController {
         });
     }
 
-    private void storeExtractionResult(int submissionId, ExtractionResponse r) {
+    private void storeExtractionResult(int submissionId, ExtractionResponse r, String forcedTemplate) {
         SubmissionExtraction entity = extractionRepo.findBySubmissionId(submissionId)
             .orElse(new SubmissionExtraction());
         entity.setSubmissionId(submissionId);
+        entity.setForcedTemplate(forcedTemplate);
 
         if (r.template() != null) {
             entity.setTemplateFormat(r.template().format());
@@ -382,9 +383,13 @@ public class SubmissionController {
 
     // ── POST /api/submissions/:id/reextract ─────────────────────────────────
 
+    record ReextractRequest(String templateName) {}
+
     @Transactional
     @PostMapping("/{id}/reextract")
-    public ResponseEntity<?> reextract(@PathVariable int id, HttpServletRequest request) {
+    public ResponseEntity<?> reextract(@PathVariable int id,
+                                       @RequestBody(required = false) ReextractRequest body,
+                                       HttpServletRequest request) {
         Optional<Submission> subOpt = submissions.findById(id);
         if (subOpt.isEmpty()) return ResponseEntity.notFound().build();
         Submission sub = subOpt.get();
@@ -392,18 +397,36 @@ public class SubmissionController {
             return ResponseEntity.badRequest().body("No stored file for this submission.");
         }
 
+        // A templateName in the request forces that fund template; otherwise reuse any template
+        // the operator previously forced for this submission so the choice survives re-extraction.
+        String forcedTemplate = resolveForcedTemplate(id, body != null ? body.templateName() : null);
+
         TemplateHints hints = hintsFor(sub.getAgentBank());
         ExtractionResponse extraction =
             extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
-                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank());
+                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
+                forcedTemplate);
         if (extraction == null) {
             return ResponseEntity.status(502).body("pe-sub-extraction unreachable.");
         }
 
-        storeExtractionResult(id, extraction);
-        auditService.log("Re-extraction", "Submission #" + id + " re-extracted",
+        storeExtractionResult(id, extraction, forcedTemplate);
+        String detail = forcedTemplate != null
+            ? "Submission #" + id + " re-extracted as \"" + forcedTemplate + "\" template"
+            : "Submission #" + id + " re-extracted";
+        auditService.log("Re-extraction", detail,
             sub.getFacilityId(), "J. Smith", auditService.extractIp(request));
         return ResponseEntity.noContent().build();
+    }
+
+    // Resolves the forced template for a re-extraction: an explicit (non-blank) request value
+    // wins and becomes the new forced choice; otherwise the previously persisted forced template
+    // (if any) is reused so remap/discard re-extractions don't revert to auto-detection.
+    private String resolveForcedTemplate(int submissionId, String requested) {
+        if (requested != null && !requested.isBlank()) return requested.trim();
+        return extractionRepo.findBySubmissionId(submissionId)
+            .map(SubmissionExtraction::getForcedTemplate)
+            .orElse(null);
     }
 
     // ── POST /api/submissions/:id/remap ─────────────────────────────────────
@@ -445,15 +468,17 @@ public class SubmissionController {
                 sub.getFacilityId(), "J. Smith", auditService.extractIp(request));
         }
 
+        String forcedTemplate = resolveForcedTemplate(id, null);
         TemplateHints hints = hintsFor(sub.getAgentBank());
         ExtractionResponse extraction =
             extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
-                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank());
+                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
+                forcedTemplate);
         if (extraction == null) {
             return ResponseEntity.status(502).body("pe-sub-extraction unreachable — alias saved, re-extraction pending.");
         }
 
-        storeExtractionResult(id, extraction);
+        storeExtractionResult(id, extraction, forcedTemplate);
         return ResponseEntity.ok().build();
     }
 

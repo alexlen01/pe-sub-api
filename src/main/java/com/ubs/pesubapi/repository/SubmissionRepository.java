@@ -8,4 +8,5 @@ import java.util.List;
 public interface SubmissionRepository extends JpaRepository<Submission, Integer> {
     List<Submission> findByFacilityIdOrderByCreatedAtDesc(Integer facilityId);
     List<Submission> findAllByOrderByCreatedAtDesc();
+    void deleteByFacilityId(Integer facilityId);
 }

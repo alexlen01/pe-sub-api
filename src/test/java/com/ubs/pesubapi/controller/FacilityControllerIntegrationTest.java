@@ -301,4 +301,145 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
                     """))
             .andExpect(status().isNotFound());
     }
+
+    @Test
+    void patchFacility_renamesNameAndAgentBank_andRoundTrips() throws Exception {
+        mvc.perform(post("/api/facilities")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name": "Old Name Fund", "agentBank": "Citibank"}
+                    """))
+            .andExpect(status().isCreated());
+
+        int id = facilityRepo.findByName("Old Name Fund").orElseThrow().getId();
+
+        mvc.perform(patch("/api/facilities/{id}", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name": "New Name Fund", "agentBank": "JPMorgan"}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.name").value("New Name Fund"))
+            .andExpect(jsonPath("$.agentBank").value("JPMorgan"));
+
+        mvc.perform(get("/api/facilities/{id}", id))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.name").value("New Name Fund"))
+            .andExpect(jsonPath("$.agentBank").value("JPMorgan"));
+    }
+
+    @Test
+    void patchFacility_renameToExistingName_returns409() throws Exception {
+        for (String name : new String[] { "First Fund", "Second Fund" }) {
+            mvc.perform(post("/api/facilities")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"name\": \"" + name + "\", \"agentBank\": \"Citibank\"}"))
+                .andExpect(status().isCreated());
+        }
+
+        int secondId = facilityRepo.findByName("Second Fund").orElseThrow().getId();
+
+        mvc.perform(patch("/api/facilities/{id}", secondId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name": "First Fund"}
+                    """))
+            .andExpect(status().isConflict());
+
+        // Renaming a facility to its own (unchanged) name must be allowed.
+        mvc.perform(patch("/api/facilities/{id}", secondId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name": "Second Fund"}
+                    """))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void deactivate_succeedsWhenFacilityHasNoLpRecords() throws Exception {
+        com.ubs.pesubapi.entity.Facility f = new com.ubs.pesubapi.entity.Facility();
+        f.setName("Deactivatable Fund");    // TEST ONLY
+        f.setAgentBank("Citibank");
+        int id = facilityRepo.save(f).getId();
+
+        mvc.perform(patch("/api/facilities/{id}/status", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"status": "Inactive"}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("Inactive"));
+    }
+
+    @Test
+    void deactivate_blockedWhenFacilityHasLpRecords_returns409() throws Exception {
+        com.ubs.pesubapi.entity.Facility f = new com.ubs.pesubapi.entity.Facility();
+        f.setName("Populated Fund");        // TEST ONLY
+        f.setAgentBank("Citibank");
+        int id = facilityRepo.save(f).getId();
+        lpRepo.save(buildLp(id, "Acme Pension Fund"));
+
+        mvc.perform(patch("/api/facilities/{id}/status", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"status": "Inactive"}
+                    """))
+            .andExpect(status().isConflict());
+    }
+
+    @Test
+    void deleteFacility_withNoLpRecords_removesFacility() throws Exception {
+        com.ubs.pesubapi.entity.Facility f = new com.ubs.pesubapi.entity.Facility();
+        f.setName("Deletable Fund");        // TEST ONLY
+        f.setAgentBank("Citibank");
+        int id = facilityRepo.save(f).getId();
+
+        mvc.perform(delete("/api/facilities/{id}", id))
+            .andExpect(status().isNoContent());
+
+        mvc.perform(get("/api/facilities/{id}", id))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void deleteFacility_preservesAuditHistory() throws Exception {
+        com.ubs.pesubapi.entity.Facility f = new com.ubs.pesubapi.entity.Facility();
+        f.setName("Audited Fund");          // TEST ONLY
+        f.setAgentBank("Citibank");
+        int id = facilityRepo.save(f).getId();
+
+        com.ubs.pesubapi.entity.AuditLog entry = new com.ubs.pesubapi.entity.AuditLog();
+        entry.setEvent("Facility Created");
+        entry.setDetail("Audited Fund");
+        entry.setFacilityId(id);
+        int auditId = auditLogRepo.save(entry).getId();
+
+        mvc.perform(delete("/api/facilities/{id}", id))
+            .andExpect(status().isNoContent());
+
+        // The audit row survives the deletion; only its facility reference is cleared.
+        com.ubs.pesubapi.entity.AuditLog reloaded = auditLogRepo.findById(auditId).orElseThrow();
+        org.junit.jupiter.api.Assertions.assertNull(reloaded.getFacilityId());
+    }
+
+    @Test
+    void deleteFacility_withLpRecords_returns409_andKeepsFacility() throws Exception {
+        com.ubs.pesubapi.entity.Facility f = new com.ubs.pesubapi.entity.Facility();
+        f.setName("Undeletable Fund");      // TEST ONLY
+        f.setAgentBank("Citibank");
+        int id = facilityRepo.save(f).getId();
+        lpRepo.save(buildLp(id, "Acme Pension Fund"));
+
+        mvc.perform(delete("/api/facilities/{id}", id))
+            .andExpect(status().isConflict());
+
+        mvc.perform(get("/api/facilities/{id}", id))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void deleteFacility_notFound_returns404() throws Exception {
+        mvc.perform(delete("/api/facilities/99999"))
+            .andExpect(status().isNotFound());
+    }
 }
