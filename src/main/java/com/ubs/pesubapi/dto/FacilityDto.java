@@ -15,6 +15,8 @@ public record FacilityDto(
     int           lpCount,
     String        accountNumber,
     BigDecimal    loanAmount,
+    BigDecimal    facilitySize,
+    BigDecimal    ubsParticipation,
     LocalDate     maturityDate,
     String        bankStatus,
     LocalDate     bankStatusDate,
@@ -30,7 +32,8 @@ public record FacilityDto(
         return new FacilityDto(
             f.getId(), f.getName(), f.getAgentBank(), f.getStatus(),
             f.getConcLimitM(), lpCount,
-            f.getAccountNumber(), f.getLoanAmount(), f.getMaturityDate(),
+            f.getAccountNumber(), f.getLoanAmount(),
+            f.getFacilitySize(), f.getUbsParticipation(), f.getMaturityDate(),
             f.getBankStatus(), f.getBankStatusDate(),
             f.getLastRunAt(), f.getCreatedAt(), f.getUpdatedAt());
     }

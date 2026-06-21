@@ -43,6 +43,36 @@ of physical rows a stacked column header occupies (e.g. Carlyle CP VII rows 84�
 CP VII). These are identified by **fund/deal** in the sample, so `agent_bank` holds the
 fund label as the template key until the owning facility is onboarded with its real bank.
 
+## Facility Agent Bank Summary fields
+
+`facilities` carries the Agent Bank Summary inputs `account_number`, `loan_amount`, and
+`maturity_date` (plus the dormant `bank_status` / `bank_status_date` columns) and the Shadow BB
+Borrowing Base inputs `facility_size` / `ubs_participation` (`V1_4__facility_size_participation.sql`,
+stored as full-dollar `NUMERIC`). `POST /api/facilities` only sets name + agent bank; all of these
+are populated afterwards via `PATCH /api/facilities/{id}` (partial update — only the fields present
+in the body are applied), which the UI's Facility Edit screen calls. The Shadow BB result figures
+shown alongside them on the dashboard are **not** stored on the facility; they live in `bb_snapshots`,
+keyed by `facility_id` (see `POST /api/bb/run/{facilityId}` and `GET /api/bb/snapshots/{facilityId}/latest`).
+
+## Shadow BB summary (`GET /api/bb/summary-ext/{facilityId}`)
+
+Powers the five-table Shadow BB summary panel (SHADOW_BB_ANALYSIS Tables 1–5). All monetary
+fields — and the `dollars` in each breakdown row — are returned in **$millions** (the UI renders
+full dollars or abbreviated `$M` by panel width). Key rules:
+
+- **UBS advance rate** is resolved per-LP by `BbCalculationService.advanceRateFraction`: the stored
+  `ubs_rate` (e.g. `"90%"`) takes precedence, falling back to a classification→rate map that covers
+  **both** the legacy LP Master tiers and the UBS LP Classification labels
+  (`Rated Investor` 90% · `FoF & Other > $10Bn AUM` 75% · `Unrated NAV > $1Bn` / `Corp Pension > $5Bn Assets` 65% · `Other Institutional` 50% · `Excluded` 0%).
+  This drives UBS BB, the BUSA distribution (Table 3) and the UBS advance rate.
+- **Total Called Capital** is calculated (`Capital Commitments − Uncalled Capital`) per LP when no
+  `called_cap` is stored, rather than summing a column of blanks.
+- **Borrowing Base** (Table 2) derives from `facility_size` / `ubs_participation` plus the snapshot
+  BB totals: UBS Participation Rate, Facility LTV (`size ÷ total uncalled`), Available Commitment
+  (`MIN(size, agent BB)`), Facility Advance Rate (`agent BB ÷ total uncalled`).
+- **LP Classification** (Table 5) rolls the granular labels into four canonical buckets:
+  Rated / Unrated / Eligible / Excluded Investors.
+
 ## LP Master ordering & commit
 
 `lp_records.source_seq` (`V1_3__lp_source_seq.sql`) stores each LP's position in its

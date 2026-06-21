@@ -11,6 +11,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -21,6 +23,11 @@ import java.util.Map;
 public class FacilityController {
 
     record CreateFacilityRequest(@NotBlank String name, @NotBlank String agentBank) {}
+
+    // Partial update of the Agent Bank Summary inputs entered on the Facility Edit screen.
+    // All fields are optional; only non-null values are applied.
+    record UpdateFacilityRequest(String accountNumber, BigDecimal loanAmount, LocalDate maturityDate,
+                                 BigDecimal facilitySize, BigDecimal ubsParticipation) {}
 
     private final FacilityRepository repo;
     private final LpRepository lpRepo;
@@ -73,6 +80,21 @@ public class FacilityController {
             f.setUpdatedAt(LocalDateTime.now());
             Facility saved = repo.save(f);
             notifier.broadcast(f.getName() + " status updated to " + newStatus);
+            return ResponseEntity.ok(FacilityDto.from(saved, (int) lpRepo.countByFacilityId(id)));
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @PatchMapping("/{id}")
+    public ResponseEntity<FacilityDto> update(@PathVariable int id,
+                                              @RequestBody UpdateFacilityRequest req) {
+        return repo.findById(id).map(f -> {
+            if (req.accountNumber() != null)    f.setAccountNumber(req.accountNumber());
+            if (req.loanAmount() != null)       f.setLoanAmount(req.loanAmount());
+            if (req.maturityDate() != null)     f.setMaturityDate(req.maturityDate());
+            if (req.facilitySize() != null)     f.setFacilitySize(req.facilitySize());
+            if (req.ubsParticipation() != null) f.setUbsParticipation(req.ubsParticipation());
+            f.setUpdatedAt(LocalDateTime.now());
+            Facility saved = repo.save(f);
             return ResponseEntity.ok(FacilityDto.from(saved, (int) lpRepo.countByFacilityId(id)));
         }).orElse(ResponseEntity.notFound().build());
     }

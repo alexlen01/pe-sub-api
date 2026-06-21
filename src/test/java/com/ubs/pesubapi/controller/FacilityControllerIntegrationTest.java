@@ -205,4 +205,100 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.bankStatus").value((Object) null))
             .andExpect(jsonPath("$.bankStatusDate").value((Object) null));
     }
+
+    @Test
+    void patchFacility_updatesAgentBankSummaryFields_andRoundTrips() throws Exception {
+        mvc.perform(post("/api/facilities")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name": "Editable Fund", "agentBank": "JPMorgan"}
+                    """))
+            .andExpect(status().isCreated());
+
+        int id = facilityRepo.findByName("Editable Fund").orElseThrow().getId();
+
+        // PATCH the Agent Bank Summary inputs and assert the response reflects them.
+        mvc.perform(patch("/api/facilities/{id}", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"accountNumber": "5VX1796", "loanAmount": 2500000000.00, "maturityDate": "2029-03-15"}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.accountNumber").value("5VX1796"))
+            .andExpect(jsonPath("$.loanAmount").value(2500000000.00))
+            .andExpect(jsonPath("$.maturityDate").value("2029-03-15"));
+
+        // GET confirms the values persisted (POST → PATCH → GET round-trip).
+        mvc.perform(get("/api/facilities/{id}", id))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.accountNumber").value("5VX1796"))
+            .andExpect(jsonPath("$.loanAmount").value(2500000000.00))
+            .andExpect(jsonPath("$.maturityDate").value("2029-03-15"));
+    }
+
+    @Test
+    void patchFacility_updatesSizeAndParticipation_andRoundTrips() throws Exception {
+        mvc.perform(post("/api/facilities")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name": "Sizeable Fund", "agentBank": "Wells Fargo"}
+                    """))
+            .andExpect(status().isCreated());
+
+        int id = facilityRepo.findByName("Sizeable Fund").orElseThrow().getId();
+
+        // facility_size / ubs_participation are inputs to the Shadow BB Borrowing Base summary.
+        mvc.perform(patch("/api/facilities/{id}", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"facilitySize": 2000000000.00, "ubsParticipation": 500000000.00}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.facilitySize").value(2000000000.00))
+            .andExpect(jsonPath("$.ubsParticipation").value(500000000.00));
+
+        mvc.perform(get("/api/facilities/{id}", id))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.facilitySize").value(2000000000.00))
+            .andExpect(jsonPath("$.ubsParticipation").value(500000000.00));
+    }
+
+    @Test
+    void patchFacility_partialUpdate_leavesUnsetFieldsUnchanged() throws Exception {
+        mvc.perform(post("/api/facilities")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name": "Partial Fund", "agentBank": "Citibank"}
+                    """))
+            .andExpect(status().isCreated());
+
+        int id = facilityRepo.findByName("Partial Fund").orElseThrow().getId();
+
+        mvc.perform(patch("/api/facilities/{id}", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"accountNumber": "5VA0001"}
+                    """))
+            .andExpect(status().isOk());
+
+        // A second PATCH with only loanAmount must not clear the previously-set accountNumber.
+        mvc.perform(patch("/api/facilities/{id}", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"loanAmount": 100000000.00}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.accountNumber").value("5VA0001"))
+            .andExpect(jsonPath("$.loanAmount").value(100000000.00));
+    }
+
+    @Test
+    void patchFacility_notFound_returns404() throws Exception {
+        mvc.perform(patch("/api/facilities/99999")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"accountNumber": "5VX0000"}
+                    """))
+            .andExpect(status().isNotFound());
+    }
 }

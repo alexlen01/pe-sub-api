@@ -19,17 +19,42 @@ import java.util.Map;
 @Service
 public class BbCalculationService {
 
-    private static final Map<String, Double> BUSA_RATES = Map.of(
-        "Rated",          0.90,
-        "Unrated >2bn",   0.75,
-        "Unrated 1–2bn", 0.65,   // em dash: "Unrated 1–2bn"
-        "Eligible",       0.50,
-        "Excluded",       0.00
+    // Advance rate by LP classification. Covers BOTH taxonomies the platform persists:
+    //   • legacy LP Master tiers   ('Rated', 'Unrated >2bn', …)
+    //   • UBS LP Classification     ('Rated Investor', 'FoF & Other > $10Bn AUM', …) — the labels
+    //     the Shadow BB seeds from the Agent Advance Rate (classificationConfig.UBS_CLS_DEFAULT_RATE).
+    // A blank/unrecognised classification falls back to 0%.
+    private static final Map<String, Double> BUSA_RATES = Map.ofEntries(
+        Map.entry("Rated",                       0.90),
+        Map.entry("Unrated >2bn",                0.75),
+        Map.entry("Unrated 1–2bn",               0.65),   // em dash
+        Map.entry("Eligible",                    0.50),
+        Map.entry("Excluded",                    0.00),
+        Map.entry("Rated Investor",              0.90),
+        Map.entry("FoF & Other > $10Bn AUM",     0.75),
+        Map.entry("Unrated NAV > $1Bn",          0.65),
+        Map.entry("Corp Pension > $5Bn Assets", 0.65),
+        Map.entry("Other Institutional",         0.50)
     );
 
     /** Returns the BUSA advance rate for a given LP classification. */
     public double getRateForCls(String cls) {
         return BUSA_RATES.getOrDefault(cls, 0.0);
+    }
+
+    // The UBS Advance Rate is an independent manual-input column on the Shadow BB: the same class
+    // may appear at 0.90 / 0.75 / 0.65 / 0.00 across the population, so the stored per-LP rate
+    // takes precedence over the classification default. Mirrors the frontend advanceRateFraction
+    // (bbCalculationService.ts). "90%"/"90" → 0.90, "0.90" → 0.90; blank → classification default.
+    public double advanceRateFraction(Lp lp) {
+        String raw = lp.getUbsRate();
+        if (raw != null && !raw.isBlank()) {
+            try {
+                double n = Double.parseDouble(raw.replace("%", "").trim());
+                return n > 1 ? n / 100.0 : n;
+            } catch (NumberFormatException ignored) { /* fall through to class default */ }
+        }
+        return getRateForCls(lp.getCls());
     }
 
     public BbResult compute(List<Lp> lps, double concLimitM) {
@@ -56,7 +81,7 @@ public class BbCalculationService {
     }
 
     private ComputedLp computeOne(Lp lp, double facilityConc) {
-        double busaRate    = BUSA_RATES.getOrDefault(lp.getCls(), 0.0);
+        double busaRate    = advanceRateFraction(lp);
         boolean excluded   = !lp.isInc() || "Excluded".equals(lp.getCls());
         double ucM         = parseMoney(lp.getUc());
         double abbM        = parseMoney(lp.getAbb());

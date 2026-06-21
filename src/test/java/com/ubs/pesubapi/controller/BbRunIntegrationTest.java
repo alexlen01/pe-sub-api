@@ -257,6 +257,76 @@ class BbRunIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.result.lps[0].uecM").value(closeTo(4.0, 0.01)));
     }
 
+    // ── UBS LP Classification taxonomy resolves a non-zero advance rate ─────────────
+
+    @Test
+    void run_computesUbbForUbsTaxonomyClass() throws Exception {
+        // LP classified under the UBS taxonomy ("FoF & Other > $10Bn AUM" → 75%), with no stored
+        // per-LP ubsRate. Previously the engine keyed only on the legacy taxonomy and returned 0%,
+        // so UBS BB was $0. Now: uec = min(10, 25) = 10; 75% → ubbM = 7.5.
+        String body = """
+            {
+              "lps": [{
+                "name": "Blackstone FoF",
+                "parent": null, "spv": false, "hq": false,
+                "type": "Institutional", "region": "North America",
+                "ig": false, "cls": "FoF & Other > $10Bn AUM",
+                "sp": "", "mdy": "", "fitch": "",
+                "aum": "$80.0B", "nav": null, "pension": null, "pensionFunded": null,
+                "capCommit": "$10.0M", "pctCapCommit": null, "calledCap": null,
+                "uc": "$10.0M", "pctUncalled": null, "pctCalled": null,
+                "agentConc": null, "ubsConc": "$25.0M",
+                "agentRate": "75.0%%", "abb": "$7.5M",
+                "inc": true, "rcl": false, "notes": null
+              }]
+            }
+            """;
+
+        mvc.perform(post("/api/bb/run/{id}", facilityId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.result.summary.totalUBB").value(closeTo(7.5, 0.01)))
+            .andExpect(jsonPath("$.result.lps[0].ubbM").value(closeTo(7.5, 0.01)));
+    }
+
+    @Test
+    void summaryExt_derivesCalledCapitalAndCanonicalClassBuckets() throws Exception {
+        mvc.perform(post("/api/bb/run/{id}", facilityId)
+                .contentType(MediaType.APPLICATION_JSON).content(lpPayload(facilityId)))
+            .andExpect(status().isCreated());
+
+        // Called Capital: CalPERS stored $14M; Stanford/Tiny blank → commit−uncalled = 0 → total 14.
+        // Classification buckets roll the granular labels up to the 4 canonical eligibility tiers.
+        mvc.perform(get("/api/bb/summary-ext/{id}", facilityId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalCalledCap").value(closeTo(14.0, 0.01)))
+            .andExpect(jsonPath("$.clsBreakdown[*].label",
+                hasItems("Rated Investors", "Unrated Investors", "Excluded Investors")));
+    }
+
+    @Test
+    void summaryExt_populatesFacilityMetricsFromStoredInputs() throws Exception {
+        Facility f = facilityRepo.findById(facilityId).orElseThrow();
+        f.setFacilitySize(new java.math.BigDecimal("100000000"));        // $100M
+        f.setUbsParticipation(new java.math.BigDecimal("50000000"));     // $50M
+        facilityRepo.save(f);
+
+        mvc.perform(post("/api/bb/run/{id}", facilityId)
+                .contentType(MediaType.APPLICATION_JSON).content(lpPayload(facilityId)))
+            .andExpect(status().isCreated());
+
+        // Stored dollars surface as $millions; participation rate = 50/100; available commitment =
+        // MIN(facility size, agent BB) = MIN(100, 26.5) = 26.5.
+        mvc.perform(get("/api/bb/summary-ext/{id}", facilityId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.facilitySize").value(closeTo(100.0, 0.01)))
+            .andExpect(jsonPath("$.ubsParticipation").value(closeTo(50.0, 0.01)))
+            .andExpect(jsonPath("$.ubsParticipationPct").value(closeTo(0.5, 0.001)))
+            .andExpect(jsonPath("$.availableCommit").value(closeTo(26.5, 0.01)))
+            .andExpect(jsonPath("$.facilityAdvRate").isNumber());
+    }
+
     // ── Helper ────────────────────────────────────────────────────────────────────
 
     /** 3-LP payload: one Rated, one Unrated, one Excluded. TEST ONLY */

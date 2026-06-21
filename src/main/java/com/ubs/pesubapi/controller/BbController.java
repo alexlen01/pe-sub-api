@@ -105,7 +105,10 @@ public class BbController {
 
         int    totalLPs       = lps.size();
         double totalCapCommit = lps.stream().mapToDouble(lp -> parseMoney(lp.getCapCommit())).sum();
-        double totalCalledCap = lps.stream().mapToDouble(lp -> parseMoney(lp.getCalledCap())).sum();
+        // Called Capital is a calculated column (SHADOW_BB_ANALYSIS): Capital Commitments − Uncalled
+        // Capital. Most LPs carry no stored called_cap, so derive it per-LP rather than summing a
+        // column of blanks (which previously yielded $0).
+        double totalCalledCap = lps.stream().mapToDouble(BbController::calledCapM).sum();
         double totalUncalled  = lps.stream().mapToDouble(lp -> parseMoney(lp.getUc())).sum();
         double pctCalled      = totalCapCommit > 0 ? totalCalledCap / totalCapCommit : 0;
 
@@ -137,6 +140,19 @@ public class BbController {
         }
         double ubsAdvRate = totalUncalled > 0 ? ubsBBRaw / totalUncalled : 0;
 
+        // ── Facility-level inputs & derived metrics (SHADOW_BB_ANALYSIS Table 2) ──────
+        // facility_size / ubs_participation are stored as full-dollar amounts; every monetary
+        // field in this response is expressed in $millions, so divide by 1e6 to match.
+        Facility facility = facilityRepo.findById(facilityId).orElse(null);
+        double facilitySizeM = facility != null && facility.getFacilitySize() != null
+            ? facility.getFacilitySize().doubleValue() / 1_000_000.0 : 0;
+        double ubsParticipationM = facility != null && facility.getUbsParticipation() != null
+            ? facility.getUbsParticipation().doubleValue() / 1_000_000.0 : 0;
+        double ubsParticipationPct = facilitySizeM > 0 ? ubsParticipationM / facilitySizeM : 0;
+        double facilityLTV  = totalUncalled > 0 ? facilitySizeM / totalUncalled : 0;          // Size ÷ Total Uncalled
+        double availableCommit = Math.min(facilitySizeM, agentBBRaw);                          // MIN(Size, Agent BB)
+        double facilityAdvRate = totalUncalled > 0 ? agentBBRaw / totalUncalled : 0;           // Agent BB ÷ Total Uncalled
+
         // ── Table 1: LP Portfolio & Table 2: Borrowing Base (scalar fields above) ──
 
         // ── Table 3: BUSA breakdown — group by UBS advance rate ──────────────────
@@ -144,7 +160,7 @@ public class BbController {
         for (String key : List.of("90%", "75%", "65%", "50%", "0%"))
             busaMap.put(key, new double[]{0, 0});   // [count, dollars]
         for (var lp : lps) {
-            double rate = calculator.getRateForCls(lp.getCls());
+            double rate = calculator.advanceRateFraction(lp);
             String rateKey = String.format("%.0f%%", rate * 100);
             busaMap.computeIfAbsent(rateKey, k -> new double[]{0, 0});
             busaMap.get(rateKey)[0]++;
@@ -185,14 +201,15 @@ public class BbController {
             }).collect(Collectors.toList());
 
         // ── Table 5: LP Classification breakdown ─────────────────────────────────
+        // Roll the granular UBS LP Classification labels up into the four canonical eligibility
+        // buckets (SHADOW_BB_ANALYSIS Table 5). Order is fixed so the table reads consistently.
         Map<String, double[]> clsMap = new LinkedHashMap<>();
-        for (String key : List.of("Rated", "Unrated >2bn", "Unrated 1–2bn", "Eligible", "Excluded"))
+        for (String key : List.of("Rated Investors", "Unrated Investors", "Eligible Investors", "Excluded Investors"))
             clsMap.put(key, new double[]{0, 0});
         for (var lp : lps) {
-            String cls = lp.getCls() != null ? lp.getCls() : "Excluded";
-            clsMap.computeIfAbsent(cls, k -> new double[]{0, 0});
-            clsMap.get(cls)[0]++;
-            clsMap.get(cls)[1] += parseMoney(lp.getUc());
+            String bucket = canonicalClassBucket(lp.getCls());
+            clsMap.get(bucket)[0]++;
+            clsMap.get(bucket)[1] += parseMoney(lp.getUc());
         }
         List<Map<String, Object>> clsBreakdown = clsMap.entrySet().stream()
             .filter(e -> e.getValue()[0] > 0)
@@ -217,12 +234,12 @@ public class BbController {
         out.put("pctTop20",            pctTop20);
         out.put("igRatio",             igRatio);
         out.put("pctUncalledGt25bnAum", pctUncalledGt25bnAum);
-        out.put("facilitySize",        0.0);
-        out.put("ubsParticipation",    0.0);
-        out.put("ubsParticipationPct", 0.0);
-        out.put("facilityLTV",         0.0);
-        out.put("availableCommit",     0.0);
-        out.put("facilityAdvRate",     0.0);
+        out.put("facilitySize",        facilitySizeM);
+        out.put("ubsParticipation",    ubsParticipationM);
+        out.put("ubsParticipationPct", ubsParticipationPct);
+        out.put("facilityLTV",         facilityLTV);
+        out.put("availableCommit",     availableCommit);
+        out.put("facilityAdvRate",     facilityAdvRate);
         out.put("agentBBRaw",          agentBBRaw);
         out.put("ubsBBRaw",            ubsBBRaw);
         out.put("ubsAdvRate",          ubsAdvRate);
@@ -230,6 +247,13 @@ public class BbController {
         out.put("agentBreakdown",      agentBreakdown);
         out.put("clsBreakdown",        clsBreakdown);
         return ResponseEntity.ok(out);
+    }
+
+    /** Called Capital for one LP ($millions): the stored value when present, else the calculated
+     *  Capital Commitments − Uncalled Capital (never negative). */
+    private static double calledCapM(com.ubs.pesubapi.entity.Lp lp) {
+        if (lp.getCalledCap() != null && !lp.getCalledCap().isBlank()) return parseMoney(lp.getCalledCap());
+        return Math.max(0, parseMoney(lp.getCapCommit()) - parseMoney(lp.getUc()));
     }
 
     private static double parseMoney(String value) {
@@ -245,6 +269,20 @@ public class BbController {
         } catch (NumberFormatException e) {
             return 0.0;
         }
+    }
+
+    /** Rolls a granular LP classification (UBS or legacy taxonomy) up into one of the four
+     *  canonical eligibility buckets used by SHADOW_BB_ANALYSIS Table 5. */
+    private static String canonicalClassBucket(String cls) {
+        if (cls == null || cls.isBlank()) return "Excluded Investors";
+        return switch (cls) {
+            case "Rated Investor", "Rated" -> "Rated Investors";
+            case "FoF & Other > $10Bn AUM", "Corp Pension > $5Bn Assets", "Unrated NAV > $1Bn",
+                 "Unrated >2bn", "Unrated 1–2bn" -> "Unrated Investors";
+            case "Other Institutional", "Eligible" -> "Eligible Investors";
+            case "Excluded" -> "Excluded Investors";
+            default -> "Eligible Investors";
+        };
     }
 
     private static double parseRatePct(String rate) {

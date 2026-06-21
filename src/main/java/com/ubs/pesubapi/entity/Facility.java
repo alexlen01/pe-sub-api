@@ -31,6 +31,14 @@ public class Facility {
     @Column(name = "loan_amount", precision = 15, scale = 2)
     private BigDecimal loanAmount;
 
+    // Stated facility commitment and UBS's participation share (USD). Inputs to the Shadow BB
+    // "Borrowing Base" summary (SHADOW_BB_ANALYSIS Table 2). Nullable until provided.
+    @Column(name = "facility_size", precision = 15, scale = 2)
+    private BigDecimal facilitySize;
+
+    @Column(name = "ubs_participation", precision = 15, scale = 2)
+    private BigDecimal ubsParticipation;
+
     @Column(name = "maturity_date")
     private LocalDate maturityDate;
 
@@ -66,6 +74,8 @@ public class Facility {
     public BigDecimal getConcLimitM()            { return concLimitM; }
     public String getAccountNumber()             { return accountNumber; }
     public BigDecimal getLoanAmount()            { return loanAmount; }
+    public BigDecimal getFacilitySize()          { return facilitySize; }
+    public BigDecimal getUbsParticipation()      { return ubsParticipation; }
     public LocalDate getMaturityDate()           { return maturityDate; }
     public String getBankStatus()                { return bankStatus; }
     public LocalDate getBankStatusDate()         { return bankStatusDate; }
@@ -78,6 +88,8 @@ public class Facility {
     public void setStatus(String status)         { this.status = status; }
     public void setAccountNumber(String v)       { this.accountNumber = v; }
     public void setLoanAmount(BigDecimal v)      { this.loanAmount = v; }
+    public void setFacilitySize(BigDecimal v)    { this.facilitySize = v; }
+    public void setUbsParticipation(BigDecimal v){ this.ubsParticipation = v; }
     public void setMaturityDate(LocalDate v)     { this.maturityDate = v; }
     public void setBankStatus(String v)          { this.bankStatus = v; }
     public void setBankStatusDate(LocalDate v)   { this.bankStatusDate = v; }
