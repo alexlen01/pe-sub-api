@@ -107,6 +107,7 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         extractionRepo.save(ext);
     }
 
+    @SuppressWarnings("null")
     @Test
     void commit_insertsEveryAcceptedRow_inNaturalOrder() throws Exception {
         // Build the match queue (all rows are new → NO_MATCH on an empty LP Master).
