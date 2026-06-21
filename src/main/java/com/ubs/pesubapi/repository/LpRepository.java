@@ -8,6 +8,13 @@ import java.util.List;
 
 public interface LpRepository extends JpaRepository<Lp, Integer> {
     List<Lp> findByFacilityIdOrderByInvestorNameAsc(Integer facilityId);
+
+    /**
+     * LP records in their natural (source-file) order: by the originating Agent BB row position,
+     * falling back to investor name. PostgreSQL ASC sorts NULLs last, so legacy/manually-created
+     * rows without a source position appear after the uploaded set, ordered alphabetically.
+     */
+    List<Lp> findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(Integer facilityId);
     List<Lp> findByFacilityIdAndClsOrderByInvestorNameAsc(Integer facilityId, String cls);
     List<Lp> findByFacilityIdAndInvestorNameContainingIgnoreCaseOrderByInvestorNameAsc(Integer facilityId, String investorName);
     List<Lp> findAllByOrderByInvestorNameAsc();

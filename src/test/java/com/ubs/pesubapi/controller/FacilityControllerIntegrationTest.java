@@ -181,7 +181,7 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
     @Test
     void createFacility_accountMetadataFieldsPresentAsNullInResponse() throws Exception {
         // account_number, loan_amount, maturity_date, bank_status, bank_status_date are
-        // populated by the V1_7 seed, not by the create endpoint. Verify they are present
+        // schema columns (V1_1) the create endpoint does not set. Verify they are present
         // in the DTO response as JSON null values (proving the fields round-trip the API).
         mvc.perform(post("/api/facilities")
                 .contentType(MediaType.APPLICATION_JSON)

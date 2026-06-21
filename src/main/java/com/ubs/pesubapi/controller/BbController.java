@@ -63,7 +63,7 @@ public class BbController {
             lpMasterService.upsertAll(facilityId, request.lps());
         }
 
-        List<com.ubs.pesubapi.entity.Lp> lps = lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId);
+        List<com.ubs.pesubapi.entity.Lp> lps = lpRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
         BbResult result = calculator.compute(lps, facility.getConcLimitM().doubleValue());
 
         BbSnapshot snapshot = new BbSnapshot();

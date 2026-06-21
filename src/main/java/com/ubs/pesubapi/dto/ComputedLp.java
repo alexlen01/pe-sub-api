@@ -5,7 +5,6 @@ import com.ubs.pesubapi.entity.Lp;
 public record ComputedLp(
     Integer id,
     Integer facilityId,
-    Integer rank,
     String  name,
     String  parent,
     boolean spv,
@@ -36,14 +35,14 @@ public record ComputedLp(
     double  concExcessM,
     boolean highQuality
 ) {
-    public static ComputedLp from(int rank, Lp lp, double busaRate, double uecM, double ubbM,
+    public static ComputedLp from(Lp lp, double busaRate, double uecM, double ubbM,
                                    double abbM, double deltaM, double concExcessM) {
         String cls = lp.getCls();
         boolean highQuality = "Rated".equals(cls)
             || "Unrated >2bn".equals(cls)
             || "Unrated 1–2bn".equals(cls);
         return new ComputedLp(
-            lp.getId(), lp.getFacilityId(), rank, lp.getInvestorName(), lp.getParent(),
+            lp.getId(), lp.getFacilityId(), lp.getInvestorName(), lp.getParent(),
             lp.isSpv(), lp.isHighQty(), lp.getInvType(), lp.getRegion(), lp.isIg(),
             lp.getCls(), lp.getSp(), lp.getMdy(), lp.getFitch(),
             lp.getAum(), lp.getUc(), lp.getAbb(), lp.isInc(), lp.isRcl(), lp.isTf(),

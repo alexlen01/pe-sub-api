@@ -26,14 +26,16 @@ public record LpClassificationRequest(
         Boolean spv,
         String  type,             // Institutional vs HNW
         Boolean ig,               // Investment Grade?
-        String  cls,              // UBS LP Classification
-        String  agentCls,         // Agent LP Classification
+        String  agentCls,         // Agent LP Classification (verbatim from Agent BB)
+        String  cls,              // UBS LP Classification (follows Agent LP Classification)
         String  sp,
         String  mdy,
         String  fitch,
         // Scale (manual)
-        String  lpSizeBil,        // LP Size ($ Bil)
-        String  lpSizeCriteria,   // AUM | NAV | Assets
+        String  aum,              // Assets Under Management
+        String  nav,              // Net Asset Value
+        String  pension,          // Pension Assets
+        String  pensionFunded,    // Pension Funded %
         // Commitment / capital (manual)
         String  capCommit,
         String  uc,

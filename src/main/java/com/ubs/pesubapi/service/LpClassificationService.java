@@ -56,8 +56,10 @@ public class LpClassificationService {
             if (row.sp()             != null) lp.setSp(row.sp());
             if (row.mdy()            != null) lp.setMdy(row.mdy());
             if (row.fitch()          != null) lp.setFitch(row.fitch());
-            if (row.lpSizeBil()      != null) lp.setLpSizeBil(row.lpSizeBil());
-            if (row.lpSizeCriteria() != null) lp.setLpSizeCriteria(row.lpSizeCriteria());
+            if (row.aum()            != null) lp.setAum(row.aum());
+            if (row.nav()            != null) lp.setNav(row.nav());
+            if (row.pension()        != null) lp.setPension(row.pension());
+            if (row.pensionFunded()  != null) lp.setPensionFunded(row.pensionFunded());
             if (row.capCommit()      != null) lp.setCapCommit(row.capCommit());
             if (row.inc()            != null) lp.setInc(row.inc());
             if (row.uc()             != null) lp.setUc(row.uc());

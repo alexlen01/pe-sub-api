@@ -60,7 +60,7 @@ public class LpController {
         } else if (facilityId != null && search != null) {
             lps = repo.findByFacilityIdAndInvestorNameContainingIgnoreCaseOrderByInvestorNameAsc(facilityId, search);
         } else if (facilityId != null) {
-            lps = repo.findByFacilityIdOrderByInvestorNameAsc(facilityId);
+            lps = repo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
         } else {
             lps = repo.findAllByOrderByInvestorNameAsc();
         }

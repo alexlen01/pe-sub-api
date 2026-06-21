@@ -457,6 +457,8 @@ INSERT INTO fm_aliases (canonical_field_id, alias_sort, alias_text, tier, bank) 
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Borrowing Base'), 4, 'Agent Base',                  'Core', NULL),
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Borrowing Base'), 5, 'BB Amount',                   'Core', NULL),
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Borrowing Base'), 6, 'Borrowing Base Contribution', 'Core', NULL),
+  -- Bare "Borrowing Base" header (KKR-Ascendant-style templates); exact alias so it auto-matches (was V1_7).
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Borrowing Base'), 7, 'Borrowing Base',              'Core', NULL),
 
   -- Concentration Limit
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Concentration Limit'), 1, 'Concentration Limit',       'Core', NULL),
@@ -668,8 +670,8 @@ INSERT INTO lp_rates (
 SELECT
     id,
     '2025-01-01'::DATE,
-    cls,
-    CASE cls
+    classification,
+    CASE classification
         WHEN 'Rated'          THEN 0.9000
         WHEN 'Unrated >2bn'   THEN 0.7500
         WHEN 'Unrated 1–2bn'  THEN 0.6500
@@ -677,7 +679,7 @@ SELECT
         WHEN 'Excluded'       THEN 0.0000
         ELSE                       0.5000
     END,
-    CASE cls
+    CASE classification
         WHEN 'Rated'          THEN 0.1500
         WHEN 'Unrated >2bn'   THEN 0.1250
         WHEN 'Unrated 1–2bn'  THEN 0.1000

@@ -74,6 +74,10 @@ public class ExtractionClientService {
             String classificationJson = classificationConfigBuilder.buildJson(agentBank);
             if (classificationJson != null) body.add("classificationConfig", classificationJson);
 
+            // The selected agent bank is the authoritative format fallback when the workbook
+            // itself carries no recognisable bank name (e.g. fund-branded templates).
+            if (agentBank != null && !agentBank.isBlank()) body.add("agentBank", agentBank);
+
             return extractionClient.post()
                 .uri("/api/extract?forward=false")
                 .contentType(Objects.requireNonNull(MediaType.MULTIPART_FORM_DATA))

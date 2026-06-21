@@ -157,6 +157,7 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
                       "rows": [{
                         "name": "Monarch Capital LP",
                         "cls": "Rated", "sp": "AA", "mdy": "Aa2", "fitch": "AA",
+                        "aum": "$4.2B", "nav": "$3.1B", "pension": "$1.0B", "pensionFunded": "112%%",
                         "inc": true, "uc": "$12.0M",
                         "ubsAdvRatePct": 90.0, "ubsConcLimitPct": 7.5
                       }]
@@ -165,11 +166,15 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.updated").value(1));
 
-        // LP entity fields updated in place
+        // LP entity fields updated in place — including the Financial Scale columns
         mvc.perform(get("/api/lps/{id}", saved.getId()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.cls").value("Rated"))
             .andExpect(jsonPath("$.sp").value("AA"))
+            .andExpect(jsonPath("$.aum").value("$4.2B"))
+            .andExpect(jsonPath("$.nav").value("$3.1B"))
+            .andExpect(jsonPath("$.pension").value("$1.0B"))
+            .andExpect(jsonPath("$.pensionFunded").value("112%"))
             .andExpect(jsonPath("$.uc").value("$12.0M"))
             .andExpect(jsonPath("$.inc").value(true));
 

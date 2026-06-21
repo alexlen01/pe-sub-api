@@ -154,6 +154,7 @@ public class LpIngestService {
                     lp.setCls("Eligible");
                 }
             }
+            lp.setSourceSeq(entry.getRowIndex());   // preserve the Agent BB row order
             applyExtractedJsonRow(lp, row);
             lp = lpRepo.save(lp);
             byName.put(lp.getInvestorName(), lp);
@@ -171,6 +172,11 @@ public class LpIngestService {
         String sp      = textOrNull(row, "sp");
         String mdy     = textOrNull(row, "moodys");
         String fitch   = textOrNull(row, "fitch");
+        // Agent LP Classification verbatim from the Agent BB (e.g. "Pension Fund", "Designated PWM",
+        // "Rated Included"). Persisted here so it survives the Commit Decisions step — the bb.run and
+        // classification-edit paths already set it; this path previously dropped it, leaving the agent
+        // value blank in Shadow BB. It is distinct from invType (Institutional vs HNW), a manual field.
+        String agentCls = textOrNull(row, "agentClass");
 
         if (aum     != null) lp.setAum(aum);
         if (commit  != null) lp.setCapCommit(commit);
@@ -182,6 +188,7 @@ public class LpIngestService {
         if (sp      != null) lp.setSp(sp);
         if (mdy     != null) lp.setMdy(mdy);
         if (fitch   != null) lp.setFitch(fitch);
+        if (agentCls != null) lp.setAgentCls(agentCls);
         lp.setUpdatedAt(LocalDateTime.now());
     }
 

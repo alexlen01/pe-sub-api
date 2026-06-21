@@ -35,15 +35,12 @@ CREATE TABLE facilities (
     updated_at       TIMESTAMP      NOT NULL DEFAULT NOW()
 );
 
--- Rank is dynamically assigned by Shadow BB (sorted by uncalled capital desc).
---
 -- Shadow BB 28-column alignment (Shadow_BB.xlsx · Upload Agent BB Step 5):
---   cls            → UBS LP Classification    | agent_cls      → Agent LP Classification
+--   classification → UBS LP Classification    | agent_cls      → Agent LP Classification
 --   ubs_rate       → UBS Advance Rate         | agent_rate     → Agent Advance Rate
---   lp_size_bil    → LP Size ($ Bil)          | lp_size_criteria → LP Size Criteria (AUM|NAV|Assets)
 --   agent_excess_conc → Agent Excess Conc Base| ubs_excess_conc → UBS Excess Conc Base
---   abb            → Agent Borrowing Base      | ubb            → UBS Borrowing Base
--- recallable_dist : dollar value behind the `rcl` flag; SVB callable_cap = uc + recallable_dist.
+--   agent_bb       → Agent Borrowing Base      | ubs_bb         → UBS Borrowing Base
+-- recallable_dist : dollar value behind the `rcl` flag; SVB callable_cap = uncalled_capital + recallable_dist.
 --
 -- One LP record per (facility_id, investor_name): LP Master is bank-wide but an LP's
 -- participation is tracked per facility, so the same name appears at most once per facility.
@@ -55,42 +52,40 @@ CREATE TABLE lp_records (
     parent            VARCHAR(255),
     spv               BOOLEAN      NOT NULL DEFAULT FALSE,
     high_qty          BOOLEAN      NOT NULL DEFAULT TRUE,
-    inv_type          VARCHAR(50)  NOT NULL,
-    region            VARCHAR(100) NOT NULL,
-    ig                BOOLEAN      NOT NULL DEFAULT FALSE,
-    cls               VARCHAR(50)  NOT NULL,
-    cls_tag           VARCHAR(50),
-    agent_cls         VARCHAR(80),
-    sp                VARCHAR(20)  NOT NULL DEFAULT '',
-    mdy               VARCHAR(20)  NOT NULL DEFAULT '',
-    fitch             VARCHAR(20)  NOT NULL DEFAULT '',
-    aum               VARCHAR(50),
-    nav               VARCHAR(50),
-    lp_size_bil       VARCHAR(50),
-    lp_size_criteria  VARCHAR(20),
-    pension           VARCHAR(50),
-    pension_funded    VARCHAR(50),
-    cap_commit        VARCHAR(50),
-    pct_cap_commit    VARCHAR(20),
-    called_cap        VARCHAR(50),
-    uc                VARCHAR(50),
-    pct_uncalled      VARCHAR(20),
-    pct_called        VARCHAR(20),
-    agent_conc        VARCHAR(20),
-    ubs_conc          VARCHAR(20),
-    agent_excess_conc VARCHAR(50),
-    ubs_excess_conc   VARCHAR(50),
-    agent_rate        VARCHAR(20),
-    ubs_rate          VARCHAR(20),
-    abb               VARCHAR(50),
-    ubb               VARCHAR(50),
-    inc               BOOLEAN      NOT NULL DEFAULT TRUE,
-    rcl               BOOLEAN      NOT NULL DEFAULT FALSE,
-    recallable_dist   VARCHAR(50),
-    tf                BOOLEAN      NOT NULL DEFAULT FALSE,
-    notes             TEXT,
-    created_at        TIMESTAMP    NOT NULL DEFAULT NOW(),
-    updated_at        TIMESTAMP    NOT NULL DEFAULT NOW(),
+    inv_type           VARCHAR(50)  NOT NULL,
+    region             VARCHAR(100) NOT NULL,
+    investment_grade   BOOLEAN      NOT NULL DEFAULT FALSE,
+    classification     VARCHAR(50)  NOT NULL,
+    classification_tag VARCHAR(50),
+    agent_cls          VARCHAR(80),
+    sp                 VARCHAR(20)  NOT NULL DEFAULT '',
+    mdy                VARCHAR(20)  NOT NULL DEFAULT '',
+    fitch              VARCHAR(20)  NOT NULL DEFAULT '',
+    aum                VARCHAR(50),
+    nav                VARCHAR(50),
+    pension            VARCHAR(50),
+    pension_funded     VARCHAR(50),
+    cap_commit         VARCHAR(50),
+    pct_cap_commit     VARCHAR(20),
+    called_cap         VARCHAR(50),
+    uncalled_capital   VARCHAR(50),
+    pct_uncalled       VARCHAR(20),
+    pct_called         VARCHAR(20),
+    agent_conc         VARCHAR(20),
+    ubs_conc           VARCHAR(20),
+    agent_excess_conc  VARCHAR(50),
+    ubs_excess_conc    VARCHAR(50),
+    agent_rate         VARCHAR(20),
+    ubs_rate           VARCHAR(20),
+    agent_bb           VARCHAR(50),
+    ubs_bb             VARCHAR(50),
+    included           BOOLEAN      NOT NULL DEFAULT TRUE,
+    rcl                BOOLEAN      NOT NULL DEFAULT FALSE,
+    recallable_dist    VARCHAR(50),
+    transferee         BOOLEAN      NOT NULL DEFAULT FALSE,
+    notes              TEXT,
+    created_at         TIMESTAMP    NOT NULL DEFAULT NOW(),
+    updated_at         TIMESTAMP    NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_lp_records_facility_investor UNIQUE (facility_id, investor_name)
 );
 

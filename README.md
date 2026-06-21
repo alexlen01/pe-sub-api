@@ -43,6 +43,20 @@ of physical rows a stacked column header occupies (e.g. Carlyle CP VII rows 84�
 CP VII). These are identified by **fund/deal** in the sample, so `agent_bank` holds the
 fund label as the template key until the owning facility is onboarded with its real bank.
 
+## LP Master ordering & commit
+
+`lp_records.source_seq` (`V1_3__lp_source_seq.sql`) stores each LP's position in its
+originating Agent BB — the extraction row index. The LP listing (`GET /api/lps?facilityId=`)
+and the Shadow BB run result (`POST /api/bb/run/{facilityId}`) return LPs in this **natural
+(source-file) order**, falling back to investor name; rows without a source position
+(manually-created or legacy) sort last. Commit (`commitAcceptedMatches`) and the direct
+upsert (`LpMasterService.upsertAll`) both populate `source_seq`.
+
+Match-queue entries carry the extraction's own `rowIndex` (the source-sheet row, which
+starts below the header), and commit looks each accepted entry's row up by that same index.
+These two must use the same index space — otherwise the first *header-offset* accepted rows
+find no row at commit and are silently skipped (the cause of a 900-row file inserting 893).
+
 ## Other commands
 
 ```bash

@@ -358,7 +358,7 @@ public class SubmissionController {
 
         ObjectNode doc = mapper.createObjectNode();
         doc.put("document",         sub.getFileName());
-        doc.put("format",           friendlyFormat(ext.getTemplateFormat()));
+        doc.put("format",           friendlyFormat(ext.getTemplateFormat(), ext.getTemplateVersion()));
         doc.put("tablesIdentified", tablesInfo);
         doc.put("tableLocation",    tableLocation);
         doc.put("headerRow",        hdrRow1);
@@ -395,7 +395,7 @@ public class SubmissionController {
         TemplateHints hints = hintsFor(sub.getAgentBank());
         ExtractionResponse extraction =
             extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
-                hints.sheetName(), hints.headerRowIndex());
+                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank());
         if (extraction == null) {
             return ResponseEntity.status(502).body("pe-sub-extraction unreachable.");
         }
@@ -448,7 +448,7 @@ public class SubmissionController {
         TemplateHints hints = hintsFor(sub.getAgentBank());
         ExtractionResponse extraction =
             extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
-                hints.sheetName(), hints.headerRowIndex());
+                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank());
         if (extraction == null) {
             return ResponseEntity.status(502).body("pe-sub-extraction unreachable — alias saved, re-extraction pending.");
         }
@@ -763,7 +763,13 @@ public class SubmissionController {
         return "Matched via alias dictionary";
     }
 
-    private String friendlyFormat(String fmt) {
+    // Prefers the structurally-recognised fund template (e.g. "KKR Ascendant Fund"), which
+    // identifies the workbook by its column/section structure independent of any agent-bank
+    // name. Falls back to the agent-bank template format when no structure was recognised.
+    private String friendlyFormat(String fmt, String structuralTemplate) {
+        if (structuralTemplate != null && !structuralTemplate.isBlank()) {
+            return "Excel Workbook — " + structuralTemplate + " template";
+        }
         if (fmt == null) return "Unknown template";
         return switch (fmt) {
             case "CITIBANK"           -> "Excel Workbook — Citibank template";

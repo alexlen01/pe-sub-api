@@ -28,7 +28,6 @@ public class LpMasterService {
      * Incoming rows are themselves deduped by name so the same Agent BB submitted twice (or a
      * name repeated within one payload) collapses onto a single record — last value wins —
      * never violating the uq_lp_records_facility_investor constraint.
-     * Rank is computed dynamically in Shadow BB (uncalled capital desc) and not stored.
      */
     @Transactional
     public List<Lp> upsertAll(int facilityId, List<CommitLpRow> rows) {
@@ -36,10 +35,12 @@ public class LpMasterService {
             .collect(Collectors.toMap(Lp::getInvestorName, lp -> lp, (a, b) -> a, LinkedHashMap::new));
 
         Map<String, Lp> toSave = new LinkedHashMap<>();
+        int seq = 0;
         for (CommitLpRow row : rows) {
             String name = row.name() != null ? row.name() : "";
             Lp lp = byName.computeIfAbsent(name, n -> new Lp());
             apply(lp, facilityId, row);
+            lp.setSourceSeq(seq++);   // preserve the submitted (source-file) order
             toSave.put(name, lp);
         }
         return lpRepo.saveAll(new ArrayList<>(toSave.values()));
@@ -61,8 +62,6 @@ public class LpMasterService {
         lp.setFitch(row.fitch() != null ? row.fitch() : "");
         lp.setAum(row.aum());
         lp.setNav(row.nav());
-        lp.setLpSizeBil(row.lpSizeBil());
-        lp.setLpSizeCriteria(row.lpSizeCriteria());
         lp.setPension(row.pension());
         lp.setPensionFunded(row.pensionFunded());
         lp.setCapCommit(row.capCommit());

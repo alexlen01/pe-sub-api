@@ -14,6 +14,11 @@ public class Lp {
     @Column(name = "facility_id", nullable = false)
     private Integer facilityId;
 
+    // Position of this LP in its originating Agent BB (the extraction row index). Drives the
+    // natural, source-file ordering of the LP Master. Null for manually-created/legacy records.
+    @Column(name = "source_seq")
+    private Integer sourceSeq;
+
     @Column(name = "investor_name", nullable = false)
     private String investorName;
 
@@ -31,27 +36,23 @@ public class Lp {
     @Column(nullable = false)
     private String region;
 
-    @Column(nullable = false)
+    @Column(name = "investment_grade", nullable = false)
     private boolean ig = false;
 
-    @Column(nullable = false)
-    private String cls;
+    // Agent LP Classification (verbatim from Agent BB) — precedes the UBS LP Classification model-wide.
+    @Column(name = "agent_cls")
+    private String agentCls;
 
-    @Column(name = "cls_tag")
+    @Column(name = "classification", nullable = false)
+    private String cls;                 // UBS LP Classification (follows Agent LP Classification)
+
+    @Column(name = "classification_tag")
     private String clsTag;
 
     // ── Shadow BB 28-column alignment (Shadow_BB.xlsx) ──
-    @Column(name = "agent_cls")
-    private String agentCls;            // Agent LP Classification (verbatim from Agent BB)
 
     @Column(name = "ubs_rate")
     private String ubsRate;             // UBS Advance Rate (manual input, e.g. "90%")
-
-    @Column(name = "lp_size_bil")
-    private String lpSizeBil;           // LP Size ($ Bil), e.g. "$134B"
-
-    @Column(name = "lp_size_criteria")
-    private String lpSizeCriteria;      // Basis: AUM | NAV | Assets
 
     @Column(name = "agent_excess_conc")
     private String agentExcessConc;     // Agent Excess Concentration Base (calculated)
@@ -59,6 +60,7 @@ public class Lp {
     @Column(name = "ubs_excess_conc")
     private String ubsExcessConc;       // UBS Excess Concentration Base (calculated)
 
+    @Column(name = "ubs_bb")
     private String ubb;                 // UBS Borrowing Base
 
     @Column(nullable = false)
@@ -86,6 +88,7 @@ public class Lp {
     @Column(name = "called_cap")
     private String calledCap;
 
+    @Column(name = "uncalled_capital")
     private String uc;
 
     @Column(name = "pct_uncalled")
@@ -103,9 +106,10 @@ public class Lp {
     @Column(name = "agent_rate")
     private String agentRate;
 
+    @Column(name = "agent_bb")
     private String abb;
 
-    @Column(nullable = false)
+    @Column(name = "included", nullable = false)
     private boolean inc = true;
 
     @Column(nullable = false)
@@ -114,7 +118,7 @@ public class Lp {
     @Column(name = "recallable_dist")
     private String recallableDist;
 
-    @Column(nullable = false)
+    @Column(name = "transferee", nullable = false)
     private boolean tf = false;
 
     private String notes;
@@ -134,6 +138,7 @@ public class Lp {
     // Getters
     public Integer getId()              { return id; }
     public Integer getFacilityId()      { return facilityId; }
+    public Integer getSourceSeq()       { return sourceSeq; }
     public String getInvestorName()     { return investorName; }
     public String getParent()           { return parent; }
     public boolean isSpv()              { return spv; }
@@ -145,8 +150,6 @@ public class Lp {
     public String getClsTag()           { return clsTag; }
     public String getAgentCls()         { return agentCls; }
     public String getUbsRate()          { return ubsRate; }
-    public String getLpSizeBil()        { return lpSizeBil; }
-    public String getLpSizeCriteria()   { return lpSizeCriteria; }
     public String getAgentExcessConc()  { return agentExcessConc; }
     public String getUbsExcessConc()    { return ubsExcessConc; }
     public String getUbb()              { return ubb; }
@@ -177,6 +180,7 @@ public class Lp {
 
     // Setters for creation
     public void setFacilityId(Integer v)     { this.facilityId = v; }
+    public void setSourceSeq(Integer v)      { this.sourceSeq = v; }
     public void setInvestorName(String v)    { this.investorName = v; }
     public void setInvType(String v)         { this.invType = v; }
     public void setRegion(String v)          { this.region = v; }
@@ -219,8 +223,6 @@ public class Lp {
     // Setters for Shadow BB 28-column alignment
     public void setAgentCls(String v)                  { this.agentCls = v; }
     public void setUbsRate(String v)                   { this.ubsRate = v; }
-    public void setLpSizeBil(String v)                 { this.lpSizeBil = v; }
-    public void setLpSizeCriteria(String v)            { this.lpSizeCriteria = v; }
     public void setAgentExcessConc(String v)           { this.agentExcessConc = v; }
     public void setUbsExcessConc(String v)             { this.ubsExcessConc = v; }
     public void setUbb(String v)                       { this.ubb = v; }

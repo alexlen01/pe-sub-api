@@ -18,8 +18,8 @@ public record CommitBbRequest(List<CommitLpRow> lps) {
         String  type,
         String  region,
         boolean ig,
-        String  cls,            // UBS LP Classification
-        String  agentCls,       // Agent LP Classification
+        String  agentCls,       // Agent LP Classification (verbatim from Agent BB)
+        String  cls,            // UBS LP Classification (follows Agent LP Classification)
         // Ratings
         String  sp,
         String  mdy,
@@ -27,8 +27,6 @@ public record CommitBbRequest(List<CommitLpRow> lps) {
         // Financial Scale
         String  aum,
         String  nav,
-        String  lpSizeBil,      // LP Size ($ Bil)
-        String  lpSizeCriteria, // AUM | NAV | Assets
         String  pension,
         String  pensionFunded,
         // Commitment Data
