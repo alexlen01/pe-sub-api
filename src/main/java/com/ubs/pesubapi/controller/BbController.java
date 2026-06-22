@@ -141,11 +141,14 @@ public class BbController {
         double ubsAdvRate = totalUncalled > 0 ? ubsBBRaw / totalUncalled : 0;
 
         // ── Facility-level inputs & derived metrics (SHADOW_BB_ANALYSIS Table 2) ──────
-        // facility_size / ubs_participation are stored as full-dollar amounts; every monetary
-        // field in this response is expressed in $millions, so divide by 1e6 to match.
+        // All monetary fields in this response are expressed in $millions.
+        // facilitySize: use the explicit facility_size override when set; otherwise fall back to
+        // loan_amount (the committed facility size stored in the Agent Bank Summary).
         Facility facility = facilityRepo.findById(facilityId).orElse(null);
-        double facilitySizeM = facility != null && facility.getFacilitySize() != null
-            ? facility.getFacilitySize().doubleValue() / 1_000_000.0 : 0;
+        java.math.BigDecimal rawSize = facility != null
+            ? (facility.getFacilitySize() != null ? facility.getFacilitySize() : facility.getLoanAmount())
+            : null;
+        double facilitySizeM = rawSize != null ? rawSize.doubleValue() / 1_000_000.0 : 0;
         double ubsParticipationM = facility != null && facility.getUbsParticipation() != null
             ? facility.getUbsParticipation().doubleValue() / 1_000_000.0 : 0;
         double ubsParticipationPct = facilitySizeM > 0 ? ubsParticipationM / facilitySizeM : 0;
