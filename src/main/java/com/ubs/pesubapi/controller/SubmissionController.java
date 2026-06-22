@@ -230,13 +230,13 @@ public class SubmissionController {
                 row.put("agentClass",   fieldStr(rec.fields(), "AGENT_LP_CLASSIFICATION"));
                 row.put("commit",       fmtMoney(fieldDec(rec.fields(), "COMMITMENT")));
                 row.put("uncalled",     fmtMoney(fieldDec(rec.fields(), "UNCALLED")));
-                row.put("aum",          fmtMoney(fieldDec(rec.fields(), "AUM")));
+                row.put("aum",          fmtMoneyOrRaw(rec.fields(), "AUM"));
                 row.put("agentRate",    fmtRate(fieldDec(rec.fields(), "AGENT_RATE")));
                 row.put("agentConc",    fmtRate(fieldDec(rec.fields(), "CONCENTRATION_LIMIT")));
                 row.put("conf",         overallConf(rec));
                 row.put("requiresReview", rec.requiresReview());
                 row.put("parent",       fieldStr(rec.fields(), "Parent / Sponsor"));
-                row.put("nav",          fmtMoney(fieldDec(rec.fields(), "NAV")));
+                row.put("nav",          fmtMoneyOrRaw(rec.fields(), "NAV"));
                 row.put("sp",           fieldStr(rec.fields(), "S&P Rating"));
                 row.put("moodys",       fieldStr(rec.fields(), "Moody's Rating"));
                 row.put("fitch",        fieldStr(rec.fields(), "Fitch Rating"));
@@ -762,6 +762,15 @@ public class SubmissionController {
             if (f != null && f.confidence() > 0) { sum += f.confidence(); count++; }
         }
         return count > 0 ? (int) Math.round((sum / count) * 100) : 0;
+    }
+
+    // For fields like AUM/NAV that may contain range strings (">$2B", "<$500M"), falls back
+    // to the raw extracted string when numeric parsing fails, preserving the range notation.
+    private String fmtMoneyOrRaw(Map<String, ExtractionResponse.FieldValue> fields, String key) {
+        BigDecimal dec = fieldDec(fields, key);
+        if (dec != null) return fmtMoney(dec);
+        String raw = fieldStr(fields, key);
+        return raw.isBlank() ? "" : raw;
     }
 
     private String fmtMoney(BigDecimal v) {
