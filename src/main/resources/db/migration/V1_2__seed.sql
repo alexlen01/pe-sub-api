@@ -562,7 +562,10 @@ VALUES
     -- Aurora AEP VII — single "BB" tab; 4 LP-category sections; cell-format legend (colour flags).
     ('AEP VII',             'A', NULL, NULL, FALSE, 1, TRUE,  TRUE,  10),
     -- Carlyle CP VII — multiple "BB" tabs; flat list; deep title (row 83); stacked header (84-85).
-    ('CP VII',              'A', NULL, NULL, FALSE, 1, FALSE, FALSE, 83);
+    ('CP VII',              'A', NULL, NULL, FALSE, 1, FALSE, FALSE, 83),
+    -- Blue Owl GP Stakes V (Goldman Sachs Bank USA) — single "Borrowing Base" tab; flat list;
+    -- ~900 LPs; no LP-category section banners; single "Total – N LPs" grand-total row.
+    ('Blue Owl GP Stakes V','A', NULL, NULL, FALSE, 1, FALSE, FALSE, 6);
 
 -- ── BB template tabs: LP_GRID tab per template ────────────────────────────────
 -- Bank rows leave sheet_name / header_row_index NULL until confirmed from a real
@@ -581,7 +584,8 @@ JOIN  (VALUES
     ('Audax Fund VII',      'A', 'Investor List',  12,         1),
     ('CCP VII Lev M & M',   'A', 'Investor List',  6,          1),
     ('AEP VII',             'A', 'BB',             10,         1),
-    ('CP VII',              'A', 'BB',             83,         2)
+    ('CP VII',              'A', 'BB',             83,         2),
+    ('Blue Owl GP Stakes V','A', 'Borrowing Base', 6,          1)
 ) AS v(agent_bank, template_class, sheet_name, header_row_index, header_row_span)
   ON t.agent_bank = v.agent_bank AND t.template_class = v.template_class;
 

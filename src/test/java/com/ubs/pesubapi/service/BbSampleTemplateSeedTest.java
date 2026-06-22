@@ -75,4 +75,19 @@ class BbSampleTemplateSeedTest extends IntegrationTestBase {
         assertThat(grid.getHeaderRowSpan()).isEqualTo(1);
         assertThat(grid.getHeaderRowIndex()).isEqualTo(9);   // 0-based: Excel row 10
     }
+
+    @Test
+    void blueOwlGsTemplate_hasCorrectSheetAndHeaderRow() {
+        BbTemplate template = templateRepo.findAllByAgentBankIgnoreCase("Blue Owl GP Stakes V").getFirst();
+        BbTemplateTab grid = tabRepo.findByTemplateIdAndTabRole(template.getId(), TabRole.LP_GRID).orElseThrow();
+        assertThat(grid.getSheetName()).isEqualTo("Borrowing Base");
+        assertThat(grid.getHeaderRowIndex()).isEqualTo(6);   // 0-based: Excel row 7
+        assertThat(grid.getHeaderRowSpan()).isEqualTo(1);
+    }
+
+    @Test
+    void blueOwlGsTemplate_hasNoGroupingSections() {
+        // Flat LP list — no LP-category banner rows.
+        assertThat(builder.buildJson("Blue Owl GP Stakes V")).isNull();
+    }
 }
