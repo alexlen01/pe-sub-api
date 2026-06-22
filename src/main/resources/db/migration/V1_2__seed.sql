@@ -563,9 +563,10 @@ VALUES
     ('AEP VII',             'A', NULL, NULL, FALSE, 1, TRUE,  TRUE,  10),
     -- Carlyle CP VII — multiple "BB" tabs; flat list; deep title (row 83); stacked header (84-85).
     ('CP VII',              'A', NULL, NULL, FALSE, 1, FALSE, FALSE, 83),
-    -- Blue Owl GP Stakes V (Goldman Sachs Bank USA) — single "Borrowing Base" tab; flat list;
-    -- ~900 LPs; no LP-category section banners; single "Total – N LPs" grand-total row.
-    ('Blue Owl GP Stakes V','A', NULL, NULL, FALSE, 1, FALSE, FALSE, 6);
+    -- Blue Owl GP Stakes V (Wells Fargo) — multiple "Agent BB" tabs (one per tranche); 4
+    -- LP-category group-header sections (A–D); colour-coded flags (Rose + Light Turquoise).
+    -- Rows 3-17 are summary tables; column header at row 18 (0-based index 17).
+    ('Blue Owl GP Stakes V','A', NULL, NULL, FALSE, 1, TRUE,  TRUE,  17);
 
 -- ── BB template tabs: LP_GRID tab per template ────────────────────────────────
 -- Bank rows leave sheet_name / header_row_index NULL until confirmed from a real
@@ -585,7 +586,7 @@ JOIN  (VALUES
     ('CCP VII Lev M & M',   'A', 'Investor List',  6,          1),
     ('AEP VII',             'A', 'BB',             10,         1),
     ('CP VII',              'A', 'BB',             83,         2),
-    ('Blue Owl GP Stakes V','A', 'Borrowing Base', 6,          1)
+    ('Blue Owl GP Stakes V','A', 'Agent BB',       17,         1)
 ) AS v(agent_bank, template_class, sheet_name, header_row_index, header_row_span)
   ON t.agent_bank = v.agent_bank AND t.template_class = v.template_class;
 
@@ -648,6 +649,21 @@ CROSS JOIN (VALUES
     (4, 'Excluded Investors',           'Excluded Investors')
 ) AS g(group_sort, header_text, classification)
 WHERE  tmpl.agent_bank = 'AEP VII' AND tb.tab_role = 'LP_GRID';
+
+-- Blue Owl GP Stakes V (Wells Fargo) — 4 LP-category sections with letter-prefix labels.
+-- header_text is verbatim agent text (dot stripped by normaliser during matching: "a. rated
+-- investors" → "a rated investors"); classification reflects the resolved LP credit tier.
+INSERT INTO bb_template_groups (tab_id, group_sort, header_text, classification)
+SELECT tb.id, g.group_sort, g.header_text, g.classification
+FROM   bb_template_tabs tb
+JOIN   bb_templates     tmpl ON tmpl.id = tb.template_id
+CROSS JOIN (VALUES
+    (1, 'A. Rated Investors',    'Rated Included'),
+    (2, 'B. Unrated Investors',  'Non-Rated Included'),
+    (3, 'C. Eligible Investors', 'Designated Institutional'),
+    (4, 'D. Excluded Investors', 'Excluded')
+) AS g(group_sort, header_text, classification)
+WHERE  tmpl.agent_bank = 'Blue Owl GP Stakes V' AND tb.tab_role = 'LP_GRID';
 
 -- ── LP Rates: simulated feed — effective 2025-01-01 ───────────────────────────
 -- Back-dated to Jan 2025 so findLatestAsOf(asOf) returns these rows for any

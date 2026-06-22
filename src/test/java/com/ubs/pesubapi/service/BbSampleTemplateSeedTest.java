@@ -77,17 +77,25 @@ class BbSampleTemplateSeedTest extends IntegrationTestBase {
     }
 
     @Test
-    void blueOwlGsTemplate_hasCorrectSheetAndHeaderRow() {
+    void blueOwlWfTemplate_hasCorrectSheetAndHeaderRow() {
         BbTemplate template = templateRepo.findAllByAgentBankIgnoreCase("Blue Owl GP Stakes V").getFirst();
         BbTemplateTab grid = tabRepo.findByTemplateIdAndTabRole(template.getId(), TabRole.LP_GRID).orElseThrow();
-        assertThat(grid.getSheetName()).isEqualTo("Borrowing Base");
-        assertThat(grid.getHeaderRowIndex()).isEqualTo(6);   // 0-based: Excel row 7
+        assertThat(grid.getSheetName()).isEqualTo("Agent BB");
+        assertThat(grid.getHeaderRowIndex()).isEqualTo(17);  // 0-based: Excel row 18
         assertThat(grid.getHeaderRowSpan()).isEqualTo(1);
     }
 
     @Test
-    void blueOwlGsTemplate_hasNoGroupingSections() {
-        // Flat LP list — no LP-category banner rows.
-        assertThat(builder.buildJson("Blue Owl GP Stakes V")).isNull();
+    void blueOwlWfTemplate_hasFourLetterPrefixedGroupingSections() throws Exception {
+        String json = builder.buildJson("Blue Owl GP Stakes V");
+        assertThat(json).isNotNull();
+
+        Map<String, String> config = mapper.readValue(json, new TypeReference<>() {});
+        assertThat(config)
+            .hasSize(4)
+            .containsEntry("A. Rated Investors",    "Rated Included")
+            .containsEntry("B. Unrated Investors",  "Non-Rated Included")
+            .containsEntry("C. Eligible Investors", "Designated Institutional")
+            .containsEntry("D. Excluded Investors", "Excluded");
     }
 }
