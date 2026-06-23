@@ -172,23 +172,33 @@ public class LpIngestService {
         String sp      = textOrNull(row, "sp");
         String mdy     = textOrNull(row, "moodys");
         String fitch   = textOrNull(row, "fitch");
-        // Agent LP Classification verbatim from the Agent BB (e.g. "Pension Fund", "Designated PWM",
+        // Agent LP Category verbatim from the Agent BB (e.g. "Pension Fund", "Designated PWM",
         // "Rated Included"). Persisted here so it survives the Commit Decisions step — the bb.run and
         // classification-edit paths already set it; this path previously dropped it, leaving the agent
-        // value blank in Shadow BB. It is distinct from invType (Institutional vs HNW), a manual field.
-        String agentCls = textOrNull(row, "agentClass");
+        // value blank in Shadow BB. It is distinct from invType (Investor Type), a manual field.
+        String agentCls  = textOrNull(row, "agentClass");
+        String calledCap = textOrNull(row, "calledCap");
+        String pctCalled = textOrNull(row, "pctCalled");
+        String pctUncalled = textOrNull(row, "pctUncalled");
+        // Prefer the raw extracted agent BB column; fall back to the uncalled×rate proxy.
+        String agentBB   = textOrNull(row, "agentBB");
+        if (agentBB == null) agentBB = textOrNull(row, "agentBBFmt");
 
-        if (aum     != null) lp.setAum(aum);
-        if (commit  != null) lp.setCapCommit(commit);
+        if (aum      != null) lp.setAum(aum);
+        if (commit   != null) lp.setCapCommit(commit);
         if (uncalled != null) lp.setUc(uncalled);
-        if (rate    != null) lp.setAgentRate(rate);
-        if (conc    != null) lp.setAgentConc(conc);
-        if (parent  != null) lp.setParent(parent);
-        if (nav     != null) lp.setNav(nav);
-        if (sp      != null) lp.setSp(sp);
-        if (mdy     != null) lp.setMdy(mdy);
-        if (fitch   != null) lp.setFitch(fitch);
+        if (rate     != null) lp.setAgentRate(rate);
+        if (conc     != null) lp.setAgentConc(conc);
+        if (parent   != null) lp.setParent(parent);
+        if (nav      != null) lp.setNav(nav);
+        if (sp       != null) lp.setSp(sp);
+        if (mdy      != null) lp.setMdy(mdy);
+        if (fitch    != null) lp.setFitch(fitch);
         if (agentCls != null) lp.setAgentCls(agentCls);
+        if (agentBB  != null) lp.setAbb(agentBB);
+        if (calledCap  != null) lp.setCalledCap(calledCap);
+        if (pctCalled  != null) lp.setPctCalled(pctCalled);
+        if (pctUncalled != null) lp.setPctUncalled(pctUncalled);
         lp.setUpdatedAt(LocalDateTime.now());
     }
 
@@ -218,11 +228,11 @@ public class LpIngestService {
 
     private List<String> applyFields(Lp lp, IngestRequest.ExtractedLpRow row) {
         List<String> changed = new ArrayList<>();
-        BigDecimal aum   = valueIfValid(row.aum());
-        BigDecimal comm  = valueIfValid(row.commitment());
-        BigDecimal uc    = valueIfValid(row.uncalled());
-        BigDecimal rate  = valueIfValid(row.agentRate());
-        BigDecimal conc  = valueIfValid(row.concentrationLimit());
+        BigDecimal aum  = valueIfValid(row.aum());
+        BigDecimal comm = valueIfValid(row.commitment());
+        BigDecimal uc   = valueIfValid(row.uncalled());
+        BigDecimal rate = valueIfValid(row.agentRate());
+        BigDecimal conc = valueIfValid(row.concentrationLimit());
 
         if (aum  != null) { lp.setAum(formatMoney(aum));        changed.add("aum"); }
         if (comm != null) { lp.setCapCommit(formatMoney(comm));  changed.add("capCommit"); }
@@ -230,8 +240,27 @@ public class LpIngestService {
         if (rate != null) { lp.setAgentRate(formatRate(rate));   changed.add("agentRate"); }
         if (conc != null) { lp.setAgentConc(formatRate(conc));   changed.add("agentConc"); }
 
+        String sp       = strValueIfValid(row.sp());
+        String mdy      = strValueIfValid(row.mdy());
+        String fitch    = strValueIfValid(row.fitch());
+        String nav      = strValueIfValid(row.nav());
+        String agentCls = strValueIfValid(row.agentCls());
+        String parent   = strValueIfValid(row.parent());
+
+        if (sp       != null) { lp.setSp(sp);               changed.add("sp"); }
+        if (mdy      != null) { lp.setMdy(mdy);             changed.add("mdy"); }
+        if (fitch    != null) { lp.setFitch(fitch);         changed.add("fitch"); }
+        if (nav      != null) { lp.setNav(nav);             changed.add("nav"); }
+        if (agentCls != null) { lp.setAgentCls(agentCls);   changed.add("agentCls"); }
+        if (parent   != null) { lp.setParent(parent);       changed.add("parent"); }
+
         lp.setUpdatedAt(LocalDateTime.now());
         return changed;
+    }
+
+    private String strValueIfValid(IngestRequest.StringField f) {
+        return (f != null && f.value() != null && !f.value().isBlank()
+                && f.confidence() >= MIN_FIELD_CONFIDENCE) ? f.value() : null;
     }
 
     private BigDecimal valueIfValid(IngestRequest.DecimalField f) {

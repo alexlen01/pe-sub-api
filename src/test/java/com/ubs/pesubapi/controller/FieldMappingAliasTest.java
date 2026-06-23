@@ -33,7 +33,7 @@ class FieldMappingAliasTest extends IntegrationTestBase {
         canonicalFieldRepo.deleteAll();
 
         investorFieldId = createField("Investor Name", "Identity & Classification", 1, 1).getId();
-        classFieldId    = createField("LP Classification", "Identity & Classification", 1, 2).getId();
+        classFieldId    = createField("LP Category", "Identity & Classification", 1, 2).getId();
 
         // Seed one known alias on investorField so duplicate checks have something to detect
         FmAlias seed = new FmAlias();
@@ -79,7 +79,7 @@ class FieldMappingAliasTest extends IntegrationTestBase {
 
     @Test
     void createAlias_textExistsOnAnotherField_returns409NamingConflict() throws Exception {
-        // "LP Name" is seeded on Investor Name; try to add it to LP Classification
+        // "LP Name" is seeded on Investor Name; try to add it to LP Category
         mvc.perform(post("/api/field-mapping/aliases")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -107,7 +107,7 @@ class FieldMappingAliasTest extends IntegrationTestBase {
 
     @Test
     void updateAlias_renameToDuplicateText_returns409() throws Exception {
-        // Create a bank alias on LP Classification
+        // Create a bank alias on LP Category
         String created = mvc.perform(post("/api/field-mapping/aliases")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -174,7 +174,7 @@ class FieldMappingAliasTest extends IntegrationTestBase {
         mvc.perform(get("/api/field-mapping/alias-groups"))
             .andExpect(status().isOk())
             .andExpect(jsonPath(
-                "$[0].fields[?(@.canonical == 'LP Classification')].aliases[?(@.id == " + aliasId + ")].text",
+                "$[0].fields[?(@.canonical == 'LP Category')].aliases[?(@.id == " + aliasId + ")].text",
                 org.hamcrest.Matchers.hasItem("Investor Category")
             ));
     }

@@ -39,12 +39,12 @@ public class Lp {
     @Column(name = "investment_grade", nullable = false)
     private boolean ig = false;
 
-    // Agent LP Classification (verbatim from Agent BB) — precedes the UBS LP Classification model-wide.
+    // Agent LP Category (verbatim from Agent BB) — precedes the UBS LP Category model-wide.
     @Column(name = "agent_cls")
     private String agentCls;
 
     @Column(name = "classification", nullable = false)
-    private String cls;                 // UBS LP Classification (follows Agent LP Classification)
+    private String cls;                 // UBS LP Category (follows Agent LP Category)
 
     @Column(name = "classification_tag")
     private String clsTag;

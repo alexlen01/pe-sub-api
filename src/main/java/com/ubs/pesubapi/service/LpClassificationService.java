@@ -16,7 +16,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Materialises the classification & rate edits made on the "LP Classification & Rate Assignment"
+ * Materialises the classification & rate edits made on the "LP Category & Rate Assignment"
  * screen onto persisted LP Master records. This is what the screen's "Save" button calls: it writes
  * to the real LP records (created earlier on Commit Decisions), not to a draft override blob.
  * LP entity fields (cls, ratings, inclusion, uncalled) update in place; advance rate and

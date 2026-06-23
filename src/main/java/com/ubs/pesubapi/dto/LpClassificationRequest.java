@@ -4,7 +4,7 @@ import java.util.List;
 
 /**
  * Batch save of the credit officer's classification & rate decisions from the
- * "LP Classification & Rate Assignment" screen onto persisted LP Master records.
+ * "LP Category & Rate Assignment" screen onto persisted LP Master records.
  * Rows are matched to existing records by (facilityId, name); unmatched rows are ignored.
  * Rate fields are expressed as percentages (e.g. 90.0, 7.5) and stored as decimal fractions.
  *
@@ -24,10 +24,10 @@ public record LpClassificationRequest(
         // Identity & classification (manual)
         String  parent,
         Boolean spv,
-        String  type,             // Institutional vs HNW
+        String  type,             // Investor Type
         Boolean ig,               // Investment Grade?
-        String  agentCls,         // Agent LP Classification (verbatim from Agent BB)
-        String  cls,              // UBS LP Classification (follows Agent LP Classification)
+        String  agentCls,         // Agent LP Category (verbatim from Agent BB)
+        String  cls,              // UBS LP Category (follows Agent LP Category)
         String  sp,
         String  mdy,
         String  fitch,

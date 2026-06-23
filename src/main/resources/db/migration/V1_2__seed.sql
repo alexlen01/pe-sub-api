@@ -110,8 +110,8 @@ VALUES
       'INVESTOR_NAME', FALSE),
 
   ('Identity & Classification', 1, 2,
-      'Investor Type',
-      'Identity & Classification - Investor Type',
+      'LP Category',
+      'Identity & Classification - LP Category',
       'The agent''s own classification label, taken verbatim from the Agent BB document. '
           'May appear as a column OR as group-header rows that separate sections of LPs '
           '(e.g. "Rated Included", "Designated PWM"); when supplied as section rows, the '
@@ -318,15 +318,15 @@ INSERT INTO fm_aliases (canonical_field_id, alias_sort, alias_text, tier, bank) 
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Name'), 5, 'Limited Partner',               'Core', NULL),
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Name'), 6, 'Fund Investor',                 'Bank', 'SVB'),
 
-  -- Investor Type
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Type'), 1, 'LP Type',          'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Type'), 2, 'Investor Type',    'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Type'), 3, 'Classification',   'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Type'), 4, 'Category',         'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Type'), 5, 'Investor Category','Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Type'), 6, 'LP Classification','Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Type'), 7, 'Entity Type',      'Bank', 'BNY'),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Type'), 8, 'Investor Class',   'Bank', 'JPM'),
+  -- LP Category
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'LP Category'), 1, 'LP Type',          'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'LP Category'), 2, 'Investor Type',    'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'LP Category'), 3, 'Classification',   'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'LP Category'), 4, 'Category',         'Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'LP Category'), 5, 'Investor Category','Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'LP Category'), 6, 'LP Classification','Core', NULL),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'LP Category'), 7, 'Entity Type',      'Bank', 'BNY'),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'LP Category'), 8, 'Investor Class',   'Bank', 'JPM'),
 
   -- Transferee
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Transferee'), 1, 'Transferee',      'Core', NULL),

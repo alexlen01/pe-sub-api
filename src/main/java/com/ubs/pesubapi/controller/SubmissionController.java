@@ -241,6 +241,11 @@ public class SubmissionController {
                 row.put("moodys",       fieldStr(rec.fields(), "Moody's Rating"));
                 row.put("fitch",        fieldStr(rec.fields(), "Fitch Rating"));
                 row.put("transferee",   fieldStr(rec.fields(), "Transferee"));
+                row.put("calledCap",   fmtMoneyOrRaw(rec.fields(), "Called Capital"));
+                row.put("pctCalled",   fieldStr(rec.fields(), "% of LP Called"));
+                row.put("pctUncalled", fieldStr(rec.fields(), "% of Uncalled Capital"));
+                row.put("agentBB",     fieldStr(rec.fields(), "Borrowing Base"));
+                row.put("pctBB",       fieldStr(rec.fields(), "% of Borrowing Base"));
                 ArrayNode warnings = mapper.createArrayNode();
                 if (rec.warnings() != null) {
                     rec.warnings().forEach(w -> warnings.add(w.field() + ": " + w.message()));
@@ -705,6 +710,12 @@ public class SubmissionController {
             toDecimalFieldFromStr(fields.get("AUM")),
             toDecimalFieldFromStr(fields.get("AGENT_RATE")),
             toDecimalFieldFromStr(fields.get("CONCENTRATION_LIMIT")),
+            toStringField(fields.get("S&P Rating")),
+            toStringField(fields.get("Moody's Rating")),
+            toStringField(fields.get("Fitch Rating")),
+            toStringField(fields.get("NAV")),
+            toStringField(fields.get("AGENT_LP_CLASSIFICATION")),
+            toStringField(fields.get("Parent / Sponsor")),
             rec.requiresReview(),
             rec.warnings() != null
                 ? rec.warnings().stream()

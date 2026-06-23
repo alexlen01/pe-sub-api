@@ -203,8 +203,8 @@ public class BbController {
                 return row;
             }).collect(Collectors.toList());
 
-        // ── Table 5: LP Classification breakdown ─────────────────────────────────
-        // Roll the granular UBS LP Classification labels up into the four canonical eligibility
+        // ── Table 5: LP Category breakdown ───────────────────────────────────────
+        // Roll the granular UBS LP Category labels up into the four canonical eligibility
         // buckets (SHADOW_BB_ANALYSIS Table 5). Order is fixed so the table reads consistently.
         Map<String, double[]> clsMap = new LinkedHashMap<>();
         for (String key : List.of("Rated Investors", "Unrated Investors", "Eligible Investors", "Excluded Investors"))

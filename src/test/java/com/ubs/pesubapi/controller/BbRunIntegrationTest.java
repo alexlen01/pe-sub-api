@@ -211,7 +211,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
             // Agent breakdown (Table 4)
             .andExpect(jsonPath("$.agentBreakdown", not(empty())))
             .andExpect(jsonPath("$.agentBreakdown[0].rate").isString())
-            // LP Classification breakdown (Table 5)
+            // LP Category breakdown (Table 5)
             .andExpect(jsonPath("$.clsBreakdown", not(empty())))
             .andExpect(jsonPath("$.clsBreakdown[0].label").isString());
     }
@@ -284,7 +284,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.ubsBB").isNumber());
     }
 
-    // ── UBS LP Classification taxonomy resolves a non-zero advance rate ─────────────
+    // ── UBS LP Category taxonomy resolves a non-zero advance rate ────────────────────
 
     @Test
     void run_computesUbbForUbsTaxonomyClass() throws Exception {

@@ -18,8 +18,8 @@ public record CommitBbRequest(List<CommitLpRow> lps) {
         String  type,
         String  region,
         boolean ig,
-        String  agentCls,       // Agent LP Classification (verbatim from Agent BB)
-        String  cls,            // UBS LP Classification (follows Agent LP Classification)
+        String  agentCls,       // Agent LP Category (verbatim from Agent BB)
+        String  cls,            // UBS LP Category (follows Agent LP Category)
         // Ratings
         String  sp,
         String  mdy,

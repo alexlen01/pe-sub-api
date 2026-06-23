@@ -18,12 +18,17 @@ import java.util.stream.Collectors;
 
 /**
  * Builds the alias configuration that pe-sub-api passes to pe-sub-extraction on every
- * extract call.  The result is a JSON string keyed by CanonicalField enum name so that
- * pe-sub-extraction's HeaderMatcher uses live, user-configurable DB aliases instead of
- * its hardcoded fallback map.
+ * extract call.  The result is a JSON string keyed by extraction_key (when set) or
+ * canonical name so that pe-sub-extraction's HeaderMatcher uses live, user-configurable
+ * DB aliases instead of its hardcoded fallback map.
  *
- * Only fm_canonical_fields rows with a non-null extraction_key are included — those are
- * the fields the extraction service actually knows how to parse into typed record values.
+ * Matching follows two tiers:
+ *   1. Canonical name match  — the canonical field name is always the first entry in
+ *      every field's alias list, guaranteeing a confidence-1.0 match when a template
+ *      column header exactly equals the canonical name, regardless of what fm_aliases
+ *      contains.
+ *   2. Field Mapping Dictionary — the fm_aliases rows for that field follow, providing
+ *      coverage for the alias variations registered by administrators.
  */
 @Service
 public class AliasConfigBuilder {
@@ -61,10 +66,28 @@ public class AliasConfigBuilder {
         List<FmAlias> allAliases = aliasRepo.findAllByOrderByCanonicalFieldIdAscAliasSortAsc();
 
         Map<String, List<String>> result = new LinkedHashMap<>();
+
+        // Tier 2: Field Mapping Dictionary — fm_aliases rows in admin-configured order.
         for (FmAlias alias : allAliases) {
             String key = keyById.get(alias.getCanonicalFieldId());
             if (key == null) continue;
             result.computeIfAbsent(key, k -> new ArrayList<>()).add(alias.getAliasText());
+        }
+
+        // Tier 1: Canonical name match — the canonical field name must be at index 0 in
+        // every field's alias list so HeaderMatcher's Phase 1 (exact check against the
+        // first entry) always finds it.  If the canonical name is already somewhere in
+        // the list it is moved to the front; if it is absent it is prepended.
+        for (FmCanonicalField cf : allFields) {
+            String key   = keyById.get(cf.getId());
+            List<String> aliases = result.computeIfAbsent(key, k -> new ArrayList<>());
+            int idx = aliases.indexOf(cf.getCanonical());
+            if (idx < 0) {
+                aliases.add(0, cf.getCanonical());
+            } else if (idx > 0) {
+                aliases.remove(idx);
+                aliases.add(0, cf.getCanonical());
+            }
         }
 
         try {

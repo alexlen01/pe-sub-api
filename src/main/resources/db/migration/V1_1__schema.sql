@@ -36,7 +36,7 @@ CREATE TABLE facilities (
 );
 
 -- Shadow BB 28-column alignment (Shadow_BB.xlsx · Upload Agent BB Step 5):
---   classification → UBS LP Classification    | agent_cls      → Agent LP Classification
+--   classification → UBS LP Category          | agent_cls      → Agent LP Category
 --   ubs_rate       → UBS Advance Rate         | agent_rate     → Agent Advance Rate
 --   agent_excess_conc → Agent Excess Conc Base| ubs_excess_conc → UBS Excess Conc Base
 --   agent_bb       → Agent Borrowing Base      | ubs_bb         → UBS Borrowing Base
@@ -108,7 +108,7 @@ CREATE TABLE config (
 --   2 = Upload Document — transient; extraction runs inline so submissions jump directly to 3
 --   3 = Review Extraction (status='Review'; awaiting credit officer action)
 --   4 = Review Matches   (after POST /{id}/confirm)
---   5 = LP Classification & Rate Assignment (after PATCH /{id}/shadow-bb-state)
+--   5 = LP Category & Rate Assignment (after PATCH /{id}/shadow-bb-state)
 -- shadow_bb_overrides: JSONB map of LP key → {cls, rate} overrides committed on Step 5
 CREATE TABLE submissions (
     id                  SERIAL PRIMARY KEY,
@@ -258,7 +258,7 @@ CREATE TABLE fm_suggestions (
 --   the extraction engine how to interpret the workbook before column parsing begins.
 -- bb_template_tabs: one row per Excel tab per template; drives per-tab extraction.
 -- bb_template_groups: group-header rows (e.g. "Rated Investors") that set the
---   inherited LP Classification for all LP rows beneath them.
+--   inherited LP Category for all LP rows beneath them.
 --
 -- template_class encodes the structural variant so the unique key is
 -- (agent_bank, template_class) — an agent may submit more than one distinct layout:
@@ -316,7 +316,7 @@ CREATE TABLE bb_template_tabs (
 
 CREATE INDEX idx_bb_template_tabs_template ON bb_template_tabs(template_id);
 
--- LP Classification resolution for group-header rows:
+-- LP Category resolution for group-header rows:
 --   1. Per-row column present in sheet (e.g. WF "Investor Category") — highest priority
 --   2. Inherited from current group context (this table) — when no column present
 --   3. NULL — final fallback; surfaced as unresolved in ExtractionPreview

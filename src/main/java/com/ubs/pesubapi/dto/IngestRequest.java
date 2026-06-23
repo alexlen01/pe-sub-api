@@ -23,6 +23,12 @@ public record IngestRequest(
         DecimalField aum,
         DecimalField agentRate,
         DecimalField concentrationLimit,
+        StringField sp,
+        StringField mdy,
+        StringField fitch,
+        StringField nav,
+        StringField agentCls,
+        StringField parent,
         boolean requiresReview,
         List<WarningEntry> warnings
     ) {}

@@ -57,9 +57,9 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         .mapToObj(i -> String.format("Investor %02d", N_ROWS - 1 - i))
         .collect(Collectors.toList());
 
-    // Agent LP Classification values (verbatim from the Agent BB) — distinct from Institutional/HNW.
+    // Agent LP Category values (verbatim from the Agent BB) — distinct from Investor Type.
     // Cycled per row so each stored LP must carry its own value; proves the commit path persists
-    // the agent classification rather than dropping it or replacing it with the invType default.
+    // the agent LP category rather than dropping it or replacing it with the invType default.
     private static final List<String> AGENT_CLASSES = List.of(
         "Pension Fund", "Designated PWM", "Rated Included",
         "Non-Rated Included", "Designated Institutional", "Investment Consultant");
@@ -135,8 +135,8 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         assertThat(storedOrder).containsExactlyElementsOf(NAMES);
         assertThat(storedOrder).isNotEqualTo(NAMES.stream().sorted().toList());
 
-        // 3) Agent LP Classification preserved verbatim through commit — not dropped, and not
-        //    overridden by the invType (Institutional vs HNW) default.
+        // 3) Agent LP Category preserved verbatim through commit — not dropped, and not
+        //    overridden by the invType (Investor Type) default.
         for (int i = 0; i < N_ROWS; i++) {
             assertThat(stored.get(i).getAgentCls()).isEqualTo(agentClassFor(i));
         }

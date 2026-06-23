@@ -23,7 +23,7 @@ public class BbTemplateGroup {
     private String headerText;
 
     /**
-     * Canonical LP Classification value inherited by all LP rows beneath this header
+     * Canonical LP Category value inherited by all LP rows beneath this header
      * (e.g. "Rated", "Unrated", "Eligible", "Excluded").
      * Only applied when no per-row classification column is present in the sheet.
      */

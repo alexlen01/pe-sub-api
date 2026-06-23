@@ -69,7 +69,7 @@ public class LpController {
 
     /**
      * Applies the credit officer's classification & rate edits onto persisted LP Master records
-     * (the LP Classification & Rate Assignment screen). Rows are matched to existing records by
+     * (the LP Category & Rate Assignment screen). Rows are matched to existing records by
      * (facilityId, name); unmatched rows are ignored.
      *
      * <p>The screen auto-saves each edited row as the user types — those calls are silent. Only the
@@ -81,7 +81,7 @@ public class LpController {
                                                      HttpServletRequest request) {
         int updated = classificationService.applyClassifications(req);
         if (updated > 0 && req.facilityId() != null && Boolean.TRUE.equals(req.audit())) {
-            auditService.log("LP Classification Saved",
+            auditService.log("LP Category Saved",
                 updated + " LP record" + (updated != 1 ? "s" : "")
                     + " updated from Shadow BB classification",
                 req.facilityId(), "J. Smith", auditService.extractIp(request));

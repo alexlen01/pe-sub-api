@@ -19,11 +19,11 @@ import java.util.Map;
 @Service
 public class BbCalculationService {
 
-    // Advance rate by LP classification. Covers BOTH taxonomies the platform persists:
+    // Advance rate by LP category. Covers BOTH taxonomies the platform persists:
     //   • legacy LP Master tiers   ('Rated', 'Unrated >2bn', …)
-    //   • UBS LP Classification     ('Rated Investor', 'FoF & Other > $10Bn AUM', …) — the labels
+    //   • UBS LP Category           ('Rated Investor', 'FoF & Other > $10Bn AUM', …) — the labels
     //     the Shadow BB seeds from the Agent Advance Rate (classificationConfig.UBS_CLS_DEFAULT_RATE).
-    // A blank/unrecognised classification falls back to 0%.
+    // A blank/unrecognised category falls back to 0%.
     private static final Map<String, Double> BUSA_RATES = Map.ofEntries(
         Map.entry("Rated",                       0.90),
         Map.entry("Unrated >2bn",                0.75),
