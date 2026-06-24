@@ -29,22 +29,24 @@ class BbSampleTemplateSeedTest extends IntegrationTestBase {
 
     @Test
     void kkrAscendant_resolvesItsSixVerbatimSections() throws Exception {
-        String json = builder.buildJson("KKR Ascendant Fund");
+        String json = builder.buildJson("KKR Ascendant Fund / JP Morgan");
         assertThat(json).isNotNull();
 
         Map<String, String> config = mapper.readValue(json, new TypeReference<>() {});
         assertThat(config)
             .hasSize(6)
-            .containsEntry("Rated Included Investors", "Rated Included Investors")
-            .containsEntry("Borrowing Base Investors", "Borrowing Base Investors")
-            .containsEntry("Hurdle Investors", "Hurdle Investors")
-            .containsEntry("Excluded Investors", "Excluded Investors");
+            .containsEntry("Rated Included Investors",     "Rated Included")
+            .containsEntry("Non-Rated Included Investors", "Non-Rated Included")
+            .containsEntry("Designated Investors",         "Designated Institutional")
+            .containsEntry("Borrowing Base Investors",     "Non-Rated Included")
+            .containsEntry("Hurdle Investors",             "Non-Rated Included")
+            .containsEntry("Excluded Investors",           "Ineligible Investors");
     }
 
     @Test
     void comvestCcpVii_resolvesItsFeederSections() throws Exception {
         Map<String, String> config = mapper.readValue(
-            builder.buildJson("CCP VII Lev M & M"), new TypeReference<>() {});
+            builder.buildJson("CCP VII Lev M & M / Silicon Valley Bank"), new TypeReference<>() {});
         assertThat(config)
             .hasSize(5)
             .containsEntry("Levered (Delaware) Feeder", "Levered (Delaware) Feeder")
@@ -54,13 +56,13 @@ class BbSampleTemplateSeedTest extends IntegrationTestBase {
     @Test
     void flatTemplates_haveNoGroupSections() {
         // Audax VII and CP VII are flat lists (has_grouping_rows = FALSE).
-        assertThat(builder.buildJson("Audax Fund VII")).isNull();
-        assertThat(builder.buildJson("CP VII")).isNull();
+        assertThat(builder.buildJson("Audax Fund VII / Silicon Valley Bank")).isNull();
+        assertThat(builder.buildJson("CP VII / Silicon Valley Bank")).isNull();
     }
 
     @Test
     void carlyleCpVii_lpGridTab_carriesStackedHeaderSpan() {
-        BbTemplate cp = templateRepo.findAllByAgentBankIgnoreCase("CP VII").getFirst();
+        BbTemplate cp = templateRepo.findAllByAgentBankIgnoreCase("CP VII / Silicon Valley Bank").getFirst();
         BbTemplateTab grid = tabRepo.findByTemplateIdAndTabRole(cp.getId(), TabRole.LP_GRID).orElseThrow();
 
         assertThat(grid.getHeaderRowIndex()).isEqualTo(83);  // 0-based: Excel row 84
@@ -70,7 +72,7 @@ class BbSampleTemplateSeedTest extends IntegrationTestBase {
 
     @Test
     void singleHeaderTemplates_defaultToSpanOne() {
-        BbTemplate kkr = templateRepo.findAllByAgentBankIgnoreCase("KKR Ascendant Fund").getFirst();
+        BbTemplate kkr = templateRepo.findAllByAgentBankIgnoreCase("KKR Ascendant Fund / JP Morgan").getFirst();
         BbTemplateTab grid = tabRepo.findByTemplateIdAndTabRole(kkr.getId(), TabRole.LP_GRID).orElseThrow();
         assertThat(grid.getHeaderRowSpan()).isEqualTo(1);
         assertThat(grid.getHeaderRowIndex()).isEqualTo(9);   // 0-based: Excel row 10
@@ -78,7 +80,7 @@ class BbSampleTemplateSeedTest extends IntegrationTestBase {
 
     @Test
     void blueOwlWfTemplate_hasCorrectSheetAndHeaderRow() {
-        BbTemplate template = templateRepo.findAllByAgentBankIgnoreCase("Blue Owl GP Stakes V").getFirst();
+        BbTemplate template = templateRepo.findAllByAgentBankIgnoreCase("Blue Owl GP Stakes V / Wells Fargo").getFirst();
         BbTemplateTab grid = tabRepo.findByTemplateIdAndTabRole(template.getId(), TabRole.LP_GRID).orElseThrow();
         assertThat(grid.getSheetName()).isEqualTo("Agent BB");
         assertThat(grid.getHeaderRowIndex()).isEqualTo(17);  // 0-based: Excel row 18
@@ -87,7 +89,7 @@ class BbSampleTemplateSeedTest extends IntegrationTestBase {
 
     @Test
     void blueOwlWfTemplate_hasFourLetterPrefixedGroupingSections() throws Exception {
-        String json = builder.buildJson("Blue Owl GP Stakes V");
+        String json = builder.buildJson("Blue Owl GP Stakes V / Wells Fargo");
         assertThat(json).isNotNull();
 
         Map<String, String> config = mapper.readValue(json, new TypeReference<>() {});

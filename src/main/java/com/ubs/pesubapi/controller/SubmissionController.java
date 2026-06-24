@@ -111,21 +111,29 @@ public class SubmissionController {
     // Resolves extraction hints for an agent bank's template. The LP_GRID tab is the
     // canonical source of sheet name / header row / header span; the bb_templates
     // top-level columns are a single-tab shortcut fallback (used by auto-learned templates).
+    //
+    // When multiple templates exist for the same bank (e.g. Goldman Sachs Class A and Class B),
+    // the header row differs per class and cannot be determined without column-signature matching.
+    // In that case only the sheet name is supplied (shared across classes); the extraction
+    // engine's alias-scoring heuristic then locates the correct header row autonomously.
     private TemplateHints hintsFor(String agentBank) {
-        return templateRepo.findAllByAgentBankIgnoreCase(agentBank).stream()
-            .findFirst()
-            .map(t -> {
-                BbTemplateTab grid = tabRepo
-                    .findByTemplateIdAndTabRole(t.getId(), TabRole.LP_GRID)
-                    .orElse(null);
-                String  sheet = grid != null && grid.getSheetName() != null
-                    ? grid.getSheetName() : t.getSheetName();
-                Integer header = grid != null && grid.getHeaderRowIndex() != null
-                    ? grid.getHeaderRowIndex() : t.getHeaderRowIndex();
-                Integer span = grid != null ? grid.getHeaderRowSpan() : null;
-                return new TemplateHints(sheet, header, span);
-            })
-            .orElse(new TemplateHints(null, null, null));
+        List<BbTemplate> templates = templateRepo.findAllByAgentBankIgnoreCase(agentBank);
+        if (templates.isEmpty()) return new TemplateHints(null, null, null);
+        if (templates.size() > 1) {
+            String sharedSheet = templates.stream()
+                .map(BbTemplate::getSheetName)
+                .filter(s -> s != null)
+                .findFirst().orElse(null);
+            return new TemplateHints(sharedSheet, null, null);
+        }
+        BbTemplate t = templates.getFirst();
+        BbTemplateTab grid = tabRepo
+            .findByTemplateIdAndTabRole(t.getId(), TabRole.LP_GRID)
+            .orElse(null);
+        String  sheet  = grid != null && grid.getSheetName()      != null ? grid.getSheetName()      : t.getSheetName();
+        Integer header = grid != null && grid.getHeaderRowIndex()  != null ? grid.getHeaderRowIndex() : t.getHeaderRowIndex();
+        Integer span   = grid != null ? grid.getHeaderRowSpan() : null;
+        return new TemplateHints(sheet, header, span);
     }
 
     // ── POST /api/submissions ────────────────────────────────────────────────
@@ -327,6 +335,21 @@ public class SubmissionController {
             .<ResponseEntity<?>>map(e -> ResponseEntity.ok(
                 e.getExtractedLps() != null ? e.getExtractedLps() : mapper.createArrayNode()))
             .orElse(ResponseEntity.notFound().build());
+    }
+
+    // ── DELETE /api/submissions/:id/extracted-lps/:rowId ────────────────────
+
+    @DeleteMapping("/{id}/extracted-lps/{rowId}")
+    public ResponseEntity<Void> discardExtractedLp(@PathVariable int id, @PathVariable int rowId) {
+        return extractionRepo.findBySubmissionId(id).<ResponseEntity<Void>>map(e -> {
+            if (!(e.getExtractedLps() instanceof ArrayNode arr)) return ResponseEntity.notFound().build();
+            ArrayNode updated = mapper.createArrayNode();
+            arr.forEach(node -> { if (node.path("id").asInt(-1) != rowId) updated.add(node); });
+            e.setExtractedLps(updated);
+            e.setTotalRows(updated.size());
+            extractionRepo.save(e);
+            return ResponseEntity.noContent().build();
+        }).orElse(ResponseEntity.notFound().build());
     }
 
     // ── GET /api/submissions/:id/field-map ───────────────────────────────────

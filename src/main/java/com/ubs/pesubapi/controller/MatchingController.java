@@ -62,6 +62,15 @@ public class MatchingController {
         return ResponseEntity.ok(dtos);
     }
 
+    // ── DELETE /api/matching/queue/:id ───────────────────────────────────────
+
+    @DeleteMapping("/queue/{id}")
+    public ResponseEntity<Void> discard(@PathVariable int id) {
+        if (!matchQueueRepo.existsById(id)) return ResponseEntity.notFound().build();
+        matchQueueRepo.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
+
     // ── PATCH /api/matching/queue/:id ─────────────────────────────────────────
 
     @PatchMapping("/queue/{id}")
