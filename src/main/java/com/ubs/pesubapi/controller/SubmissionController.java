@@ -145,6 +145,7 @@ public class SubmissionController {
             @RequestParam("periodMonth")          String        periodMonth,
             @RequestParam("file")                 MultipartFile file,
             @RequestParam(value = "notes", required = false) String notes,
+            @RequestParam(value = "forceTemplate", required = false) String forceTemplate,
             HttpServletRequest request
     ) throws IOException {
         Optional<Facility> facilityOpt = facilities.findById(facilityId);
@@ -172,7 +173,7 @@ public class SubmissionController {
         auditService.log("Upload", detail, facilityId, "J. Smith", auditService.extractIp(request));
 
         try {
-            runExtractionPipeline(saved, facilityId, storedPath);
+            runExtractionPipeline(saved, facilityId, storedPath, forceTemplate);
         } catch (Exception e) {
             log.error("Extraction pipeline failed for submission {}", saved.getId(), e);
         }
@@ -183,11 +184,11 @@ public class SubmissionController {
 
     // ── Extraction pipeline ──────────────────────────────────────────────────
 
-    private void runExtractionPipeline(Submission sub, int facilityId, Path filePath) {
+    private void runExtractionPipeline(Submission sub, int facilityId, Path filePath, String forceTemplate) {
         TemplateHints hints = hintsFor(sub.getAgentBank());
         ExtractionResponse extraction =
             extractionClient.extract(String.valueOf(facilityId), filePath,
-                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan());
+                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(), forceTemplate);
 
         if (extraction == null) {
             log.warn("Extraction skipped for submission {} — pe-sub-extraction unreachable", sub.getId());
@@ -395,6 +396,7 @@ public class SubmissionController {
         doc.put("mappedColumns",    mapped);
         doc.put("unmatchedColumns", unmatched);
         doc.put("headerInfo",       hdrInfo);
+        doc.put("forcedTemplate",   ext.getForcedTemplate() != null ? ext.getForcedTemplate() : "");
 
         return ResponseEntity.ok(doc);
     }
@@ -428,6 +430,7 @@ public class SubmissionController {
         // A templateName in the request forces that fund template; otherwise reuse any template
         // the operator previously forced for this submission so the choice survives re-extraction.
         String forcedTemplate = resolveForcedTemplate(id, body != null ? body.templateName() : null);
+        log.info("Re-extract called for submission {} resolved forcedTemplate={}", id, forcedTemplate);
 
         TemplateHints hints = hintsFor(sub.getAgentBank());
         ExtractionResponse extraction =
@@ -497,6 +500,7 @@ public class SubmissionController {
         }
 
         String forcedTemplate = resolveForcedTemplate(id, null);
+        log.info("Remap called for submission {} resolved forcedTemplate={}", id, forcedTemplate);
         TemplateHints hints = hintsFor(sub.getAgentBank());
         ExtractionResponse extraction =
             extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
