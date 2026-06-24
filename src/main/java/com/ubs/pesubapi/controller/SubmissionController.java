@@ -117,7 +117,11 @@ public class SubmissionController {
     // In that case only the sheet name is supplied (shared across classes); the extraction
     // engine's alias-scoring heuristic then locates the correct header row autonomously.
     private TemplateHints hintsFor(String agentBank) {
-        List<BbTemplate> templates = templateRepo.findAllByAgentBankIgnoreCase(agentBank);
+        return hintsFor(agentBank, null);
+    }
+
+    private TemplateHints hintsFor(String agentBank, String forcedTemplate) {
+        List<BbTemplate> templates = templatesFor(agentBank, forcedTemplate);
         if (templates.isEmpty()) return new TemplateHints(null, null, null);
         if (templates.size() > 1) {
             String sharedSheet = templates.stream()
@@ -134,6 +138,36 @@ public class SubmissionController {
         Integer header = grid != null && grid.getHeaderRowIndex()  != null ? grid.getHeaderRowIndex() : t.getHeaderRowIndex();
         Integer span   = grid != null ? grid.getHeaderRowSpan() : null;
         return new TemplateHints(sheet, header, span);
+    }
+
+    private List<BbTemplate> templatesFor(String agentBank, String forcedTemplate) {
+        String forcedKey = normalizedTemplateKey(forcedTemplate);
+        if (forcedKey != null) {
+            List<BbTemplate> forced = templateRepo.findAll().stream()
+                .filter(t -> templateNameMatches(t.getAgentBank(), forcedKey))
+                .toList();
+            if (!forced.isEmpty()) return forced;
+        }
+
+        List<BbTemplate> byAgent = agentBank != null && !agentBank.isBlank()
+            ? templateRepo.findAllByAgentBankIgnoreCase(agentBank)
+            : List.of();
+        if (!byAgent.isEmpty()) return byAgent;
+        return List.of();
+    }
+
+    private boolean templateNameMatches(String agentBank, String forcedKey) {
+        String templateKey = normalizedTemplateKey(agentBank);
+        return templateKey != null
+            && (templateKey.equals(forcedKey) || templateKey.startsWith(forcedKey + " "));
+    }
+
+    private String normalizedTemplateKey(String value) {
+        if (value == null || value.isBlank()) return null;
+        return value.toLowerCase()
+            .replaceAll("[^a-z0-9\\s]", " ")
+            .replaceAll("\\s+", " ")
+            .trim();
     }
 
     // ── POST /api/submissions ────────────────────────────────────────────────
@@ -185,10 +219,12 @@ public class SubmissionController {
     // ── Extraction pipeline ──────────────────────────────────────────────────
 
     private void runExtractionPipeline(Submission sub, int facilityId, Path filePath, String forceTemplate) {
-        TemplateHints hints = hintsFor(sub.getAgentBank());
+        String forcedTemplate = normalizeForcedTemplate(forceTemplate);
+        TemplateHints hints = hintsFor(sub.getAgentBank(), forcedTemplate);
         ExtractionResponse extraction =
             extractionClient.extract(String.valueOf(facilityId), filePath,
-                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(), forceTemplate);
+                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
+                forcedTemplate);
 
         if (extraction == null) {
             log.warn("Extraction skipped for submission {} — pe-sub-extraction unreachable", sub.getId());
@@ -197,7 +233,7 @@ public class SubmissionController {
             return;
         }
 
-        storeExtractionResult(sub.getId(), extraction, null);
+        storeExtractionResult(sub.getId(), extraction, forcedTemplate);
 
         IngestRequest ingestRequest = toIngestRequest(facilityId, extraction);
         ingestService.ingest(sub.getId(), ingestRequest);
@@ -432,7 +468,7 @@ public class SubmissionController {
         String forcedTemplate = resolveForcedTemplate(id, body != null ? body.templateName() : null);
         log.info("Re-extract called for submission {} resolved forcedTemplate={}", id, forcedTemplate);
 
-        TemplateHints hints = hintsFor(sub.getAgentBank());
+        TemplateHints hints = hintsFor(sub.getAgentBank(), forcedTemplate);
         ExtractionResponse extraction =
             extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
                 hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
@@ -454,10 +490,28 @@ public class SubmissionController {
     // wins and becomes the new forced choice; otherwise the previously persisted forced template
     // (if any) is reused so remap/discard re-extractions don't revert to auto-detection.
     private String resolveForcedTemplate(int submissionId, String requested) {
-        if (requested != null && !requested.isBlank()) return requested.trim();
+        String normalized = normalizeForcedTemplate(requested);
+        if (normalized != null) return normalized;
         return extractionRepo.findBySubmissionId(submissionId)
-            .map(SubmissionExtraction::getForcedTemplate)
+            .map(ext -> {
+                String forced = normalizeForcedTemplate(ext.getForcedTemplate());
+                return forced != null
+                    ? forced
+                    : structuralTemplateFallback(ext.getTemplateVersion(), ext.getTemplateFormat());
+            })
             .orElse(null);
+    }
+
+    private String normalizeForcedTemplate(String templateName) {
+        return templateName != null && !templateName.isBlank() ? templateName.trim() : null;
+    }
+
+    private String structuralTemplateFallback(String templateVersion, String templateFormat) {
+        String normalized = normalizeForcedTemplate(templateVersion);
+        if (normalized == null) return null;
+        if (templateFormat != null && normalized.equalsIgnoreCase(templateFormat)) return null;
+        if (normalized.matches("(?i)v?\\d+(\\.\\d+)*")) return null;
+        return normalized;
     }
 
     // ── POST /api/submissions/:id/remap ─────────────────────────────────────
@@ -501,7 +555,7 @@ public class SubmissionController {
 
         String forcedTemplate = resolveForcedTemplate(id, null);
         log.info("Remap called for submission {} resolved forcedTemplate={}", id, forcedTemplate);
-        TemplateHints hints = hintsFor(sub.getAgentBank());
+        TemplateHints hints = hintsFor(sub.getAgentBank(), forcedTemplate);
         ExtractionResponse extraction =
             extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
                 hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),

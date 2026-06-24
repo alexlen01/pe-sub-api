@@ -79,7 +79,7 @@ public class ExtractionClientService {
             // Only send a span > 1 (stacked header); 1 is the engine default.
             if (headerRowSpan != null && headerRowSpan > 1) body.add("headerRowSpan", String.valueOf(headerRowSpan));
 
-            String classificationJson = classificationConfigBuilder.buildJson(agentBank);
+            String classificationJson = classificationConfigBuilder.buildJson(agentBank, forceTemplate);
             if (classificationJson != null) body.add("classificationConfig", classificationJson);
 
             // The selected agent bank is the authoritative format fallback when the workbook

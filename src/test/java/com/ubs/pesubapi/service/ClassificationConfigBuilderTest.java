@@ -39,6 +39,34 @@ class ClassificationConfigBuilderTest extends IntegrationTestBase {
     }
 
     @Test
+    void buildJson_fallsBackToForcedFundTemplateForGroupMappings() throws Exception {
+        String json = builder.buildJson("Goldman Sachs Bank USA", "Petershill IV");
+        assertThat(json).isNotNull();
+
+        Map<String, String> config = mapper.readValue(json, new TypeReference<>() {});
+        assertThat(config)
+            .hasSize(5)
+            .containsEntry("Included Investors (Rated)", "Rated Included")
+            .containsEntry("Inlcuded Investors (Non-Rated)", "Non-Rated Included")
+            .containsEntry("Institutional Designated Investors", "Designated Institutional")
+            .containsEntry("PWM Designated Investors", "Designated PWM")
+            .containsEntry("Excluded Investors", "Ineligible Investors");
+    }
+
+    @Test
+    void buildJson_forcedFundTemplateOverridesAgentBankGroupingTemplate() throws Exception {
+        String json = builder.buildJson("Blue Owl GP Stakes V / Wells Fargo", "Petershill IV");
+        assertThat(json).isNotNull();
+
+        Map<String, String> config = mapper.readValue(json, new TypeReference<>() {});
+        assertThat(config)
+            .hasSize(5)
+            .containsEntry("Included Investors (Rated)", "Rated Included")
+            .containsEntry("Inlcuded Investors (Non-Rated)", "Non-Rated Included")
+            .containsEntry("Excluded Investors", "Ineligible Investors");
+    }
+
+    @Test
     void buildJson_returnsNull_whenNoTemplateForBank() {
         assertThat(builder.buildJson("Unknown Bank")).isNull();
     }

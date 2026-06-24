@@ -58,14 +58,18 @@ public class ClassificationConfigBuilder {
      * LP_GRID tab group headers, or null when none are configured.
      */
     public String buildJson(String agentBank) {
-        if (agentBank == null || agentBank.isBlank()) return null;
+        return buildJson(agentBank, null);
+    }
 
+    /**
+     * Returns group-header config for the selected agent bank. If the facility agent bank does
+     * not directly identify a seeded grouping template, falls back to the operator-forced fund
+     * template name (e.g. "Petershill IV" -> "Petershill IV / Wells Fargo").
+     */
+    public String buildJson(String agentBank, String forceTemplate) {
         // When an agent uses multiple template classes (e.g. Wells Fargo Class A and B),
         // group-header classification only applies to the template that has grouping rows.
-        Optional<BbTemplate> template = templateRepo.findAllByAgentBankIgnoreCase(agentBank)
-            .stream()
-            .filter(BbTemplate::isHasGroupingRows)
-            .findFirst();
+        Optional<BbTemplate> template = findGroupingTemplate(agentBank, forceTemplate);
         if (template.isEmpty()) return null;
 
         Optional<BbTemplateTab> lpGrid =
@@ -87,5 +91,40 @@ public class ClassificationConfigBuilder {
                 agentBank, e.getMessage());
             return null;
         }
+    }
+
+    private Optional<BbTemplate> findGroupingTemplate(String agentBank, String forceTemplate) {
+        String forcedKey = normalize(forceTemplate);
+        if (forcedKey != null) {
+            Optional<BbTemplate> forced = templateRepo.findAll().stream()
+                .filter(BbTemplate::isHasGroupingRows)
+                .filter(t -> matchesForcedTemplate(t.getAgentBank(), forcedKey))
+                .findFirst();
+            if (forced.isPresent()) return forced;
+        }
+
+        if (agentBank != null && !agentBank.isBlank()) {
+            Optional<BbTemplate> byAgent = templateRepo.findAllByAgentBankIgnoreCase(agentBank)
+                .stream()
+                .filter(BbTemplate::isHasGroupingRows)
+                .findFirst();
+            if (byAgent.isPresent()) return byAgent;
+        }
+
+        return Optional.empty();
+    }
+
+    private boolean matchesForcedTemplate(String agentBank, String forcedKey) {
+        String templateKey = normalize(agentBank);
+        return templateKey != null
+            && (templateKey.equals(forcedKey) || templateKey.startsWith(forcedKey + " "));
+    }
+
+    private String normalize(String value) {
+        if (value == null || value.isBlank()) return null;
+        return value.toLowerCase()
+            .replaceAll("[^a-z0-9\\s]", " ")
+            .replaceAll("\\s+", " ")
+            .trim();
     }
 }
