@@ -1,7 +1,8 @@
 package com.ubs.pesubapi.entity;
 
-import com.ubs.pesubapi.entity.converter.StringListConverter;
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -38,7 +39,7 @@ public class BbTemplateTab {
     @Column(name = "header_row_span", nullable = false)
     private int headerRowSpan = 1;
 
-    @Convert(converter = StringListConverter.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "skip_row_keywords", columnDefinition = "jsonb")
     private List<String> skipRowKeywords = List.of("Total", "Subtotal", "Sub-Total", "Grand Total", "Sum", "Net Total");
 
