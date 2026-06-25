@@ -42,6 +42,9 @@ public class Facility {
     @Column(name = "maturity_date")
     private LocalDate maturityDate;
 
+    @Column(name = "collateral_date")
+    private LocalDate collateralDate;
+
     @Column(name = "bank_status")
     private String bankStatus;
 
@@ -77,6 +80,7 @@ public class Facility {
     public BigDecimal getFacilitySize()          { return facilitySize; }
     public BigDecimal getUbsParticipation()      { return ubsParticipation; }
     public LocalDate getMaturityDate()           { return maturityDate; }
+    public LocalDate getCollateralDate()         { return collateralDate; }
     public String getBankStatus()                { return bankStatus; }
     public LocalDate getBankStatusDate()         { return bankStatusDate; }
     public LocalDateTime getLastRunAt()          { return lastRunAt; }
@@ -91,6 +95,7 @@ public class Facility {
     public void setFacilitySize(BigDecimal v)    { this.facilitySize = v; }
     public void setUbsParticipation(BigDecimal v){ this.ubsParticipation = v; }
     public void setMaturityDate(LocalDate v)     { this.maturityDate = v; }
+    public void setCollateralDate(LocalDate v)   { this.collateralDate = v; }
     public void setBankStatus(String v)          { this.bankStatus = v; }
     public void setBankStatusDate(LocalDate v)   { this.bankStatusDate = v; }
     public void setLastRunAt(LocalDateTime t)    { this.lastRunAt = t; }

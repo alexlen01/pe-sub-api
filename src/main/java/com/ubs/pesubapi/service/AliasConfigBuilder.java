@@ -21,6 +21,8 @@ import java.util.stream.Collectors;
  * extract call.  The result is a JSON string keyed by extraction_key (when set) or
  * canonical name so that pe-sub-extraction's HeaderMatcher uses live, user-configurable
  * DB aliases instead of its hardcoded fallback map.
+ * Bank-scoped aliases are included only when they match the current submission's agent bank;
+ * global aliases are always included.
  *
  * Matching follows two tiers:
  *   1. Canonical name match  — the canonical field name is always the first entry in
@@ -52,6 +54,10 @@ public class AliasConfigBuilder {
      * or null if the DB is empty / serialisation fails (caller falls back to hardcoded).
      */
     public String buildJson() {
+        return buildJson(null);
+    }
+
+    public String buildJson(String agentBank) {
         List<FmCanonicalField> allFields =
             canonicalRepo.findAllByOrderByGroupSortAscFieldSortAsc();
         if (allFields.isEmpty()) return null;
@@ -69,6 +75,7 @@ public class AliasConfigBuilder {
 
         // Tier 2: Field Mapping Dictionary — fm_aliases rows in admin-configured order.
         for (FmAlias alias : allAliases) {
+            if (!aliasAppliesToAgent(alias, agentBank)) continue;
             String key = keyById.get(alias.getCanonicalFieldId());
             if (key == null) continue;
             result.computeIfAbsent(key, k -> new ArrayList<>()).add(alias.getAliasText());
@@ -96,5 +103,29 @@ public class AliasConfigBuilder {
             log.warn("Failed to serialise alias config — extraction will use hardcoded fallback: {}", e.getMessage());
             return null;
         }
+    }
+
+    private boolean aliasAppliesToAgent(FmAlias alias, String agentBank) {
+        if (alias.getBank() == null || alias.getBank().isBlank()) return true;
+        if (agentBank == null || agentBank.isBlank()) return false;
+        String aliasBank = normalize(alias.getBank());
+        String agent = normalize(agentBank);
+        if (aliasBank.equals(agent) || agent.contains(aliasBank) || aliasBank.contains(agent)) return true;
+        return acronym(agent).startsWith(aliasBank);
+    }
+
+    private String normalize(String value) {
+        return value.toLowerCase()
+            .replaceAll("[^a-z0-9\\s]", " ")
+            .replaceAll("\\s+", " ")
+            .trim();
+    }
+
+    private String acronym(String value) {
+        StringBuilder result = new StringBuilder();
+        for (String token : value.split("\\s+")) {
+            if (!token.isBlank()) result.append(token.charAt(0));
+        }
+        return result.toString();
     }
 }

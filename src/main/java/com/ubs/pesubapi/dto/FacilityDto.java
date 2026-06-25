@@ -18,6 +18,7 @@ public record FacilityDto(
     BigDecimal    facilitySize,
     BigDecimal    ubsParticipation,
     LocalDate     maturityDate,
+    LocalDate     collateralDate,
     String        bankStatus,
     LocalDate     bankStatusDate,
     // Latest Shadow BB figures from the most recent snapshot ($millions); null until a BB is run.
@@ -42,7 +43,7 @@ public record FacilityDto(
             f.getId(), f.getName(), f.getAgentBank(), f.getStatus(),
             f.getConcLimitM(), lpCount,
             f.getAccountNumber(), f.getLoanAmount(),
-            f.getFacilitySize(), f.getUbsParticipation(), f.getMaturityDate(),
+            f.getFacilitySize(), f.getUbsParticipation(), f.getMaturityDate(), f.getCollateralDate(),
             f.getBankStatus(), f.getBankStatusDate(),
             summary != null ? summary.totalABB() : null,
             summary != null ? summary.totalUBB() : null,

@@ -180,7 +180,7 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
 
     @Test
     void createFacility_accountMetadataFieldsPresentAsNullInResponse() throws Exception {
-        // account_number, loan_amount, maturity_date, bank_status, bank_status_date are
+        // account_number, loan_amount, maturity_date, collateral_date, bank_status, bank_status_date are
         // schema columns (V1_1) the create endpoint does not set. Verify they are present
         // in the DTO response as JSON null values (proving the fields round-trip the API).
         mvc.perform(post("/api/facilities")
@@ -192,6 +192,7 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.accountNumber").value((Object) null))
             .andExpect(jsonPath("$.loanAmount").value((Object) null))
             .andExpect(jsonPath("$.maturityDate").value((Object) null))
+            .andExpect(jsonPath("$.collateralDate").value((Object) null))
             .andExpect(jsonPath("$.bankStatus").value((Object) null))
             .andExpect(jsonPath("$.bankStatusDate").value((Object) null));
 
@@ -202,6 +203,7 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.accountNumber").value((Object) null))
             .andExpect(jsonPath("$.loanAmount").value((Object) null))
             .andExpect(jsonPath("$.maturityDate").value((Object) null))
+            .andExpect(jsonPath("$.collateralDate").value((Object) null))
             .andExpect(jsonPath("$.bankStatus").value((Object) null))
             .andExpect(jsonPath("$.bankStatusDate").value((Object) null));
     }
@@ -221,19 +223,21 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
         mvc.perform(patch("/api/facilities/{id}", id)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"accountNumber": "5VX1796", "loanAmount": 2500000000.00, "maturityDate": "2029-03-15"}
+                    {"accountNumber": "5VX1796", "loanAmount": 2500000000.00, "maturityDate": "2029-03-15", "collateralDate": "2026-06-01"}
                     """))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.accountNumber").value("5VX1796"))
             .andExpect(jsonPath("$.loanAmount").value(2500000000.00))
-            .andExpect(jsonPath("$.maturityDate").value("2029-03-15"));
+            .andExpect(jsonPath("$.maturityDate").value("2029-03-15"))
+            .andExpect(jsonPath("$.collateralDate").value("2026-06-01"));
 
         // GET confirms the values persisted (POST → PATCH → GET round-trip).
         mvc.perform(get("/api/facilities/{id}", id))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.accountNumber").value("5VX1796"))
             .andExpect(jsonPath("$.loanAmount").value(2500000000.00))
-            .andExpect(jsonPath("$.maturityDate").value("2029-03-15"));
+            .andExpect(jsonPath("$.maturityDate").value("2029-03-15"))
+            .andExpect(jsonPath("$.collateralDate").value("2026-06-01"));
     }
 
     @Test

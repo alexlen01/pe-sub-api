@@ -34,7 +34,7 @@ public class FacilityController {
     // All fields are optional; only non-null values are applied. name/agentBank are blank-guarded
     // (a NOT NULL column must never be cleared); the remaining fields may be set or overwritten.
     record UpdateFacilityRequest(String name, String agentBank,
-                                 String accountNumber, BigDecimal loanAmount, LocalDate maturityDate,
+                                 String accountNumber, BigDecimal loanAmount, LocalDate maturityDate, LocalDate collateralDate,
                                  BigDecimal facilitySize, BigDecimal ubsParticipation) {}
 
     private final FacilityRepository repo;
@@ -133,6 +133,7 @@ public class FacilityController {
             if (req.accountNumber() != null)    f.setAccountNumber(req.accountNumber());
             if (req.loanAmount() != null)       f.setLoanAmount(req.loanAmount());
             if (req.maturityDate() != null)     f.setMaturityDate(req.maturityDate());
+            if (req.collateralDate() != null)   f.setCollateralDate(req.collateralDate());
             if (req.facilitySize() != null)     f.setFacilitySize(req.facilitySize());
             if (req.ubsParticipation() != null) f.setUbsParticipation(req.ubsParticipation());
             f.setUpdatedAt(LocalDateTime.now());

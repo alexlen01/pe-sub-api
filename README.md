@@ -45,8 +45,8 @@ fund label as the template key until the owning facility is onboarded with its r
 
 ## Facility Agent Bank Summary fields
 
-`facilities` carries the Agent Bank Summary inputs `account_number`, `loan_amount`, and
-`maturity_date` (plus the dormant `bank_status` / `bank_status_date` columns) and the Shadow BB
+`facilities` carries the Agent Bank Summary inputs `account_number`, `loan_amount`,
+`maturity_date`, and `collateral_date` (plus the dormant `bank_status` / `bank_status_date` columns) and the Shadow BB
 Borrowing Base inputs `facility_size` / `ubs_participation` (`V1_4__facility_size_participation.sql`,
 stored as full-dollar `NUMERIC`). `POST /api/facilities` only sets name + agent bank; all of these
 are populated afterwards via `PATCH /api/facilities/{id}` (partial update — only the fields present

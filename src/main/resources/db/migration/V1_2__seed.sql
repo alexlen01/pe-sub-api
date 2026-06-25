@@ -356,7 +356,7 @@ INSERT INTO fm_aliases (canonical_field_id, alias_sort, alias_text, tier, bank) 
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 3, 'Original Commitment',            'Core', NULL),
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 4, 'Individual Original Commitment',  'Core', NULL),
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 5, 'Total Commitment',               'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 6, 'Commitment (USD)',               'Bank', 'BNY'),
+  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 6, 'Commitment (USD)',               'Core', NULL),
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Capital Commitments'), 7, 'Total Capital Commitments ($)',  'Core', NULL),
 
   -- % of Capital Commitments

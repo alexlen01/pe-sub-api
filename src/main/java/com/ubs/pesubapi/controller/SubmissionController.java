@@ -118,12 +118,18 @@ public class SubmissionController {
     // engine's alias-scoring heuristic then locates the correct header row autonomously.
     private TemplateHints hintsFor(String agentBank, String forcedTemplate) {
         List<BbTemplate> templates = templatesFor(agentBank, forcedTemplate);
-        if (templates.isEmpty()) return new TemplateHints(null, null, null);
+        if (templates.isEmpty()) {
+            log.info("Template hints: no bb_template match for agentBank='{}' forcedTemplate='{}'; extraction will auto-detect sheet/header",
+                agentBank, forcedTemplate);
+            return new TemplateHints(null, null, null);
+        }
         if (templates.size() > 1) {
             String sharedSheet = templates.stream()
                 .map(BbTemplate::getSheetName)
                 .filter(s -> s != null)
                 .findFirst().orElse(null);
+            log.info("Template hints: {} candidate templates for agentBank='{}' forcedTemplate='{}'; using shared sheet='{}' and leaving header auto-detected",
+                templates.size(), agentBank, forcedTemplate, sharedSheet);
             return new TemplateHints(sharedSheet, null, null);
         }
         BbTemplate t = templates.getFirst();
@@ -133,6 +139,8 @@ public class SubmissionController {
         String  sheet  = grid != null && grid.getSheetName()      != null ? grid.getSheetName()      : t.getSheetName();
         Integer header = grid != null && grid.getHeaderRowIndex()  != null ? grid.getHeaderRowIndex() : t.getHeaderRowIndex();
         Integer span   = grid != null ? grid.getHeaderRowSpan() : null;
+        log.info("Template hints: using bb_template='{}' class={} sheet='{}' headerRowIndex={} headerRowSpan={} forcedTemplate='{}'",
+            t.getAgentBank(), t.getTemplateClass(), sheet, header, span, forcedTemplate);
         return new TemplateHints(sheet, header, span);
     }
 
@@ -203,7 +211,8 @@ public class SubmissionController {
         auditService.log("Upload", detail, facilityId, "J. Smith", auditService.extractIp(request));
 
         try {
-            runExtractionPipeline(saved, facilityId, storedPath, forceTemplate);
+            runExtractionPipeline(saved, facilityId, storedPath, forceTemplate,
+                "J. Smith", auditService.extractIp(request));
         } catch (Exception e) {
             log.error("Extraction pipeline failed for submission {}", saved.getId(), e);
         }
@@ -214,9 +223,13 @@ public class SubmissionController {
 
     // ── Extraction pipeline ──────────────────────────────────────────────────
 
-    private void runExtractionPipeline(Submission sub, int facilityId, Path filePath, String forceTemplate) {
+    private void runExtractionPipeline(Submission sub, int facilityId, Path filePath, String forceTemplate,
+                                       String userName, String ip) {
         String forcedTemplate = normalizeForcedTemplate(forceTemplate);
         TemplateHints hints = hintsFor(sub.getAgentBank(), forcedTemplate);
+        log.info("Starting extraction submission={} facilityId={} agentBank='{}' file='{}' forcedTemplate='{}' hints(sheet='{}', headerRowIndex={}, headerRowSpan={})",
+            sub.getId(), facilityId, sub.getAgentBank(), sub.getFileName(), forcedTemplate,
+            hints.sheetName(), hints.headerRowIndex(), hints.headerRowSpan());
         ExtractionResponse extraction =
             extractionClient.extract(String.valueOf(facilityId), filePath,
                 hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
@@ -224,12 +237,26 @@ public class SubmissionController {
 
         if (extraction == null) {
             log.warn("Extraction skipped for submission {} — pe-sub-extraction unreachable", sub.getId());
+            auditService.log("Extraction Failed",
+                "Submission #" + sub.getId() + " extraction failed: pe-sub-extraction unreachable",
+                facilityId, userName, ip);
             sub.setStatus("Error");
             submissions.save(sub);
             return;
         }
 
         storeExtractionResult(sub.getId(), extraction, forcedTemplate);
+        log.info("Stored extraction submission={} recognizedFormat='{}' recognizedVersion='{}' rows={} mappings={} unrecognized={} forcedTemplate='{}'",
+            sub.getId(),
+            extraction.template() != null ? extraction.template().format() : null,
+            extraction.template() != null ? extraction.template().version() : null,
+            extraction.records() != null ? extraction.records().size() : 0,
+            extraction.fieldMappings() != null ? extraction.fieldMappings().size() : 0,
+            extraction.unrecognizedColumns() != null ? extraction.unrecognizedColumns().size() : 0,
+            forcedTemplate);
+        auditService.log("Extraction Completed",
+            extractionAuditDetail("Submission #" + sub.getId() + " extracted", extraction, forcedTemplate),
+            facilityId, userName, ip);
 
         IngestRequest ingestRequest = toIngestRequest(facilityId, extraction);
         ingestService.ingest(sub.getId(), ingestRequest);
@@ -272,6 +299,10 @@ public class SubmissionController {
                 row.put("commit",       fmtMoney(fieldDec(rec.fields(), "COMMITMENT")));
                 row.put("uncalled",     fmtMoney(fieldDec(rec.fields(), "UNCALLED")));
                 row.put("aum",          fmtMoneyOrRaw(rec.fields(), "AUM"));
+                row.put("sizeMetricType", fieldStr(rec.fields(), "Size Metric Type"));
+                row.put("sizeValueTier",  fieldStr(rec.fields(), "Size Value / Tier"));
+                row.put("lpSizeCriteria", fieldStr(rec.fields(), "LP Size Criteria"));
+                row.put("lpSizeBil",      fieldStr(rec.fields(), "LP Size ($ Bil)"));
                 row.put("agentRate",    fmtRate(fieldDec(rec.fields(), "AGENT_RATE")));
                 row.put("agentConc",    fmtRate(fieldDec(rec.fields(), "CONCENTRATION_LIMIT")));
                 row.put("conf",         overallConf(rec));
@@ -465,21 +496,57 @@ public class SubmissionController {
         log.info("Re-extract called for submission {} resolved forcedTemplate={}", id, forcedTemplate);
 
         TemplateHints hints = hintsFor(sub.getAgentBank(), forcedTemplate);
+        log.info("Starting re-extraction submission={} facilityId={} agentBank='{}' file='{}' forcedTemplate='{}' hints(sheet='{}', headerRowIndex={}, headerRowSpan={})",
+            id, sub.getFacilityId(), sub.getAgentBank(), sub.getFileName(), forcedTemplate,
+            hints.sheetName(), hints.headerRowIndex(), hints.headerRowSpan());
         ExtractionResponse extraction =
             extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
                 hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
                 forcedTemplate);
         if (extraction == null) {
+            auditService.log("Re-extraction Failed",
+                "Submission #" + id + " re-extraction failed: pe-sub-extraction unreachable",
+                sub.getFacilityId(), "J. Smith", auditService.extractIp(request));
             return ResponseEntity.status(502).body("pe-sub-extraction unreachable.");
         }
 
         storeExtractionResult(id, extraction, forcedTemplate);
-        String detail = forcedTemplate != null
-            ? "Submission #" + id + " re-extracted as \"" + forcedTemplate + "\" template"
-            : "Submission #" + id + " re-extracted";
-        auditService.log("Re-extraction", detail,
+        log.info("Stored re-extraction submission={} recognizedFormat='{}' recognizedVersion='{}' rows={} mappings={} unrecognized={} forcedTemplate='{}'",
+            id,
+            extraction.template() != null ? extraction.template().format() : null,
+            extraction.template() != null ? extraction.template().version() : null,
+            extraction.records() != null ? extraction.records().size() : 0,
+            extraction.fieldMappings() != null ? extraction.fieldMappings().size() : 0,
+            extraction.unrecognizedColumns() != null ? extraction.unrecognizedColumns().size() : 0,
+            forcedTemplate);
+        auditService.log("Re-extraction",
+            extractionAuditDetail("Submission #" + id + " re-extracted", extraction, forcedTemplate),
             sub.getFacilityId(), "J. Smith", auditService.extractIp(request));
         return ResponseEntity.noContent().build();
+    }
+
+    private String extractionAuditDetail(String prefix, ExtractionResponse extraction, String forcedTemplate) {
+        ExtractionResponse.TemplateInfo template = extraction != null ? extraction.template() : null;
+        String recognized = template != null ? friendlyFormat(template.format(), template.version()) : "Unknown template";
+        StringBuilder detail = new StringBuilder(prefix)
+            .append(": ")
+            .append(recognized)
+            .append(" · rows=")
+            .append(extraction != null && extraction.records() != null ? extraction.records().size() : 0)
+            .append(" · mappings=")
+            .append(extraction != null && extraction.fieldMappings() != null ? extraction.fieldMappings().size() : 0)
+            .append(" · unrecognized=")
+            .append(extraction != null && extraction.unrecognizedColumns() != null ? extraction.unrecognizedColumns().size() : 0);
+        if (template != null) {
+            if (template.sheetName() != null && !template.sheetName().isBlank()) {
+                detail.append(" · sheet=").append(template.sheetName());
+            }
+            detail.append(" · headerRow=").append(template.headerRowIndex());
+        }
+        if (forcedTemplate != null && !forcedTemplate.isBlank()) {
+            detail.append(" · forced=").append(forcedTemplate);
+        }
+        return detail.toString();
     }
 
     // Resolves the forced template for a re-extraction: an explicit (non-blank) request value
@@ -542,10 +609,12 @@ public class SubmissionController {
             alias.setCanonicalFieldId(field.getId());
             alias.setAliasSort(nextSort);
             alias.setAliasText(body.extractedHeader());
-            alias.setTier("User");
+            alias.setTier("Bank");
+            alias.setBank(sub.getAgentBank());
             aliasRepo.save(alias);
             auditService.log("Field Mapping Change",
-                "FM Alias Added: \"" + body.extractedHeader() + "\" → " + body.canonical(),
+                "FM Alias Added: \"" + body.extractedHeader() + "\" → " + body.canonical()
+                    + " (" + sub.getAgentBank() + ")",
                 sub.getFacilityId(), "J. Smith", auditService.extractIp(request));
         }
 
@@ -881,7 +950,11 @@ public class SubmissionController {
 
     private String confidenceNote(double confidence) {
         if (confidence >= 1.0)  return "Exact match";
-        if (confidence >= 0.95) return "Matched via fuzzy similarity";
+        if (confidence >= 0.900) {
+            return "Auto-suggested via Jaro-Winkler score "
+                + String.format(Locale.US, "%.3f", confidence)
+                + " against the Field Mapping Dictionary; review mapping";
+        }
         return "Matched via alias dictionary";
     }
 

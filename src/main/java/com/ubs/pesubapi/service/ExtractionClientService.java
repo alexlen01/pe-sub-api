@@ -72,7 +72,7 @@ public class ExtractionClientService {
             body.add("facilityId", facilityId);
             body.add("file", new FileSystemResource(Objects.requireNonNull(filePath)));
 
-            String aliasJson = aliasConfigBuilder.buildJson();
+            String aliasJson = aliasConfigBuilder.buildJson(agentBank);
             if (aliasJson    != null) body.add("aliasConfig",   aliasJson);
             if (sheetNameHint != null) body.add("sheetNameHint", sheetNameHint);
             if (headerRowHint != null) body.add("headerRowHint", String.valueOf(headerRowHint));
@@ -89,6 +89,13 @@ public class ExtractionClientService {
             // An operator-forced fund template (picked from the Document Recognition dropdown)
             // overrides column-signature auto-matching in the extraction engine.
             if (forceTemplate != null && !forceTemplate.isBlank()) body.add("forceTemplate", forceTemplate);
+
+            log.info("Calling pe-sub-extraction facilityId={} file='{}' agentBank='{}' sheetHint='{}' headerRowHint={} headerRowSpan={} forcedTemplate='{}' aliasConfig={} classificationConfig={}",
+                facilityId,
+                filePath != null ? filePath.getFileName() : null,
+                agentBank, sheetNameHint, headerRowHint, headerRowSpan, forceTemplate,
+                aliasJson != null ? "present" : "absent",
+                classificationJson != null ? "present" : "absent");
 
             return extractionClient.post()
                 .uri("/api/extract?forward=false")
