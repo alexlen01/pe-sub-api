@@ -116,10 +116,6 @@ public class SubmissionController {
     // the header row differs per class and cannot be determined without column-signature matching.
     // In that case only the sheet name is supplied (shared across classes); the extraction
     // engine's alias-scoring heuristic then locates the correct header row autonomously.
-    private TemplateHints hintsFor(String agentBank) {
-        return hintsFor(agentBank, null);
-    }
-
     private TemplateHints hintsFor(String agentBank, String forcedTemplate) {
         List<BbTemplate> templates = templatesFor(agentBank, forcedTemplate);
         if (templates.isEmpty()) return new TemplateHints(null, null, null);
