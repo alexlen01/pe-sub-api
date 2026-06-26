@@ -21,6 +21,7 @@ public record LpClassificationRequest(
 ) {
     public record Row(
         String  name,
+        String  originalName,
         // Identity & classification (manual)
         String  parent,
         Boolean spv,

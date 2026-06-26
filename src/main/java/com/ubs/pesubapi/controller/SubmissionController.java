@@ -720,10 +720,10 @@ public class SubmissionController {
             @PathVariable int id,
             @RequestBody ShadowBbStateRequest req) {
         return submissions.findById(id).map(sub -> {
-            // On first transition to step 5, commit accepted match-queue entries to LP Master.
+            // On first transition to step 5, commit accepted matches and rejected-as-new rows.
             if (sub.getWizardStep() < 5) {
                 extractionRepo.findBySubmissionId(id).ifPresent(ext ->
-                    ingestService.commitAcceptedMatches(id, sub.getFacilityId(), ext.getExtractedLps()));
+                    ingestService.commitMatchQueueDecisions(id, sub.getFacilityId(), ext.getExtractedLps()));
             }
             sub.setWizardStep(5);
             if (req.overrides() != null) {

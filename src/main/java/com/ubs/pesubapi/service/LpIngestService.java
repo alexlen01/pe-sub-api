@@ -95,11 +95,18 @@ public class LpIngestService {
                         matchingService.analyzeTree(extractedName, prepared, 5));
                 }
             } else {
-                List<String> updatedFields = applyFields(lp, row);
-                lpRepo.save(lp);
-                updated++;
-                results.add(result(row.rowIndex(), extractedName, lp.getId(), lp.getInvestorName(),
-                    best.score(), "Updated", updatedFields, List.of()));
+                if (submissionId > 0) {
+                    queued++;
+                    results.add(result(row.rowIndex(), extractedName, lp.getId(), lp.getInvestorName(),
+                        best.score(), "Queued", List.of(),
+                        List.of("Auto-match queued for Match Queue name confirmation")));
+                } else {
+                    List<String> updatedFields = applyFields(lp, row);
+                    lpRepo.save(lp);
+                    updated++;
+                    results.add(result(row.rowIndex(), extractedName, lp.getId(), lp.getInvestorName(),
+                        best.score(), "Updated", updatedFields, List.of()));
+                }
             }
         }
 
@@ -110,55 +117,64 @@ public class LpIngestService {
     }
 
     /**
-     * Commits accepted match-queue entries to LP Master.
+     * Commits resolved match-queue entries to LP Master.
      * Called when the analyst advances from step 4 (Match Queue) to step 5 (Run Shadow BB).
-     * - Accepted + existing match  → update financial fields on the matched LP record.
-     * - Accepted + is_new          → create a new LP record with defaults and extracted fields.
+     * Match Queue is name-only: accepted proposed matches use the chosen LP Master name, rejected
+     * proposed matches use the extracted Agent BB name. No fields are copied from, or written to,
+     * the matched LP record; the current facility's row is populated from Agent BB extraction only.
      */
-    public void commitAcceptedMatches(int submissionId, int facilityId, JsonNode extractedLps) {
+    public void commitMatchQueueDecisions(int submissionId, int facilityId, JsonNode extractedLps) {
         if (extractedLps == null || !extractedLps.isArray()) return;
 
         Map<Integer, JsonNode> byRow = new HashMap<>();
         extractedLps.forEach(row -> byRow.put(row.path("rowIndex").asInt(-1), row));
 
-        // Index existing facility LPs by name so an accepted "new" entry whose name already exists
+        // Index existing facility LPs by name so a resolved "new" entry whose name already exists
         // (e.g. the same Agent BB committed twice) updates the record in place rather than inserting
         // a duplicate. Records created earlier in this same pass are tracked here too, so duplicate
-        // accepted names within one submission also collapse onto a single record.
+        // resolved names within one submission also collapse onto a single record.
         Map<String, Lp> byName = lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).stream()
             .collect(Collectors.toMap(Lp::getInvestorName, lp -> lp, (a, b) -> a, HashMap::new));
 
         for (MatchQueueEntry entry : matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(submissionId)) {
-            if (!"Accepted".equals(entry.getDecision())) continue;
+            String decision = entry.getDecision();
+            if (!"Accepted".equals(decision) && !"Rejected".equals(decision)) continue;
             JsonNode row = byRow.get(entry.getRowIndex());
             if (row == null) continue;
 
-            Lp lp;
-            Integer matchedId = entry.getMatchedLpId();
-            if (!entry.isNew() && matchedId != null) {
-                lp = lpRepo.findById(matchedId).orElse(null);
-                if (lp == null) continue;
-            } else {
-                String name = entry.getMasterNameOverride() != null && !entry.getMasterNameOverride().isBlank()
-                    ? entry.getMasterNameOverride()
-                    : entry.getExtractedName();
-                if (name == null || name.isBlank()) continue;
+            boolean createAsNew = "Rejected".equals(decision) || entry.isNew();
+            String name = lpNameForCommit(entry, createAsNew);
+            if (name == null || name.isBlank()) continue;
 
-                lp = byName.get(name);
-                if (lp == null) {
-                    lp = new Lp();
-                    lp.setFacilityId(facilityId);
-                    lp.setInvestorName(name);
-                    lp.setInvType("Institutional");
-                    lp.setRegion("US");
-                    lp.setCls("Eligible");
-                }
+            Lp lp = byName.get(name);
+            if (lp == null) {
+                lp = new Lp();
+                lp.setFacilityId(facilityId);
+                lp.setInvestorName(name);
+                lp.setInvType("Institutional");
+                lp.setRegion("US");
+                lp.setCls("Eligible");
             }
             lp.setSourceSeq(entry.getRowIndex());   // preserve the Agent BB row order
             applyExtractedJsonRow(lp, row);
             lp = lpRepo.save(lp);
             byName.put(lp.getInvestorName(), lp);
         }
+    }
+
+    /**
+     * Accepted proposed matches choose the LP Master name only. Rejected matches deliberately use
+     * the Agent BB name, creating a separate current-facility LP record.
+     */
+    private String lpNameForCommit(MatchQueueEntry entry, boolean createAsNew) {
+        if (createAsNew) return entry.getExtractedName();
+        if (entry.getMasterNameOverride() != null && !entry.getMasterNameOverride().isBlank()) {
+            return entry.getMasterNameOverride();
+        }
+        if (entry.getMatchedLpName() != null && !entry.getMatchedLpName().isBlank()) {
+            return entry.getMatchedLpName();
+        }
+        return entry.getExtractedName();
     }
 
     private void applyExtractedJsonRow(Lp lp, JsonNode row) {

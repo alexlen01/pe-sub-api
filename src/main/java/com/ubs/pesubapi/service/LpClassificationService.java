@@ -44,9 +44,13 @@ public class LpClassificationService {
         int updated = 0;
         for (LpClassificationRequest.Row row : req.rows()) {
             if (row.name() == null) continue;
-            Lp lp = byName.get(row.name());
+            String lookupName = row.originalName() != null && !row.originalName().isBlank()
+                ? row.originalName()
+                : row.name();
+            Lp lp = byName.get(lookupName);
             if (lp == null) continue;   // only persisted LP Master records are updated
 
+            if (row.name() != null && !row.name().isBlank()) lp.setInvestorName(row.name());
             if (row.parent()         != null) lp.setParent(row.parent());
             if (row.spv()            != null) lp.setSpv(row.spv());
             if (row.type()           != null) lp.setInvType(row.type());

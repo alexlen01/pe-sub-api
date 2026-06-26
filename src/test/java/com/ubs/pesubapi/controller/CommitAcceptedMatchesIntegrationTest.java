@@ -120,7 +120,7 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         entries.forEach(e -> e.setDecision("Accepted"));
         matchQueueRepo.saveAll(entries);
 
-        // Advance step 4 → 5: commits accepted matches to LP Master.
+        // Advance step 4 → 5: commits resolved decisions to LP Master.
         mvc.perform(patch("/api/submissions/{id}/shadow-bb-state", submissionId)
                 .contentType("application/json")
                 .content("{}"))
@@ -148,5 +148,104 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$[0].name").value(NAMES.get(0)))
             .andExpect(jsonPath("$[0].agentCls").value(agentClassFor(0)))
             .andExpect(jsonPath("$[" + (N_ROWS - 1) + "].name").value(NAMES.get(N_ROWS - 1)));
+    }
+
+    @SuppressWarnings("null")
+    @Test
+    void commit_usesMatchNameOnly_andDoesNotPopulateOrUpdateMatchedLpRecord() throws Exception {
+        Facility otherFacility = new Facility();
+        otherFacility.setName("Different Levered Facility");
+        otherFacility.setAgentBank("Goldman Sachs Bank USA");
+        int otherFacilityId = facilityRepo.save(otherFacility).getId();
+
+        Lp matchedElsewhere = new Lp();
+        matchedElsewhere.setFacilityId(otherFacilityId);
+        matchedElsewhere.setInvestorName("Texas Teachers Retirement System");
+        matchedElsewhere.setParent("Do Not Copy Parent");
+        matchedElsewhere.setInvType("Pension");
+        matchedElsewhere.setRegion("US");
+        matchedElsewhere.setCls("Rated");
+        matchedElsewhere.setCapCommit("$99.0M");
+        int matchedElsewhereId = lpRepo.save(matchedElsewhere).getId();
+
+        SubmissionExtraction ext = extractionRepo.findBySubmissionId(submissionId).orElseThrow();
+        ext.setExtractedLps(mapper.readTree("""
+            [
+              {
+                "rowIndex": 7,
+                "name": "Texas Teachers Ret. Sys.",
+                "agentClass": "Pension Fund",
+                "commit": "$10.0M",
+                "uncalled": "$4.0M"
+              },
+              {
+                "rowIndex": 8,
+                "name": "Texas Teachers Ret. Sys. Sidecar",
+                "agentClass": "Designated Institutional",
+                "commit": "$5.0M",
+                "uncalled": "$2.0M"
+              }
+            ]
+            """));
+        extractionRepo.save(ext);
+
+        // Accepted auto-matches may carry a matched_lp_id from another facility, but submission
+        // commit is name-only: it creates the current facility's row using the matched name and
+        // Agent BB fields. Rejected proposed matches use the Agent BB name.
+        MatchQueueEntry accepted = new MatchQueueEntry();
+        accepted.setSubmissionId(submissionId);
+        accepted.setFacilityId(facilityId);
+        accepted.setRowIndex(7);
+        accepted.setExtractedName("Texas Teachers Ret. Sys.");
+        accepted.setMatchedLpId(matchedElsewhereId);
+        accepted.setMatchedLpName("Texas Teachers Retirement System");
+        accepted.setMatchScore(100);
+        accepted.setNew(false);
+        accepted.setDecision("Accepted");
+
+        MatchQueueEntry rejected = new MatchQueueEntry();
+        rejected.setSubmissionId(submissionId);
+        rejected.setFacilityId(facilityId);
+        rejected.setRowIndex(8);
+        rejected.setExtractedName("Texas Teachers Ret. Sys. Sidecar");
+        rejected.setMatchedLpName("Texas Teachers Retirement System");
+        rejected.setMatchScore(92);
+        rejected.setNew(false);
+        rejected.setDecision("Rejected");
+
+        matchQueueRepo.saveAll(List.of(accepted, rejected));
+
+        mvc.perform(patch("/api/submissions/{id}/shadow-bb-state", submissionId)
+                .contentType("application/json")
+                .content("{}"))
+            .andExpect(status().isOk());
+
+        List<Lp> stored = lpRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
+        assertThat(stored).hasSize(2);
+        assertThat(stored.stream().map(Lp::getInvestorName).toList()).containsExactly(
+            "Texas Teachers Retirement System",
+            "Texas Teachers Ret. Sys. Sidecar"
+        );
+
+        Lp acceptedLp = stored.get(0);
+        assertThat(acceptedLp.getParent()).isNull();
+        assertThat(acceptedLp.getInvType()).isEqualTo("Institutional");
+        assertThat(acceptedLp.getCls()).isEqualTo("Eligible");
+        assertThat(acceptedLp.getCapCommit()).isEqualTo("$10.0M");
+        assertThat(acceptedLp.getUc()).isEqualTo("$4.0M");
+        assertThat(acceptedLp.getAgentCls()).isEqualTo("Pension Fund");
+
+        Lp rejectedNewLp = stored.get(1);
+        assertThat(rejectedNewLp.getInvType()).isEqualTo("Institutional");
+        assertThat(rejectedNewLp.getCls()).isEqualTo("Eligible");
+        assertThat(rejectedNewLp.getCapCommit()).isEqualTo("$5.0M");
+        assertThat(rejectedNewLp.getUc()).isEqualTo("$2.0M");
+        assertThat(rejectedNewLp.getAgentCls()).isEqualTo("Designated Institutional");
+
+        Lp untouchedMatchedRecord = lpRepo.findById(matchedElsewhereId).orElseThrow();
+        assertThat(untouchedMatchedRecord.getFacilityId()).isEqualTo(otherFacilityId);
+        assertThat(untouchedMatchedRecord.getParent()).isEqualTo("Do Not Copy Parent");
+        assertThat(untouchedMatchedRecord.getCapCommit()).isEqualTo("$99.0M");
+        assertThat(untouchedMatchedRecord.getAgentCls()).isNull();
     }
 }
