@@ -281,7 +281,7 @@ public class MatchingService {
 
         List<MatchCandidate> matches = lpNames.stream()
             .map(lpName -> candidate(lpName, score(norm, normalize(lpName, cfg), cfg), cfg))
-            .sorted(Comparator.comparingInt(MatchCandidate::score).reversed())
+            .sorted(Comparator.comparingInt((MatchCandidate candidate) -> candidate.score()).reversed())
             .limit(10)
             .collect(Collectors.toList());
 

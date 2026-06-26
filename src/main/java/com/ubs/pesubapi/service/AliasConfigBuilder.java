@@ -65,7 +65,7 @@ public class AliasConfigBuilder {
         // Extractable fields use extraction_key as the map key; others use canonical value
         Map<Integer, String> keyById = allFields.stream()
             .collect(Collectors.toMap(
-                FmCanonicalField::getId,
+                field -> field.getId(),
                 f -> f.getExtractionKey() != null ? f.getExtractionKey() : f.getCanonical()
             ));
 

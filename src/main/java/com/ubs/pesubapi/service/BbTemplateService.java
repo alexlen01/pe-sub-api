@@ -115,7 +115,7 @@ public class BbTemplateService {
             tab.setSheetName(tabReq.sheetName());
             tab.setHeaderRowIndex(tabReq.headerRowIndex());
             tab.setHeaderRowSpan(tabReq.headerRowSpan() < 1 ? 1 : tabReq.headerRowSpan());
-            if (tabReq.skipRowKeywords() != null && !tabReq.skipRowKeywords().isEmpty()) {
+            if (tabReq.skipRowKeywords() != null) {
                 tab.setSkipRowKeywords(tabReq.skipRowKeywords());
             }
             tabRepo.save(tab);

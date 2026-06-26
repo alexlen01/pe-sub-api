@@ -125,7 +125,7 @@ public class SubmissionController {
         }
         if (templates.size() > 1) {
             String sharedSheet = templates.stream()
-                .map(BbTemplate::getSheetName)
+                .map(template -> template.getSheetName())
                 .filter(s -> s != null)
                 .findFirst().orElse(null);
             log.info("Template hints: {} candidate templates for agentBank='{}' forcedTemplate='{}'; using shared sheet='{}' and leaving header auto-detected",
@@ -322,6 +322,7 @@ public class SubmissionController {
                 row.put("moodys",       fieldStr(rec.fields(), "Moody's Rating"));
                 row.put("fitch",        fieldStr(rec.fields(), "Fitch Rating"));
                 row.put("transferee",   fieldStr(rec.fields(), "Transferee"));
+                row.put("notes",        fieldStr(rec.fields(), "NOTES"));
                 row.put("calledCap",   fmtMoneyOrRaw(rec.fields(), "Called Capital"));
                 row.put("pctCalled",   fieldStr(rec.fields(), "% of LP Called"));
                 row.put("pctUncalled", fieldStr(rec.fields(), "% of Uncalled Capital"));
@@ -353,7 +354,7 @@ public class SubmissionController {
                 rows.add(row);
             }
 
-            BigDecimal totalBB = bbRaws.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal totalBB = bbRaws.stream().reduce(BigDecimal.ZERO, (a, b) -> a.add(b));
             for (int i = 0; i < rows.size(); i++) {
                 ObjectNode row = rows.get(i);
                 BigDecimal bb  = bbRaws.get(i);
@@ -650,7 +651,7 @@ public class SubmissionController {
             : submissions.findAllByOrderByCreatedAtDesc())
             .stream().filter(s -> !"Processing".equals(s.getStatus())).toList();
 
-        Set<Integer> ids = subs.stream().map(Submission::getFacilityId)
+        Set<Integer> ids = subs.stream().map(sub -> sub.getFacilityId())
             .filter(Objects::nonNull).collect(Collectors.toSet());
         Map<Integer, String> nameById = new HashMap<>();
         facilities.findAllById(new HashSet<>(ids)).forEach(f -> nameById.put(f.getId(), f.getName()));
@@ -665,7 +666,7 @@ public class SubmissionController {
         return submissions.findById(id).map(s -> {
             Integer facilityId = s.getFacilityId();
             String facilityName = facilityId != null
-                ? facilities.findById(facilityId).map(Facility::getName).orElse("—")
+                ? facilities.findById(facilityId).map(facility -> facility.getName()).orElse("—")
                 : "—";
             return ResponseEntity.ok(toDto(s, facilityName));
         }).orElse(ResponseEntity.notFound().build());
@@ -740,7 +741,7 @@ public class SubmissionController {
             submissions.save(sub);
             Integer facilityId = sub.getFacilityId();
             String facilityName = facilityId != null
-                ? facilities.findById(facilityId).map(Facility::getName).orElse("—")
+                ? facilities.findById(facilityId).map(facility -> facility.getName()).orElse("—")
                 : "—";
             return ResponseEntity.ok(toDto(sub, facilityName));
         }).orElse(ResponseEntity.notFound().build());
@@ -870,6 +871,7 @@ public class SubmissionController {
             toStringField(fields.get("NAV")),
             toStringField(fields.get("AGENT_LP_CLASSIFICATION")),
             toStringField(fields.get("Parent / Sponsor")),
+            toStringField(fields.get("NOTES")),
             rec.requiresReview(),
             rec.warnings() != null
                 ? rec.warnings().stream()

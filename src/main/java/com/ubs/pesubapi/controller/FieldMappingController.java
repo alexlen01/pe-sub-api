@@ -112,7 +112,7 @@ public class FieldMappingController {
         if (duplicate.isPresent()) {
             Integer conflictFieldId = duplicate.get().getCanonicalFieldId();
             String conflictField = conflictFieldId != null
-                ? canonicalFieldRepo.findById(conflictFieldId).map(FmCanonicalField::getCanonical).orElse("another field")
+                ? canonicalFieldRepo.findById(conflictFieldId).map(f -> f.getCanonical()).orElse("another field")
                 : "another field";
             ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
                 "\"" + text.trim() + "\" is already mapped to \"" + conflictField + "\".");
@@ -131,7 +131,7 @@ public class FieldMappingController {
         FmAlias saved = aliasRepo.save(alias);
 
         String canonical = canonicalFieldRepo.findById(canonicalFieldId)
-            .map(FmCanonicalField::getCanonical).orElse("field " + canonicalFieldId);
+            .map(f -> f.getCanonical()).orElse("field " + canonicalFieldId);
         auditService.log("Field Mapping Change", "FM Alias Added: \"" + text + "\" → " + canonical,
             null, auditService.extractIp(request));
 
@@ -167,7 +167,7 @@ public class FieldMappingController {
                 if (duplicate.isPresent()) {
                     Integer conflictFieldId = duplicate.get().getCanonicalFieldId();
                     String conflictField = conflictFieldId != null
-                        ? canonicalFieldRepo.findById(conflictFieldId).map(FmCanonicalField::getCanonical).orElse("another field")
+                        ? canonicalFieldRepo.findById(conflictFieldId).map(f -> f.getCanonical()).orElse("another field")
                         : "another field";
                     ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
                         "\"" + newText + "\" is already mapped to \"" + conflictField + "\".");

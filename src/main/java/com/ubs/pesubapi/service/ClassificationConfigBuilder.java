@@ -97,7 +97,7 @@ public class ClassificationConfigBuilder {
         String forcedKey = normalize(forceTemplate);
         if (forcedKey != null) {
             Optional<BbTemplate> forced = templateRepo.findAll().stream()
-                .filter(BbTemplate::isHasGroupingRows)
+                .filter(template -> template.isHasGroupingRows())
                 .filter(t -> matchesForcedTemplate(t.getTemplateName(), forcedKey))
                 .findFirst();
             if (forced.isPresent()) return forced;
@@ -106,7 +106,7 @@ public class ClassificationConfigBuilder {
         if (templateName != null && !templateName.isBlank()) {
             Optional<BbTemplate> byTemplateName = templateRepo.findAllByTemplateNameIgnoreCase(templateName)
                 .stream()
-                .filter(BbTemplate::isHasGroupingRows)
+                .filter(template -> template.isHasGroupingRows())
                 .findFirst();
             if (byTemplateName.isPresent()) return byTemplateName;
         }

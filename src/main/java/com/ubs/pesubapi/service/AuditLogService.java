@@ -60,7 +60,7 @@ public class AuditLogService {
 
         Set<Integer> ids = entries.stream()
             .filter(e -> e.getFacilityId() != null)
-            .map(AuditLog::getFacilityId)
+            .map(entry -> entry.getFacilityId())
             .collect(Collectors.toSet());
 
         Map<Integer, String> facilityNames = new HashMap<>();

@@ -32,7 +32,7 @@ public class LpMasterService {
     @Transactional
     public List<Lp> upsertAll(int facilityId, List<CommitLpRow> rows) {
         Map<String, Lp> byName = lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).stream()
-            .collect(Collectors.toMap(Lp::getInvestorName, lp -> lp, (a, b) -> a, LinkedHashMap::new));
+            .collect(Collectors.toMap(lp -> lp.getInvestorName(), lp -> lp, (a, b) -> a, LinkedHashMap::new));
 
         Map<String, Lp> toSave = new LinkedHashMap<>();
         int seq = 0;

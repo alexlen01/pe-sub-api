@@ -47,7 +47,7 @@ public class MatchingController {
             : matchQueueRepo.findAll();
 
         Map<Integer, String> facilityNames = new java.util.HashMap<>();
-        entries.stream().map(MatchQueueEntry::getFacilityId)
+        entries.stream().map(entry -> entry.getFacilityId())
             .filter(Objects::nonNull).distinct()
             .forEach(fid -> {
                 Integer nonNullFacilityId = Objects.requireNonNull(fid);

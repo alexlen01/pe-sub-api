@@ -193,7 +193,7 @@ class MatchingServiceTest {
         assertThat(top.jw()).isBetween(0, 100);
         assertThat(top.lev()).isBetween(0, 100);
         // Ranked strictly non-increasing by combined score.
-        var combined = analysis.candidates().stream().map(MatchingService.ScoredCandidate::combined).toList();
+        var combined = analysis.candidates().stream().map(candidate -> candidate.combined()).toList();
         for (int i = 1; i < combined.size(); i++)
             assertThat(combined.get(i)).isLessThanOrEqualTo(combined.get(i - 1));
     }

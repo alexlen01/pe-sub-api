@@ -37,9 +37,9 @@ public class LpIngestService {
 
     public IngestResult ingest(int submissionId, IngestRequest request) {
         List<Lp> facilityLps = lpRepo.findByFacilityIdOrderByInvestorNameAsc(request.facilityId());
-        List<String> names   = facilityLps.stream().map(Lp::getInvestorName).toList();
+        List<String> names   = facilityLps.stream().map(lp -> lp.getInvestorName()).toList();
         Map<String, Lp> byName = facilityLps.stream()
-            .collect(Collectors.toMap(Lp::getInvestorName, lp -> lp, (a, b) -> a));
+            .collect(Collectors.toMap(lp -> lp.getInvestorName(), lp -> lp, (a, b) -> a));
         MatchingService.Prepared prepared = matchingService.prepare(names);
 
         List<IngestResult.RecordResult> results = new ArrayList<>();
@@ -134,7 +134,7 @@ public class LpIngestService {
         // a duplicate. Records created earlier in this same pass are tracked here too, so duplicate
         // resolved names within one submission also collapse onto a single record.
         Map<String, Lp> byName = lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).stream()
-            .collect(Collectors.toMap(Lp::getInvestorName, lp -> lp, (a, b) -> a, HashMap::new));
+            .collect(Collectors.toMap(lp -> lp.getInvestorName(), lp -> lp, (a, b) -> a, HashMap::new));
 
         for (MatchQueueEntry entry : matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(submissionId)) {
             String decision = entry.getDecision();
@@ -196,6 +196,7 @@ public class LpIngestService {
         String calledCap = textOrNull(row, "calledCap");
         String pctCalled = textOrNull(row, "pctCalled");
         String pctUncalled = textOrNull(row, "pctUncalled");
+        String notes   = textOrNull(row, "notes");
         // Prefer the raw extracted agent BB column; fall back to the uncalled×rate proxy.
         String agentBB   = textOrNull(row, "agentBB");
         if (agentBB == null) agentBB = textOrNull(row, "agentBBFmt");
@@ -215,6 +216,7 @@ public class LpIngestService {
         if (calledCap  != null) lp.setCalledCap(calledCap);
         if (pctCalled  != null) lp.setPctCalled(pctCalled);
         if (pctUncalled != null) lp.setPctUncalled(pctUncalled);
+        if (notes     != null) lp.setNotes(notes);
         lp.setUpdatedAt(LocalDateTime.now());
     }
 
@@ -262,6 +264,7 @@ public class LpIngestService {
         String nav      = strValueIfValid(row.nav());
         String agentCls = strValueIfValid(row.agentCls());
         String parent   = strValueIfValid(row.parent());
+        String notes    = strValueIfValid(row.notes());
 
         if (sp       != null) { lp.setSp(sp);               changed.add("sp"); }
         if (mdy      != null) { lp.setMdy(mdy);             changed.add("mdy"); }
@@ -269,6 +272,7 @@ public class LpIngestService {
         if (nav      != null) { lp.setNav(nav);             changed.add("nav"); }
         if (agentCls != null) { lp.setAgentCls(agentCls);   changed.add("agentCls"); }
         if (parent   != null) { lp.setParent(parent);       changed.add("parent"); }
+        if (notes    != null) { lp.setNotes(notes);         changed.add("notes"); }
 
         lp.setUpdatedAt(LocalDateTime.now());
         return changed;

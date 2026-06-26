@@ -62,11 +62,11 @@ public class BbCalculationService {
             .map(lp -> computeOne(lp, concLimitM))
             .toList();
 
-        List<ComputedLp> included = computed.stream().filter(ComputedLp::inc).toList();
+        List<ComputedLp> included = computed.stream().filter(lp -> lp.inc()).toList();
 
-        double totalUBB = included.stream().mapToDouble(ComputedLp::ubbM).sum();
-        double totalABB = computed.stream().mapToDouble(ComputedLp::abbM).sum();
-        double totalUEC = included.stream().mapToDouble(ComputedLp::uecM).sum();
+        double totalUBB = included.stream().mapToDouble(lp -> lp.ubbM()).sum();
+        double totalABB = computed.stream().mapToDouble(lp -> lp.abbM()).sum();
+        double totalUEC = included.stream().mapToDouble(lp -> lp.uecM()).sum();
 
         double ear      = totalUEC > 0 ? totalUBB / totalUEC : 0;
         double agentEar = totalUEC > 0 ? totalABB / totalUEC : 0;
@@ -105,7 +105,7 @@ public class BbCalculationService {
         List<BbBreach> breaches = new ArrayList<>();
         if (totalUBB <= 0) return breaches;
 
-        List<ComputedLp> included = lps.stream().filter(ComputedLp::inc).toList();
+        List<ComputedLp> included = lps.stream().filter(lp -> lp.inc()).toList();
 
         // Single LP > 15%
         for (ComputedLp lp : included) {
@@ -118,9 +118,9 @@ public class BbCalculationService {
 
         // Top-10 > 60% (warning at 50%)
         double top10UBB = included.stream()
-            .sorted(Comparator.comparingDouble(ComputedLp::ubbM).reversed())
+            .sorted(Comparator.comparingDouble((ComputedLp lp) -> lp.ubbM()).reversed())
             .limit(10)
-            .mapToDouble(ComputedLp::ubbM).sum();
+            .mapToDouble(lp -> lp.ubbM()).sum();
         double top10Pct = top10UBB / totalUBB;
         if (top10Pct > 0.60) {
             breaches.add(new BbBreach("top10", "breach",
@@ -133,7 +133,7 @@ public class BbCalculationService {
         // Unrated aggregate > 50%
         double unratedUBB = included.stream()
             .filter(lp -> !lp.highQuality())
-            .mapToDouble(ComputedLp::ubbM).sum();
+            .mapToDouble(lp -> lp.ubbM()).sum();
         if (unratedUBB / totalUBB > 0.50) {
             breaches.add(new BbBreach("unrated", "breach",
                 "Unrated LP aggregate exceeds 50% of UBS BB", unratedUBB / totalUBB, 0.50));
@@ -142,7 +142,7 @@ public class BbCalculationService {
         // Non-US aggregate > 30%
         double nonUsUBB = included.stream()
             .filter(lp -> !lp.hq())
-            .mapToDouble(ComputedLp::ubbM).sum();
+            .mapToDouble(lp -> lp.ubbM()).sum();
         if (nonUsUBB / totalUBB > 0.30) {
             breaches.add(new BbBreach("non-us", "breach",
                 "Non-US LP aggregate exceeds 30% of UBS BB", nonUsUBB / totalUBB, 0.30));

@@ -131,7 +131,7 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         assertThat(stored).hasSize(N_ROWS);
 
         // 2) Natural (source-file) order retained, not alphabetical.
-        List<String> storedOrder = stored.stream().map(Lp::getInvestorName).toList();
+        List<String> storedOrder = stored.stream().map(lp -> lp.getInvestorName()).toList();
         assertThat(storedOrder).containsExactlyElementsOf(NAMES);
         assertThat(storedOrder).isNotEqualTo(NAMES.stream().sorted().toList());
 
@@ -222,7 +222,7 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
 
         List<Lp> stored = lpRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
         assertThat(stored).hasSize(2);
-        assertThat(stored.stream().map(Lp::getInvestorName).toList()).containsExactly(
+        assertThat(stored.stream().map(lp -> lp.getInvestorName()).toList()).containsExactly(
             "Texas Teachers Retirement System",
             "Texas Teachers Ret. Sys. Sidecar"
         );

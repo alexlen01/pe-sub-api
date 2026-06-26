@@ -183,6 +183,6 @@ public class BbTemplateImportService {
 
     private List<String> parseSkipKeywords(String raw) {
         if (raw == null || raw.isBlank()) return DEFAULT_SKIP_KEYWORDS;
-        return Arrays.stream(raw.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+        return Arrays.stream(raw.split(",")).map(s -> s.trim()).filter(s -> !s.isEmpty()).toList();
     }
 }

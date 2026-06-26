@@ -39,7 +39,7 @@ public class LpClassificationService {
         LocalDate effectiveDate = parseMonth(req.effectiveDate());
 
         Map<String, Lp> byName = lpRepo.findByFacilityIdOrderByInvestorNameAsc(req.facilityId()).stream()
-            .collect(Collectors.toMap(Lp::getInvestorName, lp -> lp, (a, b) -> a));
+            .collect(Collectors.toMap(lp -> lp.getInvestorName(), lp -> lp, (a, b) -> a));
 
         int updated = 0;
         for (LpClassificationRequest.Row row : req.rows()) {

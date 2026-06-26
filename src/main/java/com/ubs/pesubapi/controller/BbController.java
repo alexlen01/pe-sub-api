@@ -116,7 +116,7 @@ public class BbController {
         // each metric = Σ(uncalled of matching LPs) ÷ Σ(total uncalled), not a headcount ratio.
         double instUncalled   = lps.stream().filter(lp -> "Institutional".equals(lp.getInvType())).mapToDouble(lp -> parseMoney(lp.getUc())).sum();
         double hnwUncalled    = lps.stream().filter(lp -> "HNW".equals(lp.getInvType())).mapToDouble(lp -> parseMoney(lp.getUc())).sum();
-        double igUncalled     = lps.stream().filter(com.ubs.pesubapi.entity.Lp::isIg).mapToDouble(lp -> parseMoney(lp.getUc())).sum();
+        double igUncalled     = lps.stream().filter(lp -> lp.isIg()).mapToDouble(lp -> parseMoney(lp.getUc())).sum();
         double pctInstitutional = totalUncalled > 0 ? instUncalled / totalUncalled : 0;
         double pctHNW           = totalUncalled > 0 ? hnwUncalled  / totalUncalled : 0;
         double igRatio          = totalUncalled > 0 ? igUncalled   / totalUncalled : 0;
