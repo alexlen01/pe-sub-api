@@ -7,7 +7,7 @@ import java.util.List;
 
 public record BbTemplateDto(
     Integer                  id,
-    String                   agentBank,
+    String                   templateName,
     String                   templateClass,
     String                   sheetName,
     Integer                  headerRowIndex,
@@ -23,7 +23,7 @@ public record BbTemplateDto(
     public static BbTemplateDto from(BbTemplate t, List<BbTemplateTabDto> tabs) {
         return new BbTemplateDto(
             t.getId(),
-            t.getAgentBank(),
+            t.getTemplateName(),
             t.getTemplateClass(),
             t.getSheetName(),
             t.getHeaderRowIndex(),

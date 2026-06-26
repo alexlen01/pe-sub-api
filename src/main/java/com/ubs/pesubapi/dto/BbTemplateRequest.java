@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Pattern;
 import java.util.List;
 
 public record BbTemplateRequest(
-    @NotBlank String agentBank,
+    @NotBlank String templateName,
     @NotBlank @Pattern(regexp = "A|B|C", message = "templateClass must be A, B, or C") String templateClass,
     String          sheetName,
     Integer         headerRowIndex,

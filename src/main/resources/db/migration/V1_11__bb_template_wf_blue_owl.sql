@@ -3,10 +3,10 @@
 -- group-header classification, cell-format legend (reclassification / transfer flags).
 -- Reference: pe-sub-docs/WORKBOOK_WF_BLUE_OWL.md
 
-INSERT INTO bb_templates (agent_bank, template_class, sheet_name, header_row_index,
+INSERT INTO bb_templates (template_name, template_class, sheet_name, header_row_index,
     auto_learned, tranche_count, has_grouping_rows, has_color_flags, summary_rows_above_header)
 VALUES ('Blue Owl GP Stakes V / Wells Fargo', 'A', 'Agent BB', 17, FALSE, 2, TRUE, TRUE, 15)
-ON CONFLICT (LOWER(agent_bank), template_class) DO UPDATE SET
+ON CONFLICT (LOWER(template_name), template_class) DO UPDATE SET
     sheet_name = EXCLUDED.sheet_name,
     header_row_index = EXCLUDED.header_row_index,
     tranche_count = EXCLUDED.tranche_count,
@@ -18,7 +18,7 @@ ON CONFLICT (LOWER(agent_bank), template_class) DO UPDATE SET
 -- the engine uses tranche_count=2 to process both Agent BB tabs in turn).
 WITH t AS (
     SELECT id FROM bb_templates
-    WHERE agent_bank = 'Blue Owl GP Stakes V / Wells Fargo' AND template_class = 'A'
+    WHERE template_name = 'Blue Owl GP Stakes V / Wells Fargo' AND template_class = 'A'
 )
 INSERT INTO bb_template_tabs (template_id, tab_role, tab_sort, sheet_name, header_row_index, header_row_span)
 SELECT t.id, 'LP_GRID', 1, 'Agent BB', 17, 1 FROM t
@@ -32,7 +32,7 @@ WITH tab AS (
     SELECT bt.id AS tab_id
     FROM bb_template_tabs bt
     JOIN bb_templates tmpl ON tmpl.id = bt.template_id
-    WHERE tmpl.agent_bank = 'Blue Owl GP Stakes V / Wells Fargo'
+    WHERE tmpl.template_name = 'Blue Owl GP Stakes V / Wells Fargo'
       AND tmpl.template_class = 'A'
       AND bt.tab_role = 'LP_GRID'
 )

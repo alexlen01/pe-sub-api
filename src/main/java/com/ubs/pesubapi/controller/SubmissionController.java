@@ -108,7 +108,7 @@ public class SubmissionController {
 
     private record TemplateHints(String sheetName, Integer headerRowIndex, Integer headerRowSpan) {}
 
-    // Resolves extraction hints for an agent bank's template. The LP_GRID tab is the
+    // Resolves extraction hints for a registered template name. The LP_GRID tab is the
     // canonical source of sheet name / header row / header span; the bb_templates
     // top-level columns are a single-tab shortcut fallback (used by auto-learned templates).
     //
@@ -140,7 +140,7 @@ public class SubmissionController {
         Integer header = grid != null && grid.getHeaderRowIndex()  != null ? grid.getHeaderRowIndex() : t.getHeaderRowIndex();
         Integer span   = grid != null ? grid.getHeaderRowSpan() : null;
         log.info("Template hints: using bb_template='{}' class={} sheet='{}' headerRowIndex={} headerRowSpan={} forcedTemplate='{}'",
-            t.getAgentBank(), t.getTemplateClass(), sheet, header, span, forcedTemplate);
+            t.getTemplateName(), t.getTemplateClass(), sheet, header, span, forcedTemplate);
         return new TemplateHints(sheet, header, span);
     }
 
@@ -148,20 +148,20 @@ public class SubmissionController {
         String forcedKey = normalizedTemplateKey(forcedTemplate);
         if (forcedKey != null) {
             List<BbTemplate> forced = templateRepo.findAll().stream()
-                .filter(t -> templateNameMatches(t.getAgentBank(), forcedKey))
+                .filter(t -> templateNameMatches(t.getTemplateName(), forcedKey))
                 .toList();
             if (!forced.isEmpty()) return forced;
         }
 
         List<BbTemplate> byAgent = agentBank != null && !agentBank.isBlank()
-            ? templateRepo.findAllByAgentBankIgnoreCase(agentBank)
+            ? templateRepo.findAllByTemplateNameIgnoreCase(agentBank)
             : List.of();
         if (!byAgent.isEmpty()) return byAgent;
         return List.of();
     }
 
-    private boolean templateNameMatches(String agentBank, String forcedKey) {
-        String templateKey = normalizedTemplateKey(agentBank);
+    private boolean templateNameMatches(String templateName, String forcedKey) {
+        String templateKey = normalizedTemplateKey(templateName);
         return templateKey != null
             && (templateKey.equals(forcedKey) || templateKey.startsWith(forcedKey + " "));
     }
@@ -281,8 +281,17 @@ public class SubmissionController {
             entity.setTemplateFormat(r.template().format());
             entity.setTemplateVersion(r.template().version());
             entity.setHeaderRowIndex(r.template().headerRowIndex());
-            entity.setSheetName(r.template().sheetName());
+                entity.setSheetName(r.template().sheetName());
         }
+
+        // Build canonical field lookup from DB — keyed by extraction_key and canonical name.
+        // The UI uses the ordered field list as its review-grid column set.
+        List<FmCanonicalField> canonicalFields = canonicalFieldRepo.findAllByOrderByGroupSortAscFieldSortAsc();
+        Map<String, FmCanonicalField> cfByKey = new HashMap<>();
+        canonicalFields.forEach(cf -> {
+            if (cf.getExtractionKey() != null) cfByKey.put(cf.getExtractionKey(), cf);
+            cfByKey.put(cf.getCanonical(), cf);
+        });
 
         // Build extracted_lps JSON array
         ArrayNode lpArray = mapper.createArrayNode();
@@ -318,6 +327,12 @@ public class SubmissionController {
                 row.put("pctUncalled", fieldStr(rec.fields(), "% of Uncalled Capital"));
                 row.put("agentBB",     fieldStr(rec.fields(), "Borrowing Base"));
                 row.put("pctBB",       fieldStr(rec.fields(), "% of Borrowing Base"));
+                ObjectNode canonicalValues = mapper.createObjectNode();
+                for (FmCanonicalField cf : canonicalFields) {
+                    String display = displayValueForCanonical(rec.fields(), cf);
+                    if (!display.isBlank()) canonicalValues.put(cf.getCanonical(), display);
+                }
+                row.set("canonicalFields", canonicalValues);
                 ArrayNode warnings = mapper.createArrayNode();
                 if (rec.warnings() != null) {
                     rec.warnings().forEach(w -> warnings.add(w.field() + ": " + w.message()));
@@ -357,13 +372,6 @@ public class SubmissionController {
         entity.setTotalRows(lpArray.size());
         entity.setFlaggedCount(r.totalFlagged());
         entity.setExtractedLps(lpArray);
-
-        // Build canonical field lookup from DB — keyed by extraction_key and canonical name
-        Map<String, FmCanonicalField> cfByKey = new HashMap<>();
-        canonicalFieldRepo.findAllByOrderByGroupSortAscFieldSortAsc().forEach(cf -> {
-            if (cf.getExtractionKey() != null) cfByKey.put(cf.getExtractionKey(), cf);
-            cfByKey.put(cf.getCanonical(), cf);
-        });
 
         // Build field_mappings JSON array
         ArrayNode fmArray = mapper.createArrayNode();
@@ -665,7 +673,7 @@ public class SubmissionController {
 
     // ── POST /api/submissions/:id/confirm ────────────────────────────────────
 
-    record ConfirmResponse(boolean templateSaved, String agentBank) {}
+    record ConfirmResponse(boolean templateSaved, String templateName) {}
 
     @Transactional
     @PostMapping("/{id}/confirm")
@@ -679,11 +687,11 @@ public class SubmissionController {
 
         Optional<SubmissionExtraction> extOpt = extractionRepo.findBySubmissionId(id);
 
-        if (templateRepo.findAllByAgentBankIgnoreCase(agentBank).isEmpty()) {
+        if (templateRepo.findAllByTemplateNameIgnoreCase(agentBank).isEmpty()) {
             if (extOpt.isPresent() && extOpt.get().getSheetName() != null) {
                 SubmissionExtraction ext = extOpt.get();
                 BbTemplate t = new BbTemplate();
-                t.setAgentBank(agentBank);
+                t.setTemplateName(agentBank);
                 t.setSheetName(ext.getSheetName());
                 t.setHeaderRowIndex(ext.getHeaderRowIndex());
                 t.setAutoLearned(true);
@@ -919,6 +927,34 @@ public class SubmissionController {
             if (f != null && f.confidence() > 0) { sum += f.confidence(); count++; }
         }
         return count > 0 ? (int) Math.round((sum / count) * 100) : 0;
+    }
+
+    private String displayValueForCanonical(Map<String, ExtractionResponse.FieldValue> fields, FmCanonicalField cf) {
+        if (fields == null || fields.isEmpty()) return "";
+        String key = cf.getExtractionKey();
+        ExtractionResponse.FieldValue f = key != null ? fields.get(key) : null;
+        if (f == null) f = fields.get(cf.getCanonical());
+        if (f == null || f.value() == null || f.value().isBlank()) return "";
+
+        BigDecimal dec = parseNumericSafe(f.value());
+        if (dec != null && moneyCanonical(cf.getCanonical())) return fmtMoney(dec);
+        if (dec != null && percentCanonical(cf.getCanonical())) return fmtRate(dec);
+        return f.value();
+    }
+
+    private boolean moneyCanonical(String canonical) {
+        return switch (canonical) {
+            case "Capital Commitments", "Called Capital", "Recallable Distributions",
+                 "Uncalled Capital", "AUM", "NAV", "Net Worth", "Pension Assets",
+                 "Eligible Commitment", "Borrowing Base", "Excess Concentration" -> true;
+            default -> false;
+        };
+    }
+
+    private boolean percentCanonical(String canonical) {
+        return canonical.contains("%")
+            || canonical.equals("Advance Rate")
+            || canonical.equals("Concentration Limit");
     }
 
     // For fields like AUM/NAV that may contain range strings (">$2B", "<$500M"), falls back

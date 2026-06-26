@@ -4,10 +4,10 @@
 -- but ON CONFLICT guards against repeated runs.
 -- Reference: pe-sub-docs/WORKBOOK_AUDAX_VII.md
 
-INSERT INTO bb_templates (agent_bank, template_class, sheet_name, header_row_index,
+INSERT INTO bb_templates (template_name, template_class, sheet_name, header_row_index,
     auto_learned, tranche_count, has_grouping_rows, has_color_flags, summary_rows_above_header)
 VALUES ('Audax Fund VII / Silicon Valley Bank', 'B', 'Investor List', 12, FALSE, 1, FALSE, FALSE, 0)
-ON CONFLICT (LOWER(agent_bank), template_class) DO UPDATE SET
+ON CONFLICT (LOWER(template_name), template_class) DO UPDATE SET
     sheet_name = EXCLUDED.sheet_name,
     header_row_index = EXCLUDED.header_row_index,
     tranche_count = EXCLUDED.tranche_count,
@@ -18,7 +18,7 @@ ON CONFLICT (LOWER(agent_bank), template_class) DO UPDATE SET
 -- LP_GRID tab
 WITH t AS (
     SELECT id FROM bb_templates
-    WHERE agent_bank = 'Audax Fund VII / Silicon Valley Bank' AND template_class = 'B'
+    WHERE template_name = 'Audax Fund VII / Silicon Valley Bank' AND template_class = 'B'
 )
 INSERT INTO bb_template_tabs (template_id, tab_role, tab_sort, sheet_name, header_row_index, header_row_span)
 SELECT t.id, 'LP_GRID', 1, 'Investor List', 12, 1 FROM t

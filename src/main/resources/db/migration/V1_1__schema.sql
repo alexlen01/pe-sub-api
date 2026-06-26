@@ -254,14 +254,14 @@ CREATE TABLE fm_suggestions (
 );
 
 -- ── BB template registry ───────────────────────────────────────────────────────
--- bb_templates: one row per agent bank template variant; top-level structural flags tell
+-- bb_templates: one row per named template variant; top-level structural flags tell
 --   the extraction engine how to interpret the workbook before column parsing begins.
 -- bb_template_tabs: one row per Excel tab per template; drives per-tab extraction.
 -- bb_template_groups: group-header rows (e.g. "Rated Investors") that set the
 --   inherited LP Category for all LP rows beneath them.
 --
 -- template_class encodes the structural variant so the unique key is
--- (agent_bank, template_class) — an agent may submit more than one distinct layout:
+-- (template_name, template_class) — a template may have more than one distinct layout:
 --   Class A — Full BB Schedule, group-header classification, numerical ratings,
 --              Tranche A / Tranche B summary; colour-coded RCL / transferee rows.
 --   Class B — Full BB Schedule, per-row "Investor Category" column, single summary table.
@@ -269,7 +269,7 @@ CREATE TABLE fm_suggestions (
 --              binary included / excluded logic only (SVB / First Citizens format).
 CREATE TABLE bb_templates (
     id                        SERIAL PRIMARY KEY,
-    agent_bank                VARCHAR(255) NOT NULL,
+    template_name             VARCHAR(255) NOT NULL,
     template_class            VARCHAR(10)  NOT NULL DEFAULT 'A',
     -- sheet_name / header_row_index kept as a single-tab shortcut; superseded by
     -- bb_template_tabs for multi-tab workbooks.
@@ -284,8 +284,8 @@ CREATE TABLE bb_templates (
     updated_at                TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX idx_bb_templates_bank_class
-    ON bb_templates (LOWER(agent_bank), template_class);
+CREATE UNIQUE INDEX idx_bb_templates_name_class
+    ON bb_templates (LOWER(template_name), template_class);
 
 -- tab_role values:
 --   LP_GRID       Primary LP grid (commitments, ratings, advance rates) — main extraction target

@@ -2,10 +2,10 @@
 -- Single-tab BB schedule with 5 LP category group sections and colour flags.
 -- Note: group 2 header text contains agent-generated typo "Inlcuded" — stored verbatim.
 
-INSERT INTO bb_templates (agent_bank, template_class, sheet_name, header_row_index,
+INSERT INTO bb_templates (template_name, template_class, sheet_name, header_row_index,
     auto_learned, tranche_count, has_grouping_rows, has_color_flags, summary_rows_above_header)
 VALUES ('Petershill IV / Wells Fargo', 'A', 'Borrowing Base', 10, FALSE, 1, TRUE, TRUE, 9)
-ON CONFLICT (LOWER(agent_bank), template_class) DO UPDATE SET
+ON CONFLICT (LOWER(template_name), template_class) DO UPDATE SET
     sheet_name = EXCLUDED.sheet_name,
     header_row_index = EXCLUDED.header_row_index,
     tranche_count = EXCLUDED.tranche_count,
@@ -15,7 +15,7 @@ ON CONFLICT (LOWER(agent_bank), template_class) DO UPDATE SET
 
 WITH t AS (
     SELECT id FROM bb_templates
-    WHERE agent_bank = 'Petershill IV / Wells Fargo' AND template_class = 'A'
+    WHERE template_name = 'Petershill IV / Wells Fargo' AND template_class = 'A'
 )
 INSERT INTO bb_template_tabs (template_id, tab_role, tab_sort, sheet_name, header_row_index, header_row_span)
 SELECT t.id, 'LP_GRID', 1, 'Borrowing Base', 10, 1 FROM t
@@ -28,7 +28,7 @@ WITH tab AS (
     SELECT bt.id AS tab_id
     FROM bb_template_tabs bt
     JOIN bb_templates tmpl ON tmpl.id = bt.template_id
-    WHERE tmpl.agent_bank = 'Petershill IV / Wells Fargo'
+    WHERE tmpl.template_name = 'Petershill IV / Wells Fargo'
       AND tmpl.template_class = 'A'
       AND bt.tab_role = 'LP_GRID'
 )

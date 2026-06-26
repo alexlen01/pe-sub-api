@@ -81,7 +81,7 @@ public class BbTemplateImportService {
         }
 
         return new BbTemplateRequest(
-            required(tmplRow, "agent_bank", "Template sheet"),
+            required(tmplRow, "template_name", "Template sheet"),
             required(tmplRow, "template_class", "Template sheet"),
             tmplRow.get("sheet_name"),
             intOrNull(tmplRow.get("header_row_index")),

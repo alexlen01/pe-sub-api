@@ -93,7 +93,7 @@ public class BbTemplateService {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private BbTemplate applyRequest(BbTemplate entity, BbTemplateRequest req) {
-        entity.setAgentBank(req.agentBank());
+        entity.setTemplateName(req.templateName());
         entity.setTemplateClass(req.templateClass());
         entity.setSheetName(req.sheetName());
         entity.setHeaderRowIndex(req.headerRowIndex());

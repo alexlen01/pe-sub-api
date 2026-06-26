@@ -11,8 +11,8 @@ public class BbTemplate {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
-    @Column(name = "agent_bank", nullable = false)
-    private String agentBank;
+    @Column(name = "template_name", nullable = false)
+    private String templateName;
 
     @Column(name = "template_class", nullable = false)
     private String templateClass = "A";
@@ -51,7 +51,7 @@ public class BbTemplate {
     void onUpdate() { updatedAt = LocalDateTime.now(); }
 
     public Integer getId()                   { return id; }
-    public String  getAgentBank()            { return agentBank; }
+    public String  getTemplateName()         { return templateName; }
     public String  getTemplateClass()        { return templateClass; }
     public String  getSheetName()            { return sheetName; }
     public Integer getHeaderRowIndex()       { return headerRowIndex; }
@@ -63,7 +63,7 @@ public class BbTemplate {
     public LocalDateTime getCreatedAt()      { return createdAt; }
     public LocalDateTime getUpdatedAt()      { return updatedAt; }
 
-    public void setAgentBank(String v)              { this.agentBank             = v; }
+    public void setTemplateName(String v)           { this.templateName          = v; }
     public void setTemplateClass(String v)          { this.templateClass         = v; }
     public void setSheetName(String v)              { this.sheetName             = v; }
     public void setHeaderRowIndex(Integer v)        { this.headerRowIndex        = v; }

@@ -62,7 +62,7 @@ class BbSampleTemplateSeedTest extends IntegrationTestBase {
 
     @Test
     void carlyleCpVii_lpGridTab_carriesStackedHeaderSpan() {
-        BbTemplate cp = templateRepo.findAllByAgentBankIgnoreCase("CP VII / Silicon Valley Bank").getFirst();
+        BbTemplate cp = templateRepo.findAllByTemplateNameIgnoreCase("CP VII / Silicon Valley Bank").getFirst();
         BbTemplateTab grid = tabRepo.findByTemplateIdAndTabRole(cp.getId(), TabRole.LP_GRID).orElseThrow();
 
         assertThat(grid.getHeaderRowIndex()).isEqualTo(83);  // 0-based: Excel row 84
@@ -72,7 +72,7 @@ class BbSampleTemplateSeedTest extends IntegrationTestBase {
 
     @Test
     void singleHeaderTemplates_defaultToSpanOne() {
-        BbTemplate kkr = templateRepo.findAllByAgentBankIgnoreCase("KKR Ascendant Fund / JP Morgan").getFirst();
+        BbTemplate kkr = templateRepo.findAllByTemplateNameIgnoreCase("KKR Ascendant Fund / JP Morgan").getFirst();
         BbTemplateTab grid = tabRepo.findByTemplateIdAndTabRole(kkr.getId(), TabRole.LP_GRID).orElseThrow();
         assertThat(grid.getHeaderRowSpan()).isEqualTo(1);
         assertThat(grid.getHeaderRowIndex()).isEqualTo(9);   // 0-based: Excel row 10
@@ -80,7 +80,7 @@ class BbSampleTemplateSeedTest extends IntegrationTestBase {
 
     @Test
     void blueOwlWfTemplate_hasCorrectSheetAndHeaderRow() {
-        BbTemplate template = templateRepo.findAllByAgentBankIgnoreCase("Blue Owl GP Stakes V / Wells Fargo").getFirst();
+        BbTemplate template = templateRepo.findAllByTemplateNameIgnoreCase("Blue Owl GP Stakes V / Wells Fargo").getFirst();
         BbTemplateTab grid = tabRepo.findByTemplateIdAndTabRole(template.getId(), TabRole.LP_GRID).orElseThrow();
         assertThat(grid.getSheetName()).isEqualTo("Agent BB");
         assertThat(grid.getHeaderRowIndex()).isEqualTo(17);  // 0-based: Excel row 18

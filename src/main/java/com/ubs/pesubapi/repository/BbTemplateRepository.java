@@ -7,6 +7,6 @@ import java.util.List;
 import java.util.Optional;
 
 public interface BbTemplateRepository extends JpaRepository<BbTemplate, Integer> {
-    List<BbTemplate> findAllByAgentBankIgnoreCase(String agentBank);
-    Optional<BbTemplate> findByAgentBankIgnoreCaseAndTemplateClass(String agentBank, String templateClass);
+    List<BbTemplate> findAllByTemplateNameIgnoreCase(String templateName);
+    Optional<BbTemplate> findByTemplateNameIgnoreCaseAndTemplateClass(String templateName, String templateClass);
 }

@@ -25,11 +25,11 @@ import java.util.Optional;
  * group-header rows (e.g. "Designated PWM") rather than a per-row column. The
  * bb_template_groups table holds, per template tab, the header text and the canonical
  * Agent LP Classification it maps to. This service serialises those rows for the
- * agent bank of the current submission into a JSON map of shape
+ * template name of the current submission into a JSON map of shape
  * {@code { "Designated PWM Investors": "Designated PWM", ... }} so the extraction
  * engine can recognise the section rows and fill the classification down.
  *
- * Returns null when no template / group config exists for the bank — the extraction
+ * Returns null when no template / group config exists for the template name — the extraction
  * service then falls back to recognising the standard Agent LP Classification values
  * by their canonical names.
  */
@@ -54,22 +54,22 @@ public class ClassificationConfigBuilder {
     }
 
     /**
-     * Returns a JSON string of {@code { headerText: classification }} for the agent bank's
+     * Returns a JSON string of {@code { headerText: classification }} for the template's
      * LP_GRID tab group headers, or null when none are configured.
      */
-    public String buildJson(String agentBank) {
-        return buildJson(agentBank, null);
+    public String buildJson(String templateName) {
+        return buildJson(templateName, null);
     }
 
     /**
-     * Returns group-header config for the selected agent bank. If the facility agent bank does
+     * Returns group-header config for the selected template. If the facility agent bank does
      * not directly identify a seeded grouping template, falls back to the operator-forced fund
      * template name (e.g. "Petershill IV" -> "Petershill IV / Wells Fargo").
      */
-    public String buildJson(String agentBank, String forceTemplate) {
+    public String buildJson(String templateName, String forceTemplate) {
         // When an agent uses multiple template classes (e.g. Wells Fargo Class A and B),
         // group-header classification only applies to the template that has grouping rows.
-        Optional<BbTemplate> template = findGroupingTemplate(agentBank, forceTemplate);
+        Optional<BbTemplate> template = findGroupingTemplate(templateName, forceTemplate);
         if (template.isEmpty()) return null;
 
         Optional<BbTemplateTab> lpGrid =
@@ -88,34 +88,34 @@ public class ClassificationConfigBuilder {
             return mapper.writeValueAsString(config);
         } catch (JsonProcessingException e) {
             log.warn("Failed to serialise classification config for {} — extraction will use standard values: {}",
-                agentBank, e.getMessage());
+                templateName, e.getMessage());
             return null;
         }
     }
 
-    private Optional<BbTemplate> findGroupingTemplate(String agentBank, String forceTemplate) {
+    private Optional<BbTemplate> findGroupingTemplate(String templateName, String forceTemplate) {
         String forcedKey = normalize(forceTemplate);
         if (forcedKey != null) {
             Optional<BbTemplate> forced = templateRepo.findAll().stream()
                 .filter(BbTemplate::isHasGroupingRows)
-                .filter(t -> matchesForcedTemplate(t.getAgentBank(), forcedKey))
+                .filter(t -> matchesForcedTemplate(t.getTemplateName(), forcedKey))
                 .findFirst();
             if (forced.isPresent()) return forced;
         }
 
-        if (agentBank != null && !agentBank.isBlank()) {
-            Optional<BbTemplate> byAgent = templateRepo.findAllByAgentBankIgnoreCase(agentBank)
+        if (templateName != null && !templateName.isBlank()) {
+            Optional<BbTemplate> byTemplateName = templateRepo.findAllByTemplateNameIgnoreCase(templateName)
                 .stream()
                 .filter(BbTemplate::isHasGroupingRows)
                 .findFirst();
-            if (byAgent.isPresent()) return byAgent;
+            if (byTemplateName.isPresent()) return byTemplateName;
         }
 
         return Optional.empty();
     }
 
-    private boolean matchesForcedTemplate(String agentBank, String forcedKey) {
-        String templateKey = normalize(agentBank);
+    private boolean matchesForcedTemplate(String templateName, String forcedKey) {
+        String templateKey = normalize(templateName);
         return templateKey != null
             && (templateKey.equals(forcedKey) || templateKey.startsWith(forcedKey + " "));
     }
