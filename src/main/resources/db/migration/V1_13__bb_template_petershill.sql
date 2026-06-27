@@ -36,7 +36,7 @@ INSERT INTO bb_template_groups (tab_id, group_sort, header_text, classification)
 SELECT tab.tab_id, gs.group_sort, gs.header_text, gs.classification
 FROM tab, (VALUES
     (1, 'Included Investors (Rated)',           'Rated Included'),
-    (2, 'Inlcuded Investors (Non-Rated)',        'Non-Rated Included'),
+    (2, 'Included Investors (Non-Rated)',        'Non-Rated Included'),
     (3, 'Institutional Designated Investors',    'Designated Institutional'),
     (4, 'PWM Designated Investors',              'Designated PWM'),
     (5, 'Excluded Investors',                    'Ineligible Investors')

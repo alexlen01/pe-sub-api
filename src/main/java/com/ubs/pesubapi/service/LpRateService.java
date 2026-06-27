@@ -2,7 +2,6 @@ package com.ubs.pesubapi.service;
 
 import com.ubs.pesubapi.dto.LpRateBatchRequest;
 import com.ubs.pesubapi.dto.LpRateDto;
-import com.ubs.pesubapi.entity.Lp;
 import com.ubs.pesubapi.entity.LpRate;
 import com.ubs.pesubapi.repository.LpRateRepository;
 import com.ubs.pesubapi.repository.LpRepository;
