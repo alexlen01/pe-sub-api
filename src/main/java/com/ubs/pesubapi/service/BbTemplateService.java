@@ -11,6 +11,8 @@ import com.ubs.pesubapi.entity.BbTemplateTab.TabRole;
 import com.ubs.pesubapi.repository.BbTemplateGroupRepository;
 import com.ubs.pesubapi.repository.BbTemplateRepository;
 import com.ubs.pesubapi.repository.BbTemplateTabRepository;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +37,7 @@ public class BbTemplateService {
 
     // ── Queries ────────────────────────────────────────────────────────────────
 
+    @Cacheable("bb-templates")
     @Transactional(readOnly = true)
     public List<BbTemplateDto> list() {
         return templateRepo.findAll().stream()
@@ -52,6 +55,7 @@ public class BbTemplateService {
 
     // ── Mutations ─────────────────────────────────────────────────────────────
 
+    @CacheEvict(value = "bb-templates", allEntries = true)
     @SuppressWarnings("null")
     @Transactional
     public BbTemplateDto create(BbTemplateRequest req) {
@@ -61,6 +65,7 @@ public class BbTemplateService {
         return toDto(entity);
     }
 
+    @CacheEvict(value = "bb-templates", allEntries = true)
     @SuppressWarnings("null")
     @Transactional
     public BbTemplateDto update(int id, BbTemplateRequest req) {
@@ -81,6 +86,7 @@ public class BbTemplateService {
         return toDto(entity);
     }
 
+    @CacheEvict(value = "bb-templates", allEntries = true)
     @Transactional
     public void delete(int id) {
         if (!templateRepo.existsById(id)) {

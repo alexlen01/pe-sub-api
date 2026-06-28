@@ -106,16 +106,27 @@ public class SubmissionController {
         this.mapper             = mapper;
     }
 
-    private record TemplateHints(String sheetName, Integer headerRowIndex, Integer headerRowSpan) {}
+    private record TemplateHints(String sheetName, Integer headerRowIndex, Integer headerRowSpan,
+                                 List<String> sheetNames, List<String> sleeveNames,
+                                 boolean autoDiscoverTabs) {
+        TemplateHints(String sheetName, Integer headerRowIndex, Integer headerRowSpan) {
+            this(sheetName, headerRowIndex, headerRowSpan, List.of(), List.of(), false);
+        }
+    }
 
     // Resolves extraction hints for a registered template name. The LP_GRID tab is the
     // canonical source of sheet name / header row / header span; the bb_templates
     // top-level columns are a single-tab shortcut fallback (used by auto-learned templates).
     //
-    // When multiple templates exist for the same bank (e.g. Goldman Sachs Class A and Class B),
-    // the header row differs per class and cannot be determined without column-signature matching.
-    // In that case only the sheet name is supplied (shared across classes); the extraction
-    // engine's alias-scoring heuristic then locates the correct header row autonomously.
+    // Multi-tab workbooks (e.g. Audax Fund VII with Nerdio/Apptio/Marlin sleeves):
+    //   When multiple LP_GRID tabs are registered, sheetNames carries all tab names in
+    //   order and sheetName/headerRow are taken from the first tab as a hint for the
+    //   extraction engine's header detection.
+    //
+    // Auto-discover workbooks (e.g. CCP VII Lev M & M):
+    //   When auto_discover_tabs = TRUE the engine scans all sheets; sheetNames is empty
+    //   and autoDiscoverTabs is set. The LP_GRID tab's headerRowIndex still anchors
+    //   the header-detection scan for each discovered sheet.
     private TemplateHints hintsFor(String agentBank, String forcedTemplate) {
         List<BbTemplate> templates = templatesFor(agentBank, forcedTemplate);
         if (templates.isEmpty()) {
@@ -125,7 +136,7 @@ public class SubmissionController {
         }
         if (templates.size() > 1) {
             String sharedSheet = templates.stream()
-                .map(template -> template.getSheetName())
+                .map(BbTemplate::getSheetName)
                 .filter(s -> s != null)
                 .findFirst().orElse(null);
             log.info("Template hints: {} candidate templates for agentBank='{}' forcedTemplate='{}'; using shared sheet='{}' and leaving header auto-detected",
@@ -133,11 +144,36 @@ public class SubmissionController {
             return new TemplateHints(sharedSheet, null, null);
         }
         BbTemplate t = templates.getFirst();
-        BbTemplateTab grid = tabRepo
-            .findByTemplateIdAndTabRole(t.getId(), TabRole.LP_GRID)
-            .orElse(null);
-        String  sheet  = grid != null && grid.getSheetName()      != null ? grid.getSheetName()      : t.getSheetName();
-        Integer header = grid != null && grid.getHeaderRowIndex()  != null ? grid.getHeaderRowIndex() : t.getHeaderRowIndex();
+
+        List<BbTemplateTab> lpGridTabs = tabRepo
+            .findByTemplateIdAndTabRoleOrderByTabSortAsc(t.getId(), TabRole.LP_GRID);
+
+        // Multi-tab named sleeves
+        if (lpGridTabs.size() > 1) {
+            List<String> sheetNames  = lpGridTabs.stream().map(BbTemplateTab::getSheetName).toList();
+            List<String> sleeveNames = lpGridTabs.stream().map(BbTemplateTab::getSleeveName).toList();
+            BbTemplateTab first = lpGridTabs.getFirst();
+            Integer header = first.getHeaderRowIndex() != null ? first.getHeaderRowIndex() : t.getHeaderRowIndex();
+            Integer span   = first.getHeaderRowSpan();
+            log.info("Template hints: multi-tab bb_template='{}' class={} sleeves={} headerRowIndex={} headerRowSpan={}",
+                t.getTemplateName(), t.getTemplateClass(), sheetNames, header, span);
+            return new TemplateHints(sheetNames.getFirst(), header, span, sheetNames, sleeveNames, false);
+        }
+
+        // Auto-discover tabs
+        if (t.isAutoDiscoverTabs()) {
+            BbTemplateTab ref = lpGridTabs.isEmpty() ? null : lpGridTabs.getFirst();
+            Integer header = ref != null && ref.getHeaderRowIndex() != null ? ref.getHeaderRowIndex() : t.getHeaderRowIndex();
+            Integer span   = ref != null ? ref.getHeaderRowSpan() : null;
+            log.info("Template hints: auto-discover-tabs bb_template='{}' class={} headerRowIndex={} headerRowSpan={}",
+                t.getTemplateName(), t.getTemplateClass(), header, span);
+            return new TemplateHints(null, header, span, List.of(), List.of(), true);
+        }
+
+        // Single tab (existing behaviour)
+        BbTemplateTab grid = lpGridTabs.isEmpty() ? null : lpGridTabs.getFirst();
+        String  sheet  = grid != null && grid.getSheetName()     != null ? grid.getSheetName()     : t.getSheetName();
+        Integer header = grid != null && grid.getHeaderRowIndex() != null ? grid.getHeaderRowIndex() : t.getHeaderRowIndex();
         Integer span   = grid != null ? grid.getHeaderRowSpan() : null;
         log.info("Template hints: using bb_template='{}' class={} sheet='{}' headerRowIndex={} headerRowSpan={} forcedTemplate='{}'",
             t.getTemplateName(), t.getTemplateClass(), sheet, header, span, forcedTemplate);
@@ -163,7 +199,9 @@ public class SubmissionController {
     private boolean templateNameMatches(String templateName, String forcedKey) {
         String templateKey = normalizedTemplateKey(templateName);
         return templateKey != null
-            && (templateKey.equals(forcedKey) || templateKey.startsWith(forcedKey + " "));
+            && (templateKey.equals(forcedKey)
+                || templateKey.startsWith(forcedKey + " ")
+                || templateKey.endsWith(" " + forcedKey));
     }
 
     private String normalizedTemplateKey(String value) {
@@ -227,11 +265,16 @@ public class SubmissionController {
                                        String userName, String ip) {
         String forcedTemplate = normalizeForcedTemplate(forceTemplate);
         TemplateHints hints = hintsFor(sub.getAgentBank(), forcedTemplate);
-        log.info("Starting extraction submission={} facilityId={} agentBank='{}' file='{}' forcedTemplate='{}' hints(sheet='{}', headerRowIndex={}, headerRowSpan={})",
+        boolean isMultiTab = !hints.sheetNames().isEmpty() || hints.autoDiscoverTabs();
+        log.info("Starting extraction submission={} facilityId={} agentBank='{}' file='{}' forcedTemplate='{}' hints(sheet='{}', headerRowIndex={}, headerRowSpan={}, sheetNames={}, autoDiscover={})",
             sub.getId(), facilityId, sub.getAgentBank(), sub.getFileName(), forcedTemplate,
-            hints.sheetName(), hints.headerRowIndex(), hints.headerRowSpan());
-        ExtractionResponse extraction =
-            extractionClient.extract(String.valueOf(facilityId), filePath,
+            hints.sheetName(), hints.headerRowIndex(), hints.headerRowSpan(),
+            hints.sheetNames(), hints.autoDiscoverTabs());
+        ExtractionResponse extraction = isMultiTab
+            ? extractionClient.extract(String.valueOf(facilityId), filePath,
+                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
+                forcedTemplate, hints.sheetNames(), hints.autoDiscoverTabs())
+            : extractionClient.extract(String.valueOf(facilityId), filePath,
                 hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
                 forcedTemplate);
 
@@ -303,6 +346,7 @@ public class SubmissionController {
                 ObjectNode row = mapper.createObjectNode();
                 row.put("id",           seqId++);
                 row.put("rowIndex",     rec.rowIndex());
+                if (rec.fundSleeve() != null) row.put("fundSleeve", rec.fundSleeve());
                 row.put("name",         fieldStr(rec.fields(), "INVESTOR_NAME"));
                 row.put("agentClass",   fieldStr(rec.fields(), "AGENT_LP_CLASSIFICATION"));
                 row.put("commit",       fmtMoney(fieldDec(rec.fields(), "COMMITMENT")));
@@ -505,11 +549,16 @@ public class SubmissionController {
         log.info("Re-extract called for submission {} resolved forcedTemplate={}", id, forcedTemplate);
 
         TemplateHints hints = hintsFor(sub.getAgentBank(), forcedTemplate);
-        log.info("Starting re-extraction submission={} facilityId={} agentBank='{}' file='{}' forcedTemplate='{}' hints(sheet='{}', headerRowIndex={}, headerRowSpan={})",
+        boolean isMultiTab = !hints.sheetNames().isEmpty() || hints.autoDiscoverTabs();
+        log.info("Starting re-extraction submission={} facilityId={} agentBank='{}' file='{}' forcedTemplate='{}' hints(sheet='{}', headerRowIndex={}, headerRowSpan={}, sheetNames={}, autoDiscover={})",
             id, sub.getFacilityId(), sub.getAgentBank(), sub.getFileName(), forcedTemplate,
-            hints.sheetName(), hints.headerRowIndex(), hints.headerRowSpan());
-        ExtractionResponse extraction =
-            extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
+            hints.sheetName(), hints.headerRowIndex(), hints.headerRowSpan(),
+            hints.sheetNames(), hints.autoDiscoverTabs());
+        ExtractionResponse extraction = isMultiTab
+            ? extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
+                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
+                forcedTemplate, hints.sheetNames(), hints.autoDiscoverTabs())
+            : extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
                 hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
                 forcedTemplate);
         if (extraction == null) {
@@ -630,8 +679,12 @@ public class SubmissionController {
         String forcedTemplate = resolveForcedTemplate(id, null);
         log.info("Remap called for submission {} resolved forcedTemplate={}", id, forcedTemplate);
         TemplateHints hints = hintsFor(sub.getAgentBank(), forcedTemplate);
-        ExtractionResponse extraction =
-            extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
+        boolean isMultiTabRemap = !hints.sheetNames().isEmpty() || hints.autoDiscoverTabs();
+        ExtractionResponse extraction = isMultiTabRemap
+            ? extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
+                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
+                forcedTemplate, hints.sheetNames(), hints.autoDiscoverTabs())
+            : extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
                 hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
                 forcedTemplate);
         if (extraction == null) {

@@ -51,6 +51,16 @@
       <groupId>org.flywaydb</groupId>
       <artifactId>flyway-database-postgresql</artifactId>
     </dependency>
+    <!-- Spring Cache + Caffeine — TTL-based in-process cache for low-churn lookup data -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-cache</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.github.ben-manes.caffeine</groupId>
+      <artifactId>caffeine</artifactId>
+    </dependency>
+
     <!-- Apache POI — Excel (.xlsx) parsing for BB template import -->
     <dependency>
       <groupId>org.apache.poi</groupId>

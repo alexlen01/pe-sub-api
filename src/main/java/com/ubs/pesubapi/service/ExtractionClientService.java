@@ -12,6 +12,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Objects;
 
 @Service
@@ -67,6 +68,22 @@ public class ExtractionClientService {
                                       String sheetNameHint, Integer headerRowHint,
                                       String agentBank, Integer headerRowSpan,
                                       String forceTemplate) {
+        return extract(facilityId, filePath, sheetNameHint, headerRowHint, agentBank,
+            headerRowSpan, forceTemplate, null, false);
+    }
+
+    /**
+     * Multi-tab extraction: pass an ordered list of sheet names (named sleeves) or set
+     * autoDiscoverTabs=true so the engine scans every sheet in the workbook.
+     * When sheetNames is non-empty the engine extracts each sheet in order and tags
+     * each LP record with the sheet name as fundSleeve.
+     */
+    public ExtractionResponse extract(String facilityId, Path filePath,
+                                      String sheetNameHint, Integer headerRowHint,
+                                      String agentBank, Integer headerRowSpan,
+                                      String forceTemplate,
+                                      List<String> sheetNames,
+                                      boolean autoDiscoverTabs) {
         try {
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             body.add("facilityId", facilityId);
@@ -76,24 +93,26 @@ public class ExtractionClientService {
             if (aliasJson    != null) body.add("aliasConfig",   aliasJson);
             if (sheetNameHint != null) body.add("sheetNameHint", sheetNameHint);
             if (headerRowHint != null) body.add("headerRowHint", String.valueOf(headerRowHint));
-            // Only send a span > 1 (stacked header); 1 is the engine default.
             if (headerRowSpan != null && headerRowSpan > 1) body.add("headerRowSpan", String.valueOf(headerRowSpan));
 
             String classificationJson = classificationConfigBuilder.buildJson(agentBank, forceTemplate);
             if (classificationJson != null) body.add("classificationConfig", classificationJson);
 
-            // The selected agent bank is the authoritative format fallback when the workbook
-            // itself carries no recognisable bank name (e.g. fund-branded templates).
             if (agentBank != null && !agentBank.isBlank()) body.add("agentBank", agentBank);
-
-            // An operator-forced fund template (picked from the Document Recognition dropdown)
-            // overrides column-signature auto-matching in the extraction engine.
             if (forceTemplate != null && !forceTemplate.isBlank()) body.add("forceTemplate", forceTemplate);
 
-            log.info("Calling pe-sub-extraction facilityId={} file='{}' agentBank='{}' sheetHint='{}' headerRowHint={} headerRowSpan={} forcedTemplate='{}' aliasConfig={} classificationConfig={}",
+            if (sheetNames != null && !sheetNames.isEmpty()) {
+                sheetNames.forEach(s -> body.add("sheetNames", s));
+            }
+            if (autoDiscoverTabs) {
+                body.add("autoDiscoverTabs", "true");
+            }
+
+            log.info("Calling pe-sub-extraction facilityId={} file='{}' agentBank='{}' sheetHint='{}' headerRowHint={} headerRowSpan={} forcedTemplate='{}' sheetNames={} autoDiscoverTabs={} aliasConfig={} classificationConfig={}",
                 facilityId,
                 filePath != null ? filePath.getFileName() : null,
                 agentBank, sheetNameHint, headerRowHint, headerRowSpan, forceTemplate,
+                sheetNames, autoDiscoverTabs,
                 aliasJson != null ? "present" : "absent",
                 classificationJson != null ? "present" : "absent");
 

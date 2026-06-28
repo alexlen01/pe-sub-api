@@ -38,6 +38,9 @@ public class BbTemplate {
     @Column(name = "summary_rows_above_header", nullable = false)
     private int summaryRowsAboveHeader = 0;
 
+    @Column(name = "auto_discover_tabs", nullable = false)
+    private boolean autoDiscoverTabs = false;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -60,6 +63,7 @@ public class BbTemplate {
     public boolean isHasGroupingRows()       { return hasGroupingRows; }
     public boolean isHasColorFlags()         { return hasColorFlags; }
     public int     getSummaryRowsAboveHeader(){ return summaryRowsAboveHeader; }
+    public boolean isAutoDiscoverTabs()      { return autoDiscoverTabs; }
     public LocalDateTime getCreatedAt()      { return createdAt; }
     public LocalDateTime getUpdatedAt()      { return updatedAt; }
 
@@ -72,4 +76,5 @@ public class BbTemplate {
     public void setHasGroupingRows(boolean v)       { this.hasGroupingRows       = v; }
     public void setHasColorFlags(boolean v)         { this.hasColorFlags         = v; }
     public void setSummaryRowsAboveHeader(int v)    { this.summaryRowsAboveHeader= v; }
+    public void setAutoDiscoverTabs(boolean v)      { this.autoDiscoverTabs     = v; }
 }

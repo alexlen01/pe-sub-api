@@ -8,8 +8,8 @@ import java.util.List;
 
 @Entity
 @Table(name = "bb_template_tabs",
-       uniqueConstraints = @UniqueConstraint(name = "uq_template_tab_role",
-                                             columnNames = {"template_id", "tab_role"}))
+       uniqueConstraints = @UniqueConstraint(name = "uq_template_tab_sort",
+                                             columnNames = {"template_id", "tab_sort"}))
 public class BbTemplateTab {
 
     public enum TabRole { LP_GRID, CONCENTRATION, CAPITAL_CALL, TOP_SHEET }
@@ -31,6 +31,10 @@ public class BbTemplateTab {
 
     @Column(name = "sheet_name")
     private String sheetName;
+
+    // Display label for this fund sleeve; defaults to sheetName when null.
+    @Column(name = "sleeve_name")
+    private String sleeveName;
 
     @Column(name = "header_row_index")
     private Integer headerRowIndex;
@@ -54,6 +58,7 @@ public class BbTemplateTab {
     public TabRole       getTabRole()         { return tabRole; }
     public int           getTabSort()         { return tabSort; }
     public String        getSheetName()       { return sheetName; }
+    public String        getSleeveName()      { return sleeveName != null ? sleeveName : sheetName; }
     public Integer       getHeaderRowIndex()  { return headerRowIndex; }
     public int           getHeaderRowSpan()   { return headerRowSpan; }
     public List<String>  getSkipRowKeywords() { return skipRowKeywords; }
@@ -63,6 +68,7 @@ public class BbTemplateTab {
     public void setTabRole(TabRole v)             { this.tabRole         = v; }
     public void setTabSort(int v)                 { this.tabSort         = v; }
     public void setSheetName(String v)            { this.sheetName       = v; }
+    public void setSleeveName(String v)           { this.sleeveName      = v; }
     public void setHeaderRowIndex(Integer v)      { this.headerRowIndex  = v; }
     public void setHeaderRowSpan(int v)           { this.headerRowSpan   = v; }
     public void setSkipRowKeywords(List<String> v){ this.skipRowKeywords = v; }

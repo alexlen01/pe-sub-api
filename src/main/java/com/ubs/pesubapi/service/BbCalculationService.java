@@ -34,7 +34,8 @@ public class BbCalculationService {
         Map.entry("FoF & Other > $10Bn AUM",     0.75),
         Map.entry("Unrated NAV > $1Bn",          0.65),
         Map.entry("Corp Pension > $5Bn Assets", 0.65),
-        Map.entry("Other Institutional",         0.50)
+        Map.entry("Other Institutional",         0.50),
+        Map.entry("Included (PWM)",              0.50)
     );
 
     /** Returns the BUSA advance rate for a given LP classification. */

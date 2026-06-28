@@ -22,7 +22,8 @@ public record ExtractionResponse(
         int rowIndex,
         Map<String, FieldValue> fields,
         boolean requiresReview,
-        List<Warning> warnings
+        List<Warning> warnings,
+        String fundSleeve
     ) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)

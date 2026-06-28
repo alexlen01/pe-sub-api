@@ -64,7 +64,7 @@ public class ClassificationConfigBuilder {
     /**
      * Returns group-header config for the selected template. If the facility agent bank does
      * not directly identify a seeded grouping template, falls back to the operator-forced fund
-     * template name (e.g. "Petershill IV" -> "Petershill IV / Wells Fargo").
+     * template name (e.g. "Petershill IV" -> "Wells Fargo (Petershill IV)").
      */
     public String buildJson(String templateName, String forceTemplate) {
         // When an agent uses multiple template classes (e.g. Wells Fargo Class A and B),
@@ -117,7 +117,9 @@ public class ClassificationConfigBuilder {
     private boolean matchesForcedTemplate(String templateName, String forcedKey) {
         String templateKey = normalize(templateName);
         return templateKey != null
-            && (templateKey.equals(forcedKey) || templateKey.startsWith(forcedKey + " "));
+            && (templateKey.equals(forcedKey)
+                || templateKey.startsWith(forcedKey + " ")
+                || templateKey.endsWith(" " + forcedKey));
     }
 
     private String normalize(String value) {

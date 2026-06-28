@@ -1,7 +1,8 @@
 -- ╔══════════════════════════════════════════════════════════════════════════╗
--- ║  Consolidated schema — squash of the original V1_1…V1_7 migrations.         ║
--- ║  All DDL (tables, indexes, constraints) reflects the FINAL shape after      ║
--- ║  every incremental migration was folded in. Seed data lives in V1_2.        ║
+-- ║  Consolidated schema — all DDL in final form.                          ║
+-- ║  Covers original tables plus all ALTER TABLE additions from V1_3,      ║
+-- ║  V1_4, V1_5, V1_18, V1_21. Seed data lives in V1_2.                   ║
+-- ║  BB template seed rows live in V1_6–V1_13.                             ║
 -- ╚══════════════════════════════════════════════════════════════════════════╝
 
 -- ── Core tables ───────────────────────────────────────────────────────────────
@@ -19,6 +20,9 @@ CREATE TABLE users (
 -- maturity_date     : from the credit agreement on file.
 -- bank_status /
 -- bank_status_date  : agent-reported facility status from Agent Bank Summary.
+-- facility_size     : total facility size (credit agreement); used in Shadow BB summary.
+-- ubs_participation : UBS participation dollar amount; used in Shadow BB summary.
+-- collateral_date   : effective collateral / valuation date for the most recent BB run.
 CREATE TABLE facilities (
     id               SERIAL PRIMARY KEY,
     name             VARCHAR(255)   NOT NULL UNIQUE,
@@ -30,6 +34,9 @@ CREATE TABLE facilities (
     maturity_date    DATE,
     bank_status      VARCHAR(50),
     bank_status_date DATE,
+    facility_size    NUMERIC(15, 2),
+    ubs_participation NUMERIC(15, 2),
+    collateral_date  DATE,
     last_run_at      TIMESTAMP,
     created_at       TIMESTAMP      NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMP      NOT NULL DEFAULT NOW()
@@ -40,11 +47,12 @@ CREATE TABLE facilities (
 --   ubs_rate       → UBS Advance Rate         | agent_rate     → Agent Advance Rate
 --   agent_excess_conc → Agent Excess Conc Base| ubs_excess_conc → UBS Excess Conc Base
 --   agent_bb       → Agent Borrowing Base      | ubs_bb         → UBS Borrowing Base
--- recallable_dist : dollar value behind the `rcl` flag; SVB callable_cap = uncalled_capital + recallable_dist.
+-- recallable_dist : dollar value behind the `rcl` flag.
+-- source_seq      : LP's row position in the originating Agent BB (extraction row index);
+--                   nullable — legacy / manually-created LPs sort last (NULL LAST).
 --
--- One LP record per (facility_id, investor_name): LP Master is bank-wide but an LP's
--- participation is tracked per facility, so the same name appears at most once per facility.
--- This constraint is the structural guarantee behind the idempotent ingest/commit upsert.
+-- One LP record per (facility_id, investor_name): the same name appears at most once
+-- per facility. This constraint backs the idempotent ingest/commit upsert.
 CREATE TABLE lp_records (
     id                SERIAL PRIMARY KEY,
     facility_id       INTEGER      NOT NULL REFERENCES facilities(id),
@@ -83,6 +91,7 @@ CREATE TABLE lp_records (
     rcl                BOOLEAN      NOT NULL DEFAULT FALSE,
     recallable_dist    VARCHAR(50),
     transferee         BOOLEAN      NOT NULL DEFAULT FALSE,
+    source_seq         INTEGER,
     notes              TEXT,
     created_at         TIMESTAMP    NOT NULL DEFAULT NOW(),
     updated_at         TIMESTAMP    NOT NULL DEFAULT NOW(),
@@ -140,10 +149,9 @@ CREATE TABLE audit_log (
 CREATE INDEX idx_audit_log_created_at ON audit_log(created_at DESC);
 
 -- ── LP Rates feed ──────────────────────────────────────────────────────────────
--- Populated by a batch ingestion process when the rates file arrives (typically monthly).
--- Stores one row per LP per effective period; the most recent row on or before the
--- submission date is used by the Run Shadow BB calculation.
--- Rates are stored as decimals (0.9000 = 90%, 0.0750 = 7.5%) — NOT formatted strings.
+-- Stores one row per LP per effective period; the most recent row on or before
+-- the submission date is used by the Run Shadow BB calculation.
+-- Rates are stored as decimals (0.9000 = 90%) — NOT formatted strings.
 
 CREATE TABLE lp_rates (
     id                  SERIAL        PRIMARY KEY,
@@ -162,6 +170,9 @@ CREATE INDEX idx_lp_rates_lp_id          ON lp_rates (lp_id);
 
 -- ── Extraction & match-queue tables ───────────────────────────────────────────
 
+-- forced_template: operator-forced Agent BB template; null = auto-detect.
+-- When auto-detection picks the wrong fund template the operator picks the correct
+-- format from the dropdown; persisted here so every re-extraction re-applies it.
 CREATE TABLE submission_extractions (
     id                   SERIAL PRIMARY KEY,
     submission_id        INTEGER NOT NULL REFERENCES submissions(id),
@@ -174,6 +185,7 @@ CREATE TABLE submission_extractions (
     extracted_lps        JSONB,
     field_mappings       JSONB,
     unrecognized_columns JSONB,
+    forced_template      VARCHAR(120),
     created_at           TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -293,10 +305,10 @@ CREATE UNIQUE INDEX idx_bb_templates_name_class
 --   CAPITAL_CALL  Capital call log / roll-forward audit trail
 --   TOP_SHEET     Master certificate / summary (cross-check only; not parsed for LP data)
 --
--- header_row_span: stacked column headers (e.g. Carlyle CP VII rows 84-85) occupy more than
---   one physical row; the engine joins this many consecutive rows into one logical header.
+-- header_row_span: stacked column headers occupy more than one physical row; the engine
+--   joins this many consecutive rows into one logical header.
 -- skip_row_keywords: rows whose first populated cell matches any keyword (case-insensitive)
---   are discarded before LP parsing. Default covers most agent templates; override per tab.
+--   are discarded before LP parsing.
 
 CREATE TABLE bb_template_tabs (
     id                SERIAL PRIMARY KEY,

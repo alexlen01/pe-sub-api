@@ -12,8 +12,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Reads against the seeded BB template registry (V1_11 migration).
- * Blue Owl GP Stakes V / Wells Fargo (Class A) carries group-header classification rows;
- * Audax Fund VII / Silicon Valley Bank (Class B) has an LP_GRID tab but no group headers.
+ * Wells Fargo (Blue Owl GP Stakes V) (Class A) carries group-header classification rows;
+ * Silicon Valley Bank (Audax Fund VII) (Class B) has an LP_GRID tab but no group headers.
  */
 class ClassificationConfigBuilderTest extends IntegrationTestBase {
 
@@ -22,7 +22,7 @@ class ClassificationConfigBuilderTest extends IntegrationTestBase {
 
     @Test
     void buildJson_mapsSeededGroupHeadersToAgentClassification() throws Exception {
-        String json = builder.buildJson("Blue Owl GP Stakes V / Wells Fargo");
+        String json = builder.buildJson("Wells Fargo (Blue Owl GP Stakes V)");
         assertThat(json).isNotNull();
 
         Map<String, String> config = mapper.readValue(json, new TypeReference<>() {});
@@ -35,7 +35,7 @@ class ClassificationConfigBuilderTest extends IntegrationTestBase {
 
     @Test
     void buildJson_caseInsensitiveAgentBankMatch() {
-        assertThat(builder.buildJson("blue owl gp stakes v / wells fargo")).isNotNull();
+        assertThat(builder.buildJson("wells fargo (blue owl gp stakes v)")).isNotNull();
     }
 
     @Test
@@ -55,7 +55,7 @@ class ClassificationConfigBuilderTest extends IntegrationTestBase {
 
     @Test
     void buildJson_forcedFundTemplateOverridesAgentBankGroupingTemplate() throws Exception {
-        String json = builder.buildJson("Blue Owl GP Stakes V / Wells Fargo", "Petershill IV");
+        String json = builder.buildJson("Wells Fargo (Blue Owl GP Stakes V)", "Petershill IV");
         assertThat(json).isNotNull();
 
         Map<String, String> config = mapper.readValue(json, new TypeReference<>() {});
@@ -73,8 +73,8 @@ class ClassificationConfigBuilderTest extends IntegrationTestBase {
 
     @Test
     void buildJson_returnsNull_whenTemplateHasNoGroupHeaders() {
-        // Audax Fund VII has an LP_GRID tab seeded but no group-header rows.
-        assertThat(builder.buildJson("Audax Fund VII / Silicon Valley Bank")).isNull();
+        // Silicon Valley Bank (Audax Fund VII) has an LP_GRID tab seeded but no group-header rows.
+        assertThat(builder.buildJson("Silicon Valley Bank (Audax Fund VII)")).isNull();
     }
 
     @Test

@@ -12,4 +12,6 @@ public interface BbTemplateTabRepository extends JpaRepository<BbTemplateTab, In
     List<BbTemplateTab> findByTemplateIdOrderByTabSortAsc(Integer templateId);
 
     Optional<BbTemplateTab> findByTemplateIdAndTabRole(Integer templateId, TabRole tabRole);
+
+    List<BbTemplateTab> findByTemplateIdAndTabRoleOrderByTabSortAsc(Integer templateId, TabRole tabRole);
 }

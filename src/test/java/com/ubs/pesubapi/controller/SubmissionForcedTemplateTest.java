@@ -148,13 +148,13 @@ class SubmissionForcedTemplateTest extends IntegrationTestBase {
         mvc.perform(multipart("/api/submissions")
                 .file(file)
                 .param("facilityId", String.valueOf(facilityId))
-                .param("agentBank", "Blue Owl GP Stakes V / Wells Fargo")
+                .param("agentBank", "Wells Fargo (Blue Owl GP Stakes V)")
                 .param("periodMonth", "2026-06")
                 .param("forceTemplate", "Petershill IV"))
             .andExpect(status().isCreated());
 
         verify(extractionClient).extract(anyString(), any(Path.class),
-            eq("Borrowing Base"), eq(10), eq("Blue Owl GP Stakes V / Wells Fargo"), eq(1),
+            eq("Borrowing Base"), eq(10), eq("Wells Fargo (Blue Owl GP Stakes V)"), eq(1),
             eq("Petershill IV"));
     }
 
