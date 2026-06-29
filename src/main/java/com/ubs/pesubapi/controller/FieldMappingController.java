@@ -11,6 +11,8 @@ import com.ubs.pesubapi.repository.FmCanonicalFieldRepository;
 import com.ubs.pesubapi.repository.FmSuggestionRepository;
 import com.ubs.pesubapi.service.AuditLogService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +23,8 @@ import java.util.*;
 @RestController
 @RequestMapping("/api/field-mapping")
 public class FieldMappingController {
+
+    private static final Logger log = LoggerFactory.getLogger(FieldMappingController.class);
 
     record AliasEntryDto(Integer id, String text, String tier, String bank) {}
     record FieldDto(Integer id, String canonical, String lpMasterField, String disambiguation, List<AliasEntryDto> aliases) {}
@@ -132,6 +136,8 @@ public class FieldMappingController {
 
         String canonical = canonicalFieldRepo.findById(canonicalFieldId)
             .map(f -> f.getCanonical()).orElse("field " + canonicalFieldId);
+        log.info("Field mapping alias created id={} canonicalFieldId={} canonical='{}' text='{}' tier='{}' bank='{}'",
+            saved.getId(), canonicalFieldId, canonical, saved.getAliasText(), saved.getTier(), saved.getBank());
         auditService.log("Field Mapping Change", "FM Alias Added: \"" + text + "\" → " + canonical,
             null, auditService.extractIp(request));
 
@@ -144,6 +150,7 @@ public class FieldMappingController {
         if (alias == null) return ResponseEntity.notFound().build();
         String text = alias.getAliasText();
         aliasRepo.deleteById(id);
+        log.info("Field mapping alias deleted id={} text='{}'", id, text);
         auditService.log("Field Mapping Change", "FM Alias Removed: \"" + text + "\"",
             null, auditService.extractIp(request));
         return ResponseEntity.noContent().build();
@@ -178,6 +185,8 @@ public class FieldMappingController {
         }
         if (body.containsKey("bank")) alias.setBank(body.get("bank"));
         FmAlias saved = aliasRepo.save(alias);
+        log.info("Field mapping alias updated id={} oldText='{}' newText='{}' bank='{}'",
+            id, oldText, saved.getAliasText(), saved.getBank());
         auditService.log("Field Mapping Change", "FM Alias Updated: \"" + oldText + "\" → \"" + saved.getAliasText() + "\"",
             null, auditService.extractIp(request));
         return ResponseEntity.ok(new AliasEntryDto(saved.getId(), saved.getAliasText(), saved.getTier(), saved.getBank()));
@@ -189,6 +198,9 @@ public class FieldMappingController {
         s.setExtractedHeader(body.get("extractedHeader"));
         s.setCanonicalField(body.get("canonicalField"));
         s.setSuggestedBy(body.get("suggestedBy"));
-        return ResponseEntity.status(201).body(FmSuggestionDto.from(suggestionRepo.save(s)));
+        FmSuggestion saved = suggestionRepo.save(s);
+        log.info("Field mapping suggestion created id={} extractedHeader='{}' canonicalField='{}' suggestedBy='{}'",
+            saved.getId(), saved.getExtractedHeader(), saved.getCanonicalField(), saved.getSuggestedBy());
+        return ResponseEntity.status(201).body(FmSuggestionDto.from(saved));
     }
 }

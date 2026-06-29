@@ -1,8 +1,8 @@
 -- ╔══════════════════════════════════════════════════════════════════════════╗
 -- ║  Consolidated schema — all DDL in final form.                          ║
--- ║  Covers original tables plus all ALTER TABLE additions from V1_3,      ║
--- ║  V1_4, V1_5, V1_18, V1_21. Seed data lives in V1_2.                   ║
--- ║  BB template seed rows live in V1_6–V1_13.                             ║
+-- ║  Covers original tables plus all ALTER TABLE additions, including the   ║
+-- ║  V1_14 BB-template registry extension (recognition + display fields).   ║
+-- ║  Seed data lives in V1_2. BB template seed rows live in V1_15–V1_22.    ║
 -- ╚══════════════════════════════════════════════════════════════════════════╝
 
 -- ── Core tables ───────────────────────────────────────────────────────────────
@@ -92,6 +92,7 @@ CREATE TABLE lp_records (
     recallable_dist    VARCHAR(50),
     transferee         BOOLEAN      NOT NULL DEFAULT FALSE,
     source_seq         INTEGER,
+    fund_sleeve        VARCHAR(255),
     notes              TEXT,
     created_at         TIMESTAMP    NOT NULL DEFAULT NOW(),
     updated_at         TIMESTAMP    NOT NULL DEFAULT NOW(),
@@ -292,12 +293,27 @@ CREATE TABLE bb_templates (
     has_grouping_rows         BOOLEAN      NOT NULL DEFAULT FALSE,
     has_color_flags           BOOLEAN      NOT NULL DEFAULT FALSE,
     summary_rows_above_header INTEGER      NOT NULL DEFAULT 0,
+    -- V1_14 registry extension: recognition + display fields mirroring the
+    -- pe-sub-platform TemplateProfile model. template_slug is the stable id used
+    -- by recognition/UI; detect_keys/title_text/agent_name drive matching.
+    auto_discover_tabs        BOOLEAN      NOT NULL DEFAULT FALSE,
+    template_slug             VARCHAR(50),
+    agent_name                VARCHAR(255),
+    title_row                 INTEGER,
+    title_text                TEXT,
+    summary_row_range         VARCHAR(20),
+    detect_keys               JSONB        NOT NULL DEFAULT '[]',
+    legend                    JSONB        NOT NULL DEFAULT '[]',
+    notes                     JSONB        NOT NULL DEFAULT '[]',
     created_at                TIMESTAMP    NOT NULL DEFAULT NOW(),
     updated_at                TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 
 CREATE UNIQUE INDEX idx_bb_templates_name_class
     ON bb_templates (LOWER(template_name), template_class);
+
+CREATE UNIQUE INDEX idx_bb_templates_slug
+    ON bb_templates (template_slug);
 
 -- tab_role values:
 --   LP_GRID       Primary LP grid (commitments, ratings, advance rates) — main extraction target
@@ -316,13 +332,19 @@ CREATE TABLE bb_template_tabs (
     tab_role          VARCHAR(50)  NOT NULL,
     tab_sort          INTEGER      NOT NULL DEFAULT 1,
     sheet_name        VARCHAR(255),
+    sleeve_name       VARCHAR(255),
     header_row_index  INTEGER,
     header_row_span   INTEGER      NOT NULL DEFAULT 1,
     skip_row_keywords JSONB        NOT NULL
         DEFAULT '["Total","Subtotal","Sub-Total","Grand Total","Sum","Net Total"]',
+    -- Ordered column header strings exactly as they appear in the workbook;
+    -- drives recognition column-fingerprint matching and the registry display.
+    columns           JSONB        NOT NULL DEFAULT '[]',
     created_at        TIMESTAMP    NOT NULL DEFAULT NOW(),
 
-    CONSTRAINT uq_template_tab_role UNIQUE (template_id, tab_role),
+    -- Multiple LP_GRID rows per template (one per sleeve/borrower tab), so
+    -- uniqueness is by (template_id, tab_sort) rather than (template_id, tab_role).
+    CONSTRAINT uq_template_tab_sort UNIQUE (template_id, tab_sort),
     CONSTRAINT chk_tab_role CHECK (tab_role IN ('LP_GRID','CONCENTRATION','CAPITAL_CALL','TOP_SHEET'))
 );
 

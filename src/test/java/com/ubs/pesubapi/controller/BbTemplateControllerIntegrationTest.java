@@ -8,11 +8,16 @@ import com.ubs.pesubapi.repository.BbTemplateTabRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -24,6 +29,36 @@ class BbTemplateControllerIntegrationTest extends IntegrationTestBase {
     @Autowired BbTemplateRepository templateRepo;
     @Autowired BbTemplateTabRepository tabRepo;
     @Autowired BbTemplateGroupRepository groupRepo;
+
+    @Test
+    void importTemplate_petershillWorkbookCreatesTemplateAndVersionsDuplicateSlug() throws Exception {
+        Path path = Path.of("src/test/resources/templates/BB-Template-Import-petershill-iv.xlsx");
+        MockMultipartFile file = new MockMultipartFile(
+            "file",
+            "BB-Template-Import-petershill-iv.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Files.readAllBytes(path));
+
+        mvc.perform(multipart("/api/bb-templates/import").file(file))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.templateSlug").value("petershill-iv"))
+            .andExpect(jsonPath("$.templateName").value("petershill-iv"))
+            .andExpect(jsonPath("$.agentName").value("Petershill IV"))
+            .andExpect(jsonPath("$.tabs[0].headerRowIndex").value(10))
+            .andExpect(jsonPath("$.tabs[0].groups.length()").value(5))
+            .andExpect(jsonPath("$.tabs[0].groups[1].headerText").value("Inlcuded Investors (Non-Rated)"));
+
+        MockMultipartFile duplicate = new MockMultipartFile(
+            "file",
+            "BB-Template-Import-petershill-iv.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Files.readAllBytes(path));
+
+        mvc.perform(multipart("/api/bb-templates/import").file(duplicate))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.templateSlug").value("petershill-iv-1"))
+            .andExpect(jsonPath("$.templateName").value("petershill-iv-1"));
+    }
 
     @Test
     void deleteTemplate_removesTemplateTabsAndGroups() throws Exception {

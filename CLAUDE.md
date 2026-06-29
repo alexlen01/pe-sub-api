@@ -10,7 +10,8 @@ Spring Boot 3.5 / Java 21 REST API. Runs at `http://localhost:3001`.
 2. **Read only what you need.** Use `offset`/`limit` on large files. Do not speculatively read whole files.
 3. **Keep layers separate.** Controllers → Services → Repositories. Never put DB logic in a `@RestController`.
 4. **Never expose JPA entities directly.** Always convert to a Java record DTO before returning a response.
-
+5. **Strict Token Budget** Do not read more than 3 target files concurrently. If you need a cross-reference, close a previously opened file buffer mentally.
+6. **Targeted Viewing** Use specific line ranges (view_file parameter) instead of reading the entire class when inspecting methods.
 ---
 
 ## Change Workflow
@@ -22,6 +23,7 @@ Grep/Glob → Read relevant section → Understand layer → Edit → Verify
 - **Edit**: make the minimal change. Do not refactor surrounding code.
 - **Verify**: confirm the endpoint responds correctly at `localhost:3001` after any change.
 - If a fix fails twice, re-read the service/entity chain from scratch and state the root cause before trying again.
+- **Failure Loop Prevention** If the Maven install command fails twice for the same complilation or test issue, **STOP**. DO not modify the code a third time. Present an architectural diagnosis explaining why the previous two assumptions failed, and await human confirmation.
 
 ---
 

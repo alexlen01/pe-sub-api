@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ubs.pesubapi.dto.ExtractionResponse;
 import com.ubs.pesubapi.dto.IngestRequest;
+import com.ubs.pesubapi.dto.ResolvedTemplate;
+import com.ubs.pesubapi.dto.WorkbookSignals;
 import com.ubs.pesubapi.entity.BbTemplate;
 import com.ubs.pesubapi.entity.BbTemplateTab;
 import com.ubs.pesubapi.entity.BbTemplateTab.TabRole;
@@ -21,10 +23,12 @@ import com.ubs.pesubapi.repository.FmCanonicalFieldRepository;
 import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
 import com.ubs.pesubapi.repository.SubmissionExtractionRepository;
 import com.ubs.pesubapi.repository.SubmissionRepository;
+import com.ubs.pesubapi.service.AsyncTaskRunner;
 import com.ubs.pesubapi.service.AuditLogService;
 import com.ubs.pesubapi.service.ExtractionClientService;
 import com.ubs.pesubapi.service.LpIngestService;
 import com.ubs.pesubapi.service.MatchingService;
+import com.ubs.pesubapi.service.TemplateRecognitionService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.transaction.annotation.Transactional;
 import org.slf4j.Logger;
@@ -73,6 +77,8 @@ public class SubmissionController {
     private final FmAliasRepository              aliasRepo;
     private final BbTemplateRepository           templateRepo;
     private final BbTemplateTabRepository        tabRepo;
+    private final TemplateRecognitionService     recognitionService;
+    private final AsyncTaskRunner                asyncTaskRunner;
     private final ObjectMapper                   mapper;
 
     @Value("${app.uploads.path:C:/Users/alexl/apps/pe-sub/uploads}")
@@ -90,6 +96,8 @@ public class SubmissionController {
                                 FmAliasRepository aliasRepo,
                                 BbTemplateRepository templateRepo,
                                 BbTemplateTabRepository tabRepo,
+                                TemplateRecognitionService recognitionService,
+                                AsyncTaskRunner asyncTaskRunner,
                                 ObjectMapper mapper) {
         this.submissions        = submissions;
         this.facilities         = facilities;
@@ -103,6 +111,8 @@ public class SubmissionController {
         this.aliasRepo          = aliasRepo;
         this.templateRepo       = templateRepo;
         this.tabRepo            = tabRepo;
+        this.recognitionService = recognitionService;
+        this.asyncTaskRunner    = asyncTaskRunner;
         this.mapper             = mapper;
     }
 
@@ -248,39 +258,62 @@ public class SubmissionController {
         sub.setFilePath(storedPath.toString());
         if (notes != null && !notes.isBlank()) sub.setNotes(notes.trim());
         Submission saved = submissions.save(sub);
+        log.info("Submission uploaded id={} facilityId={} agentBank='{}' periodMonth='{}' file='{}' storedPath='{}' forcedTemplate='{}'",
+            saved.getId(), facilityId, agentBank, periodMonth, original, storedPath, forceTemplate);
 
         String detail = periodMonth + " · " + original + " · " + agentBank;
         auditService.log("Upload", detail, facilityId, "J. Smith", auditService.extractIp(request));
 
-        try {
-            runExtractionPipeline(saved, facilityId, storedPath, forceTemplate,
-                "J. Smith", auditService.extractIp(request));
-        } catch (Exception e) {
-            log.error("Extraction pipeline failed for submission {}", saved.getId(), e);
-        }
+        // Heavy Excel parsing must not block the UI thread: persist as Processing, hand the
+        // pipeline to the bounded extraction executor, and return immediately (202 Accepted).
+        // The client polls the submission until its status flips to Review (or Error).
+        String ip = auditService.extractIp(request);
+        asyncTaskRunner.run(() -> {
+            try {
+                runExtractionPipeline(saved, facilityId, storedPath, forceTemplate, "J. Smith", ip);
+            } catch (Exception e) {
+                log.error("Extraction pipeline failed for submission {}", saved.getId(), e);
+                submissions.findById(saved.getId()).ifPresent(s -> {
+                    s.setStatus("Error");
+                    submissions.save(s);
+                });
+            }
+        });
 
-        return ResponseEntity.status(201).body(
+        return ResponseEntity.accepted().body(
             toDto(saved, facilityOpt.get().getName()));
     }
 
     // ── Extraction pipeline ──────────────────────────────────────────────────
 
+    private record PipelineResult(ExtractionResponse extraction, ResolvedTemplate resolved) {}
+
+    // Inspect → recognise → extract. pe-sub-extraction returns raw signals; TemplateRecognitionService
+    // matches them against the bb_templates registry; the resolved definition is pushed back for a
+    // deterministic parse. Returns a null extraction (with UNKNOWN resolved) when the engine is down.
+    private PipelineResult runExtraction(int facilityId, Path filePath, String agentBank, String forcedTemplate) {
+        WorkbookSignals signals = extractionClient.inspect(String.valueOf(facilityId), filePath);
+        if (signals == null) {
+            return new PipelineResult(null, ResolvedTemplate.unknown());
+        }
+        ResolvedTemplate resolved = recognitionService.recognize(signals, agentBank, forcedTemplate);
+        log.info("Recognition facilityId={} agentBank='{}' forcedTemplate='{}' => recognized={} template='{}' sheet='{}' headerRow={} span={} sheetNames={} autoDiscover={} groups={} matchedBy='{}'",
+            facilityId, agentBank, forcedTemplate, resolved.recognized(), resolved.templateName(),
+            resolved.sheetName(), resolved.headerRowIndex(), resolved.headerRowSpan(),
+            resolved.sheetNames(), resolved.autoDiscoverTabs(), resolved.groupMap().size(), resolved.matchedBy());
+        ExtractionResponse extraction = extractionClient.extractResolved(
+            String.valueOf(facilityId), filePath, agentBank, resolved);
+        return new PipelineResult(extraction, resolved);
+    }
+
     private void runExtractionPipeline(Submission sub, int facilityId, Path filePath, String forceTemplate,
                                        String userName, String ip) {
         String forcedTemplate = normalizeForcedTemplate(forceTemplate);
-        TemplateHints hints = hintsFor(sub.getAgentBank(), forcedTemplate);
-        boolean isMultiTab = !hints.sheetNames().isEmpty() || hints.autoDiscoverTabs();
-        log.info("Starting extraction submission={} facilityId={} agentBank='{}' file='{}' forcedTemplate='{}' hints(sheet='{}', headerRowIndex={}, headerRowSpan={}, sheetNames={}, autoDiscover={})",
-            sub.getId(), facilityId, sub.getAgentBank(), sub.getFileName(), forcedTemplate,
-            hints.sheetName(), hints.headerRowIndex(), hints.headerRowSpan(),
-            hints.sheetNames(), hints.autoDiscoverTabs());
-        ExtractionResponse extraction = isMultiTab
-            ? extractionClient.extract(String.valueOf(facilityId), filePath,
-                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
-                forcedTemplate, hints.sheetNames(), hints.autoDiscoverTabs(), hints.skipRowKeywords())
-            : extractionClient.extract(String.valueOf(facilityId), filePath,
-                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
-                forcedTemplate, List.of(), false, hints.skipRowKeywords());
+        log.info("Starting extraction submission={} facilityId={} agentBank='{}' file='{}' forcedTemplate='{}'",
+            sub.getId(), facilityId, sub.getAgentBank(), sub.getFileName(), forcedTemplate);
+
+        PipelineResult pipeline = runExtraction(facilityId, filePath, sub.getAgentBank(), forcedTemplate);
+        ExtractionResponse extraction = pipeline.extraction();
 
         if (extraction == null) {
             log.warn("Extraction skipped for submission {} — pe-sub-extraction unreachable", sub.getId());
@@ -292,11 +325,10 @@ public class SubmissionController {
             return;
         }
 
-        storeExtractionResult(sub.getId(), extraction, forcedTemplate);
-        log.info("Stored extraction submission={} recognizedFormat='{}' recognizedVersion='{}' rows={} mappings={} unrecognized={} forcedTemplate='{}'",
-            sub.getId(),
+        storeExtractionResult(sub.getId(), extraction, forcedTemplate, pipeline.resolved());
+        log.info("Stored extraction submission={} recognizedTemplate='{}' format='{}' rows={} mappings={} unrecognized={} forcedTemplate='{}'",
+            sub.getId(), pipeline.resolved().templateName(),
             extraction.template() != null ? extraction.template().format() : null,
-            extraction.template() != null ? extraction.template().version() : null,
             extraction.records() != null ? extraction.records().size() : 0,
             extraction.fieldMappings() != null ? extraction.fieldMappings().size() : 0,
             extraction.unrecognizedColumns() != null ? extraction.unrecognizedColumns().size() : 0,
@@ -318,17 +350,24 @@ public class SubmissionController {
         });
     }
 
-    private void storeExtractionResult(int submissionId, ExtractionResponse r, String forcedTemplate) {
+    private void storeExtractionResult(int submissionId, ExtractionResponse r, String forcedTemplate,
+                                       ResolvedTemplate resolved) {
         SubmissionExtraction entity = extractionRepo.findBySubmissionId(submissionId)
             .orElse(new SubmissionExtraction());
         entity.setSubmissionId(submissionId);
         entity.setForcedTemplate(forcedTemplate);
 
+        // Recognition now happens in pe-sub-api; the recognised fund template name is authoritative.
+        String recognizedVersion = resolved != null && resolved.recognized()
+            ? resolved.templateName()
+            : (r.template() != null ? r.template().version() : null);
         if (r.template() != null) {
             entity.setTemplateFormat(r.template().format());
-            entity.setTemplateVersion(r.template().version());
+            entity.setTemplateVersion(recognizedVersion);
             entity.setHeaderRowIndex(r.template().headerRowIndex());
-                entity.setSheetName(r.template().sheetName());
+            entity.setSheetName(r.template().sheetName());
+        } else {
+            entity.setTemplateVersion(recognizedVersion);
         }
 
         // Build canonical field lookup from DB — keyed by extraction_key and canonical name.
@@ -552,19 +591,11 @@ public class SubmissionController {
         String forcedTemplate = resolveForcedTemplate(id, body != null ? body.templateName() : null);
         log.info("Re-extract called for submission {} resolved forcedTemplate={}", id, forcedTemplate);
 
-        TemplateHints hints = hintsFor(sub.getAgentBank(), forcedTemplate);
-        boolean isMultiTab = !hints.sheetNames().isEmpty() || hints.autoDiscoverTabs();
-        log.info("Starting re-extraction submission={} facilityId={} agentBank='{}' file='{}' forcedTemplate='{}' hints(sheet='{}', headerRowIndex={}, headerRowSpan={}, sheetNames={}, autoDiscover={})",
-            id, sub.getFacilityId(), sub.getAgentBank(), sub.getFileName(), forcedTemplate,
-            hints.sheetName(), hints.headerRowIndex(), hints.headerRowSpan(),
-            hints.sheetNames(), hints.autoDiscoverTabs());
-        ExtractionResponse extraction = isMultiTab
-            ? extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
-                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
-                forcedTemplate, hints.sheetNames(), hints.autoDiscoverTabs(), hints.skipRowKeywords())
-            : extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
-                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
-                forcedTemplate, List.of(), false, hints.skipRowKeywords());
+        log.info("Starting re-extraction submission={} facilityId={} agentBank='{}' file='{}' forcedTemplate='{}'",
+            id, sub.getFacilityId(), sub.getAgentBank(), sub.getFileName(), forcedTemplate);
+        PipelineResult pipeline = runExtraction(sub.getFacilityId(), Paths.get(sub.getFilePath()),
+            sub.getAgentBank(), forcedTemplate);
+        ExtractionResponse extraction = pipeline.extraction();
         if (extraction == null) {
             auditService.log("Re-extraction Failed",
                 "Submission #" + id + " re-extraction failed: pe-sub-extraction unreachable",
@@ -572,7 +603,7 @@ public class SubmissionController {
             return ResponseEntity.status(502).body("pe-sub-extraction unreachable.");
         }
 
-        storeExtractionResult(id, extraction, forcedTemplate);
+        storeExtractionResult(id, extraction, forcedTemplate, pipeline.resolved());
         log.info("Stored re-extraction submission={} recognizedFormat='{}' recognizedVersion='{}' rows={} mappings={} unrecognized={} forcedTemplate='{}'",
             id,
             extraction.template() != null ? extraction.template().format() : null,
@@ -682,20 +713,14 @@ public class SubmissionController {
 
         String forcedTemplate = resolveForcedTemplate(id, null);
         log.info("Remap called for submission {} resolved forcedTemplate={}", id, forcedTemplate);
-        TemplateHints hints = hintsFor(sub.getAgentBank(), forcedTemplate);
-        boolean isMultiTabRemap = !hints.sheetNames().isEmpty() || hints.autoDiscoverTabs();
-        ExtractionResponse extraction = isMultiTabRemap
-            ? extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
-                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
-                forcedTemplate, hints.sheetNames(), hints.autoDiscoverTabs(), hints.skipRowKeywords())
-            : extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
-                hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
-                forcedTemplate, List.of(), false, hints.skipRowKeywords());
+        PipelineResult pipeline = runExtraction(sub.getFacilityId(), Paths.get(sub.getFilePath()),
+            sub.getAgentBank(), forcedTemplate);
+        ExtractionResponse extraction = pipeline.extraction();
         if (extraction == null) {
             return ResponseEntity.status(502).body("pe-sub-extraction unreachable — alias saved, re-extraction pending.");
         }
 
-        storeExtractionResult(id, extraction, forcedTemplate);
+        storeExtractionResult(id, extraction, forcedTemplate, pipeline.resolved());
         return ResponseEntity.ok().build();
     }
 
@@ -1062,30 +1087,13 @@ public class SubmissionController {
         return "Matched via alias dictionary";
     }
 
-    // Prefers the structurally-recognised fund template (e.g. "KKR Ascendant Fund"), which
-    // identifies the workbook by its column/section structure independent of any agent-bank
-    // name. Falls back to the agent-bank template format when no structure was recognised.
-    private String friendlyFormat(String fmt, String structuralTemplate) {
-        if (structuralTemplate != null && !structuralTemplate.isBlank()) {
-            return "Excel Workbook — " + structuralTemplate + " template";
+    // The label is the recognised template name (Template ID) from the registry. No agent-bank or
+    // fund names are hardcoded here — named content comes only from template contents or user entry.
+    // {@code fmt} is retained for call-site compatibility but is no longer used (always UNKNOWN).
+    private String friendlyFormat(String fmt, String recognizedTemplate) {
+        if (recognizedTemplate != null && !recognizedTemplate.isBlank()) {
+            return "Excel Workbook — " + recognizedTemplate + " template";
         }
-        if (fmt == null) return "Unknown template";
-        return switch (fmt) {
-            case "CITIBANK"           -> "Excel Workbook — Citibank template";
-            case "JPM"                -> "Excel Workbook — JPMorgan Chase template";
-            case "GOLDMAN_SACHS"      -> "Excel Workbook — Goldman Sachs Bank USA template";
-            case "BARCLAYS"           -> "Excel Workbook — Barclays template";
-            case "BANK_OF_AMERICA"    -> "Excel Workbook — Bank of America template";
-            case "WELLS_FARGO"        -> "Excel Workbook — Wells Fargo template";
-            case "CITIZENS_FINANCIAL" -> "Excel Workbook — Citizens Financial Group template";
-            case "PNC_BANK"           -> "Excel Workbook — PNC Bank template";
-            case "FIFTH_THIRD"        -> "Excel Workbook — Fifth Third Bank template";
-            case "HUNTINGTON"         -> "Excel Workbook — Huntington National Bank template";
-            case "WHITE_OAK"          -> "Excel Workbook — White Oak Global Advisors template";
-            case "ARES"               -> "Excel Workbook — Ares Management template";
-            case "MIDCAP_FINANCIAL"   -> "Excel Workbook — MidCap Financial template";
-            case "INTERNAL"           -> "Excel Workbook — UBS Internal template";
-            default                   -> "Excel Workbook — Unknown template";
-        };
+        return "Excel Workbook — unrecognized template";
     }
 }

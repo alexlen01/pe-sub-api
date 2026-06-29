@@ -13,6 +13,8 @@ import com.ubs.pesubapi.service.BbCalculationService;
 import com.ubs.pesubapi.service.LpMasterService;
 import com.ubs.pesubapi.service.NotificationService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,6 +25,8 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/bb")
 public class BbController {
+
+    private static final Logger log = LoggerFactory.getLogger(BbController.class);
 
     private final FacilityRepository    facilityRepo;
     private final LpRepository          lpRepo;
@@ -61,6 +65,7 @@ public class BbController {
 
         if (request != null && request.lps() != null && !request.lps().isEmpty()) {
             lpMasterService.upsertAll(facilityId, request.lps());
+            log.info("Shadow BB request upserted LP master rows facilityId={} rows={}", facilityId, request.lps().size());
         }
 
         List<com.ubs.pesubapi.entity.Lp> lps = lpRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
@@ -70,6 +75,9 @@ public class BbController {
         snapshot.setFacilityId(facilityId);
         snapshot.setResult(result);
         BbSnapshot saved = snapshotRepo.save(snapshot);
+        log.info("Shadow BB calculated facilityId={} snapshotId={} lpCount={} totalABB={} totalUBB={} breaches={}",
+            facilityId, saved.getId(), lps.size(), result.summary().totalABB(), result.summary().totalUBB(),
+            result.breaches() != null ? result.breaches().size() : 0);
 
         facility.setLastRunAt(LocalDateTime.now());
         facilityRepo.save(facility);

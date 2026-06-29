@@ -1,9 +1,13 @@
 package com.ubs.pesubapi.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ubs.pesubapi.dto.BbTemplateDto;
 import com.ubs.pesubapi.dto.BbTemplateRequest;
 import com.ubs.pesubapi.dto.BbTemplateRequest.BbTemplateGroupRequest;
 import com.ubs.pesubapi.dto.BbTemplateRequest.BbTemplateTabRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.http.HttpStatus;
@@ -15,32 +19,63 @@ import java.io.IOException;
 import java.util.*;
 
 /**
- * Parses a structured Excel workbook into a BB template record.
+ * Parses a structured "BB-Template-Import" Excel workbook into a {@link BbTemplateRequest}.
  *
- * Expected workbook structure (see pe-sub-docs/WORKBOOK_*.md for per-template examples):
- *   Sheet "Template" — one header row (row 0) + one data row (row 1) with template-level fields.
- *   Sheet "Tabs"     — one header row + one data row per tab.
- *   Sheet "Groups"   — one header row + one data row per LP category group section.
+ * <p>This is the canonical way the BB template registry is populated — the same path used by
+ * "Upload Template" in the app and by integration tests. A template is identified by its
+ * {@code template_slug} (Template ID); {@link BbTemplateService#create} auto-versions the slug
+ * when it already exists.
+ *
+ * <p>Expected sheets (see {@code pe-sub-platform/public/BB-Template-Import-*.xlsx}):
+ * <ul>
+ *   <li>{@code Template} — one data row: template_slug, agent_bank, template_class, sheet_name,
+ *       header_row_index (1-based Excel row), header_row_span, auto_learned, tranche_count,
+ *       has_grouping_rows, has_color_flags, summary_rows_above_header, summary_row_range,
+ *       detect_keys (comma-separated)</li>
+ *   <li>{@code Tabs} — one row per tab: tab_role, tab_sort, sheet_name, sleeve_name,
+ *       header_row_index (1-based), header_row_span, skip_row_keywords (CSV),
+ *       expected_source_headers_json (JSON array of column headers)</li>
+ *   <li>{@code Groups} — tab_role, group_sort, header_text, classification</li>
+ *   <li>{@code Columns} — tab_role, column_sort, source_header (fallback for tab columns)</li>
+ *   <li>{@code Legend} — style, meaning</li>
+ *   <li>{@code Notes} — note_sort, note</li>
+ * </ul>
+ *
+ * <p>The Template sheet carries no display name — the {@code template_slug} is used as the
+ * {@code template_name} (per product decision: identity and display are the Template ID).
+ * Header-row indices in the workbook are 1-based Excel rows and are converted to 0-based here.
  */
 @Service
 public class BbTemplateImportService {
+
+    private static final Logger log = LoggerFactory.getLogger(BbTemplateImportService.class);
 
     private static final List<String> DEFAULT_SKIP_KEYWORDS =
         List.of("Total", "Subtotal", "Sub-Total", "Grand Total", "Sum", "Net Total");
 
     private final BbTemplateService templateService;
+    private final ObjectMapper      mapper;
 
-    public BbTemplateImportService(BbTemplateService templateService) {
+    public BbTemplateImportService(BbTemplateService templateService, ObjectMapper mapper) {
         this.templateService = templateService;
+        this.mapper          = mapper;
     }
 
     public BbTemplateDto importFromExcel(MultipartFile file) {
         try (Workbook wb = WorkbookFactory.create(file.getInputStream())) {
             BbTemplateRequest req = parseWorkbook(wb);
             return templateService.create(req);
+        } catch (ResponseStatusException e) {
+            log.warn("BB template import rejected file='{}': {}", fileName(file), e.getReason());
+            throw e;
         } catch (IOException e) {
+            log.warn("BB template import failed to read file='{}': {}", fileName(file), e.getMessage(), e);
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                 "Failed to read uploaded Excel file: " + e.getMessage());
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            log.warn("BB template import failed to parse file='{}': {}", fileName(file), e.getMessage(), e);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "Failed to parse uploaded Excel template: " + e.getMessage());
         }
     }
 
@@ -49,49 +84,84 @@ public class BbTemplateImportService {
     private BbTemplateRequest parseWorkbook(Workbook wb) {
         Sheet templateSheet = requireSheet(wb, "Template");
         Sheet tabsSheet     = requireSheet(wb, "Tabs");
-        Sheet groupsSheet   = wb.getSheet("Groups"); // optional (Class B/C may have no groups)
 
-        Map<String, String> tmplRow = readSingleDataRow(templateSheet);
-        List<Map<String, String>> tabRows   = readDataRows(tabsSheet);
-        List<Map<String, String>> groupRows = groupsSheet != null ? readDataRows(groupsSheet) : List.of();
+        Map<String, String> tmpl = readSingleDataRow(templateSheet);
+        List<Map<String, String>> tabRows    = readDataRows(tabsSheet);
+        List<Map<String, String>> groupRows  = readOptionalRows(wb, "Groups");
+        List<Map<String, String>> columnRows = readOptionalRows(wb, "Columns");
+        List<Map<String, String>> legendRows = readOptionalRows(wb, "Legend");
+        List<Map<String, String>> noteRows   = readOptionalRows(wb, "Notes");
 
-        // Build group requests indexed by tab_role so they can be attached to each tab
-        Map<String, List<BbTemplateGroupRequest>> groupsByTabRole = new LinkedHashMap<>();
-        for (Map<String, String> gRow : groupRows) {
-            String role = required(gRow, "tab_role", "Groups sheet");
-            int    sort = intVal(gRow, "group_sort", 1);
-            String text = required(gRow, "header_text", "Groups sheet");
-            String cls  = required(gRow, "classification", "Groups sheet");
-            groupsByTabRole
-                .computeIfAbsent(role, k -> new ArrayList<>())
-                .add(new BbTemplateGroupRequest(sort, text, cls));
+        // Groups indexed by tab_role so they attach to the right tab.
+        Map<String, List<BbTemplateGroupRequest>> groupsByRole = new LinkedHashMap<>();
+        for (Map<String, String> g : groupRows) {
+            String role = required(g, "tab_role", "Groups sheet");
+            groupsByRole.computeIfAbsent(role, k -> new ArrayList<>())
+                .add(new BbTemplateGroupRequest(
+                    intVal(g, "group_sort", 1),
+                    required(g, "header_text", "Groups sheet"),
+                    required(g, "classification", "Groups sheet")));
         }
 
-        // Build tab requests
+        // Columns (fallback for tab columns when a tab has no expected_source_headers_json),
+        // ordered by column_sort, indexed by tab_role.
+        Map<String, List<String>> columnsByRole = new LinkedHashMap<>();
+        for (Map<String, String> c : columnRows) {
+            String role = required(c, "tab_role", "Columns sheet");
+            columnsByRole.computeIfAbsent(role, k -> new ArrayList<>())
+                .add(required(c, "source_header", "Columns sheet"));
+        }
+
         List<BbTemplateTabRequest> tabs = new ArrayList<>();
-        for (Map<String, String> tRow : tabRows) {
-            String role      = required(tRow, "tab_role", "Tabs sheet");
-            int    sort      = intVal(tRow, "tab_sort", 1);
-            String sheet     = tRow.get("sheet_name");
-            Integer hdrRow   = tRow.containsKey("header_row_index") ? intOrNull(tRow.get("header_row_index")) : null;
-            int    hdrSpan   = intVal(tRow, "header_row_span", 1);
-            List<String> skip = parseSkipKeywords(tRow.get("skip_row_keywords"));
-            List<BbTemplateGroupRequest> groups = groupsByTabRole.getOrDefault(role, List.of());
-            tabs.add(new BbTemplateTabRequest(role, sort, sheet, hdrRow, hdrSpan, skip, groups));
+        for (Map<String, String> t : tabRows) {
+            String role = required(t, "tab_role", "Tabs sheet");
+            List<String> columns = parseJsonArray(t.get("expected_source_headers_json"));
+            if (columns.isEmpty()) columns = columnsByRole.getOrDefault(role, List.of());
+            tabs.add(new BbTemplateTabRequest(
+                role,
+                intVal(t, "tab_sort", 1),
+                t.get("sheet_name"),
+                t.get("sleeve_name"),
+                toZeroBased(intOrNull(t.get("header_row_index"))),
+                intVal(t, "header_row_span", 1),
+                parseCsv(t.get("skip_row_keywords"), DEFAULT_SKIP_KEYWORDS),
+                columns,
+                groupsByRole.getOrDefault(role, List.of())));
         }
+
+        List<Map<String, String>> legend = legendRows.stream()
+            .map(r -> Map.of(
+                "style",   r.getOrDefault("style", ""),
+                "meaning", r.getOrDefault("meaning", "")))
+            .toList();
+        List<String> notes = noteRows.stream()
+            .map(r -> r.getOrDefault("note", ""))
+            .filter(s -> !s.isBlank())
+            .toList();
+
+        // No display name in the import format: the Template ID (slug) is used as the name.
+        String slug = required(tmpl, "template_slug", "Template sheet");
 
         return new BbTemplateRequest(
-            required(tmplRow, "template_name", "Template sheet"),
-            required(tmplRow, "template_class", "Template sheet"),
-            tmplRow.get("sheet_name"),
-            intOrNull(tmplRow.get("header_row_index")),
-            boolVal(tmplRow, "auto_learned", false),
-            intVal(tmplRow, "tranche_count", 1),
-            boolVal(tmplRow, "has_grouping_rows", false),
-            boolVal(tmplRow, "has_color_flags", false),
-            intVal(tmplRow, "summary_rows_above_header", 0),
-            tabs
-        );
+            slug,
+            slug,
+            tmpl.get("agent_bank"),
+            tmpl.getOrDefault("template_class", "A"),
+            tmpl.get("sheet_name"),
+            toZeroBased(intOrNull(tmpl.get("header_row_index"))),
+            boolVal(tmpl, "auto_learned", false),
+            intVal(tmpl, "tranche_count", 1),
+            boolVal(tmpl, "has_grouping_rows", false),
+            boolVal(tmpl, "has_color_flags", false),
+            boolVal(tmpl, "auto_discover_tabs", false),
+            intVal(tmpl, "summary_rows_above_header", 0),
+            tmpl.get("summary_row_range"),
+            intOrNull(tmpl.get("title_row")),
+            tmpl.get("title_text"),
+            parseCsv(tmpl.get("detect_keys"), List.of()),
+            legend,
+            notes,
+            tabs);
     }
 
     // ── Sheet helpers ─────────────────────────────────────────────────────────
@@ -101,6 +171,11 @@ public class BbTemplateImportService {
         if (s == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
             "Import workbook is missing required sheet: \"" + name + "\"");
         return s;
+    }
+
+    private List<Map<String, String>> readOptionalRows(Workbook wb, String name) {
+        Sheet s = wb.getSheet(name);
+        return s != null ? readDataRows(s) : List.of();
     }
 
     /** Row 0 = headers, row 1 = single data row → Map<header, value>. */
@@ -116,8 +191,11 @@ public class BbTemplateImportService {
         Row headerRow = sheet.getRow(0);
         if (headerRow == null) return List.of();
 
+        DataFormatter formatter = new DataFormatter();
+        FormulaEvaluator evaluator = sheet.getWorkbook().getCreationHelper().createFormulaEvaluator();
+
         List<String> headers = new ArrayList<>();
-        for (Cell c : headerRow) headers.add(cellString(c).toLowerCase().replace(' ', '_'));
+        for (Cell c : headerRow) headers.add(cellString(c, formatter, evaluator).toLowerCase().replace(' ', '_'));
 
         List<Map<String, String>> result = new ArrayList<>();
         for (int r = 1; r <= sheet.getLastRowNum(); r++) {
@@ -127,7 +205,7 @@ public class BbTemplateImportService {
             boolean hasData = false;
             for (int c = 0; c < headers.size(); c++) {
                 Cell cell = row.getCell(c);
-                String val = cell != null ? cellString(cell).trim() : "";
+                String val = cell != null ? cellString(cell, formatter, evaluator).trim() : "";
                 if (!val.isEmpty()) hasData = true;
                 map.put(headers.get(c), val);
             }
@@ -136,21 +214,13 @@ public class BbTemplateImportService {
         return result;
     }
 
-    private String cellString(Cell cell) {
+    private String cellString(Cell cell, DataFormatter formatter, FormulaEvaluator evaluator) {
         if (cell == null) return "";
-        return switch (cell.getCellType()) {
-            case STRING  -> cell.getStringCellValue();
-            case NUMERIC -> {
-                double d = cell.getNumericCellValue();
-                yield d == Math.floor(d) ? String.valueOf((long) d) : String.valueOf(d);
-            }
-            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
-            case FORMULA -> {
-                try { yield String.valueOf(cell.getNumericCellValue()); }
-                catch (Exception e) { yield cell.getStringCellValue(); }
-            }
-            default -> "";
-        };
+        return formatter.formatCellValue(cell, evaluator);
+    }
+
+    private String fileName(MultipartFile file) {
+        return file != null && file.getOriginalFilename() != null ? file.getOriginalFilename() : "<unknown>";
     }
 
     // ── Value helpers ─────────────────────────────────────────────────────────
@@ -175,14 +245,30 @@ public class BbTemplateImportService {
         catch (NumberFormatException e) { return null; }
     }
 
+    /** Import header-row indices are 1-based Excel rows; the engine expects 0-based. */
+    private Integer toZeroBased(Integer oneBased) {
+        if (oneBased == null) return null;
+        return oneBased > 0 ? oneBased - 1 : oneBased;
+    }
+
     private boolean boolVal(Map<String, String> row, String key, boolean def) {
         String v = row.get(key);
         if (v == null || v.isBlank()) return def;
         return "true".equalsIgnoreCase(v.trim()) || "yes".equalsIgnoreCase(v.trim()) || "1".equals(v.trim());
     }
 
-    private List<String> parseSkipKeywords(String raw) {
-        if (raw == null || raw.isBlank()) return DEFAULT_SKIP_KEYWORDS;
-        return Arrays.stream(raw.split(",")).map(s -> s.trim()).filter(s -> !s.isEmpty()).toList();
+    private List<String> parseCsv(String raw, List<String> def) {
+        if (raw == null || raw.isBlank()) return def;
+        return Arrays.stream(raw.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+    }
+
+    private List<String> parseJsonArray(String raw) {
+        if (raw == null || raw.isBlank()) return List.of();
+        try {
+            return mapper.readValue(raw, new TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            // Tolerate a plain comma-separated fallback if the cell is not valid JSON.
+            return parseCsv(raw, List.of());
+        }
     }
 }

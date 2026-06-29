@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.ubs.pesubapi.service.AuditLogService;
 import com.ubs.pesubapi.service.ConfigService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -13,6 +15,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/config")
 public class ConfigController {
+
+    private static final Logger log = LoggerFactory.getLogger(ConfigController.class);
 
     private final ConfigService    configService;
     private final AuditLogService  auditService;
@@ -76,6 +80,7 @@ public class ConfigController {
             HttpServletRequest req) {
         JsonNode saved = configService.put("matching_config", body).getValue();
         String label = SECTION_LABELS.getOrDefault(section, "Matching config");
+        log.info("Matching config updated section='{}' label='{}'", section, label);
         auditService.log("Match Config Change", label + " updated", null, "J. Smith", auditService.extractIp(req));
         return ResponseEntity.ok(saved);
     }
@@ -96,6 +101,7 @@ public class ConfigController {
             HttpServletRequest req) {
         configService.put(section, body);
         String label = ELIGIBILITY_LABELS.getOrDefault(section, section);
+        log.info("Eligibility config updated section='{}' label='{}'", section, label);
         auditService.log("Config Change", label + " updated", null, "J. Smith", auditService.extractIp(req));
         return ResponseEntity.ok(body);
     }

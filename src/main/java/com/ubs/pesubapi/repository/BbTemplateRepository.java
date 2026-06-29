@@ -9,4 +9,5 @@ import java.util.Optional;
 public interface BbTemplateRepository extends JpaRepository<BbTemplate, Integer> {
     List<BbTemplate> findAllByTemplateNameIgnoreCase(String templateName);
     Optional<BbTemplate> findByTemplateNameIgnoreCaseAndTemplateClass(String templateName, String templateClass);
+    Optional<BbTemplate> findByTemplateSlug(String templateSlug);
 }

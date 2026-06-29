@@ -4,6 +4,8 @@ import com.ubs.pesubapi.entity.MatchQueueEntry;
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
 import com.ubs.pesubapi.service.MatchingService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,6 +16,8 @@ import java.util.Objects;
 @RestController
 @RequestMapping("/api/matching")
 public class MatchingController {
+
+    private static final Logger log = LoggerFactory.getLogger(MatchingController.class);
 
     private final MatchingService            matchingService;
     private final MatchQueueEntryRepository  matchQueueRepo;
@@ -33,7 +37,11 @@ public class MatchingController {
     public ResponseEntity<MatchingService.MatchTestResult> test(@RequestBody Map<String, String> body) {
         String name = body.get("name");
         if (name == null || name.isBlank()) return ResponseEntity.badRequest().build();
-        return ResponseEntity.ok(matchingService.test(name));
+        MatchingService.MatchTestResult result = matchingService.test(name);
+        MatchingService.MatchCandidate best = result.matches().isEmpty() ? null : result.matches().getFirst();
+        log.info("Matching test name='{}' bestMatch='{}' score={}",
+            name, best != null ? best.name() : null, best != null ? best.score() : null);
+        return ResponseEntity.ok(result);
     }
 
     // ── GET /api/matching/queue?submissionId= ─────────────────────────────────
@@ -59,6 +67,7 @@ public class MatchingController {
             .map(e -> toDto(e, facilityNames.getOrDefault(e.getFacilityId(), "—")))
             .toList();
 
+        log.info("Match queue listed submissionId={} count={}", submissionId, dtos.size());
         return ResponseEntity.ok(dtos);
     }
 
@@ -68,6 +77,7 @@ public class MatchingController {
     public ResponseEntity<Void> discard(@PathVariable int id) {
         if (!matchQueueRepo.existsById(id)) return ResponseEntity.notFound().build();
         matchQueueRepo.deleteById(id);
+        log.info("Match queue entry discarded id={}", id);
         return ResponseEntity.noContent().build();
     }
 
@@ -87,6 +97,9 @@ public class MatchingController {
                 if (!mn.isBlank()) entry.setDecision("Accepted");
             }
             MatchQueueEntry saved = matchQueueRepo.save(Objects.requireNonNull(entry));
+            log.info("Match queue entry decided id={} submissionId={} extracted='{}' decision='{}' masterOverride='{}'",
+                saved.getId(), saved.getSubmissionId(), saved.getExtractedName(),
+                saved.getDecision(), saved.getMasterNameOverride());
 
             String facilityName = java.util.Optional.ofNullable(saved.getFacilityId())
                 .flatMap(fid -> facilityRepo.findById(Objects.requireNonNull(fid)))

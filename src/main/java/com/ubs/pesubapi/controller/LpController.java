@@ -11,6 +11,8 @@ import com.ubs.pesubapi.service.LpClassificationService;
 import com.ubs.pesubapi.service.LpIngestService;
 import com.ubs.pesubapi.service.NotificationService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,6 +24,8 @@ import java.util.Objects;
 @RestController
 @RequestMapping("/api/lps")
 public class LpController {
+
+    private static final Logger log = LoggerFactory.getLogger(LpController.class);
 
     private final LpRepository           repo;
     private final NotificationService    notifier;
@@ -42,6 +46,8 @@ public class LpController {
     @PostMapping("/ingest")
     public IngestResult ingest(@RequestBody IngestRequest request, HttpServletRequest httpRequest) {
         IngestResult result = ingestService.ingest(0, request);
+        log.info("LP ingest completed facilityId={} template='{}' updated={} queued={} skipped={}",
+            request.facilityId(), result.templateFormat(), result.updated(), result.queued(), result.skipped());
         if (result.updated() > 0) {
             auditService.log("LP Data Updated",
                 result.updated() + " LP records updated from " + result.templateFormat() + " extraction",
@@ -80,6 +86,8 @@ public class LpController {
     public Map<String, Integer> patchClassification(@RequestBody LpClassificationRequest req,
                                                      HttpServletRequest request) {
         int updated = classificationService.applyClassifications(req);
+        log.info("LP classification batch applied facilityId={} rows={} updated={} audit={}",
+            req.facilityId(), req.rows() != null ? req.rows().size() : 0, updated, req.audit());
         if (updated > 0 && req.facilityId() != null && Boolean.TRUE.equals(req.audit())) {
             auditService.log("LP Category Saved",
                 updated + " LP record" + (updated != 1 ? "s" : "")
@@ -111,6 +119,8 @@ public class LpController {
             if (body.containsKey("notes"))  lp.setNotes((String) body.get("notes"));
             lp.setUpdatedAt(LocalDateTime.now());
             Lp saved = repo.save(lp);
+            log.info("LP patched id={} facilityId={} investor='{}' fields={}",
+                id, saved.getFacilityId(), saved.getInvestorName(), body.keySet());
             if (body.containsKey("cls") && !Objects.equals(lp.getCls(), prevCls)) {
                 notifier.broadcast(lp.getInvestorName() + " reclassified to " + lp.getCls());
                 String detail = lp.getInvestorName() + " → " + lp.getCls()

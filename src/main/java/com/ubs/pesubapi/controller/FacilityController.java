@@ -11,6 +11,8 @@ import com.ubs.pesubapi.service.FacilityService;
 import com.ubs.pesubapi.service.NotificationService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -27,6 +29,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/facilities")
 public class FacilityController {
+
+    private static final Logger log = LoggerFactory.getLogger(FacilityController.class);
 
     record CreateFacilityRequest(@NotBlank String name, @NotBlank String agentBank) {}
 
@@ -68,9 +72,11 @@ public class FacilityController {
             lpCounts.put((Integer) row[0], ((Long) row[1]).intValue());
         }
         Map<Integer, BbSummary> summaries = latestSummariesByFacility();
-        return repo.findAll(Sort.by("name")).stream()
+        List<FacilityDto> result = repo.findAll(Sort.by("name")).stream()
             .map(f -> FacilityDto.from(f, lpCounts.getOrDefault(f.getId(), 0), summaries.get(f.getId())))
             .toList();
+        log.info("Facilities listed count={}", result.size());
+        return result;
     }
 
     @GetMapping("/{id}")
@@ -94,6 +100,7 @@ public class FacilityController {
         f.setAgentBank(req.agentBank());
         Facility saved = repo.save(f);
         notifier.broadcast("New facility onboarded: " + saved.getName());
+        log.info("Facility created id={} name='{}' agentBank='{}'", saved.getId(), saved.getName(), saved.getAgentBank());
         return ResponseEntity.status(201).body(FacilityDto.from(saved));
     }
 
@@ -111,6 +118,7 @@ public class FacilityController {
             f.setUpdatedAt(LocalDateTime.now());
             Facility saved = repo.save(f);
             notifier.broadcast(f.getName() + " status updated to " + newStatus);
+            log.info("Facility status updated id={} name='{}' status='{}'", id, saved.getName(), newStatus);
             return ResponseEntity.ok(FacilityDto.from(saved, (int) lpRepo.countByFacilityId(id)));
         }).orElse(ResponseEntity.notFound().build());
     }
@@ -138,6 +146,7 @@ public class FacilityController {
             if (req.ubsParticipation() != null) f.setUbsParticipation(req.ubsParticipation());
             f.setUpdatedAt(LocalDateTime.now());
             Facility saved = repo.save(f);
+            log.info("Facility updated id={} name='{}' agentBank='{}'", id, saved.getName(), saved.getAgentBank());
             return ResponseEntity.ok(FacilityDto.from(saved, (int) lpRepo.countByFacilityId(id)));
         }).orElse(ResponseEntity.notFound().build());
     }
@@ -149,6 +158,7 @@ public class FacilityController {
     public ResponseEntity<Void> delete(@PathVariable int id) {
         facilityService.delete(id);
         notifier.broadcast("Facility deleted (id " + id + ")");
+        log.info("Facility deleted id={}", id);
         return ResponseEntity.noContent().build();
     }
 }

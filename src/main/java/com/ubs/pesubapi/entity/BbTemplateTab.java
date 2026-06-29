@@ -47,6 +47,12 @@ public class BbTemplateTab {
     @Column(name = "skip_row_keywords", columnDefinition = "jsonb")
     private List<String> skipRowKeywords = List.of("Total", "Subtotal", "Sub-Total", "Grand Total", "Sum", "Net Total");
 
+    // Ordered column header strings exactly as they appear in the workbook tab;
+    // drives recognition column-fingerprint matching and the registry display.
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "columns", columnDefinition = "jsonb")
+    private List<String> columns = List.of();
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -62,6 +68,7 @@ public class BbTemplateTab {
     public Integer       getHeaderRowIndex()  { return headerRowIndex; }
     public int           getHeaderRowSpan()   { return headerRowSpan; }
     public List<String>  getSkipRowKeywords() { return skipRowKeywords; }
+    public List<String>  getColumns()         { return columns; }
     public LocalDateTime getCreatedAt()       { return createdAt; }
 
     public void setTemplate(BbTemplate v)         { this.template        = v; }
@@ -72,4 +79,5 @@ public class BbTemplateTab {
     public void setHeaderRowIndex(Integer v)      { this.headerRowIndex  = v; }
     public void setHeaderRowSpan(int v)           { this.headerRowSpan   = v; }
     public void setSkipRowKeywords(List<String> v){ this.skipRowKeywords = v; }
+    public void setColumns(List<String> v)        { this.columns         = v; }
 }

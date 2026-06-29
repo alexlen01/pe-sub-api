@@ -17,9 +17,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
- * Verifies the Document-Recognition "Format" string: the structurally-recognised fund
- * template (template_version) is preferred, falling back to the agent-bank template format,
- * then to "Unknown template".
+ * Verifies the Document-Recognition "Format" string: the DB-recognised template name
+ * (template_version) is preferred; legacy extraction format enum names are no longer used.
  */
 class DocRecognitionFormatTest extends IntegrationTestBase {
 
@@ -74,18 +73,18 @@ class DocRecognitionFormatTest extends IntegrationTestBase {
     }
 
     @Test
-    void format_fallsBackToAgentBankTemplate_whenNoStructuralMatch() throws Exception {
+    void format_ignoresLegacyFormat_whenNoRecognisedTemplate() throws Exception {
         int id = newSubmissionWithExtraction("CITIBANK", null);
         mvc.perform(get("/api/submissions/{id}/doc-recognition", id))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.format").value("Excel Workbook — Citibank template"));
+            .andExpect(jsonPath("$.format").value("Excel Workbook — unrecognized template"));
     }
 
     @Test
-    void format_unknown_whenNeitherStructuralNorBankRecognised() throws Exception {
+    void format_unrecognized_whenNeitherDbTemplateNorLegacyFormatRecognised() throws Exception {
         int id = newSubmissionWithExtraction("UNKNOWN", null);
         mvc.perform(get("/api/submissions/{id}/doc-recognition", id))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.format").value("Excel Workbook — Unknown template"));
+            .andExpect(jsonPath("$.format").value("Excel Workbook — unrecognized template"));
     }
 }

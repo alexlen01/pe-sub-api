@@ -60,9 +60,28 @@ public class BbTemplateService {
     @Transactional
     public BbTemplateDto create(BbTemplateRequest req) {
         BbTemplate entity = applyRequest(new BbTemplate(), req);
+        // Template ID (slug) uniqueness with auto-versioning: gs-blue-owl, gs-blue-owl-1, …
+        // When the import convention uses the slug as the display name, keep them in sync.
+        String slug = req.templateSlug();
+        if (slug != null && !slug.isBlank()) {
+            String free = nextAvailableSlug(slug);
+            entity.setTemplateSlug(free);
+            if (!free.equals(slug) && slug.equals(req.templateName())) {
+                entity.setTemplateName(free);
+            }
+        }
         entity = templateRepo.save(entity);
         saveTabs(entity, req.tabs());
         return toDto(entity);
+    }
+
+    /** Returns {@code base} if free, else the first available {@code base-1}, {@code base-2}, … */
+    private String nextAvailableSlug(String base) {
+        if (templateRepo.findByTemplateSlug(base).isEmpty()) return base;
+        for (int n = 1; ; n++) {
+            String candidate = base + "-" + n;
+            if (templateRepo.findByTemplateSlug(candidate).isEmpty()) return candidate;
+        }
     }
 
     @CacheEvict(value = "bb-templates", allEntries = true)
@@ -99,7 +118,9 @@ public class BbTemplateService {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private BbTemplate applyRequest(BbTemplate entity, BbTemplateRequest req) {
+        entity.setTemplateSlug(req.templateSlug());
         entity.setTemplateName(req.templateName());
+        entity.setAgentName(req.agentName());
         entity.setTemplateClass(req.templateClass());
         entity.setSheetName(req.sheetName());
         entity.setHeaderRowIndex(req.headerRowIndex());
@@ -107,7 +128,14 @@ public class BbTemplateService {
         entity.setTrancheCount(req.trancheCount());
         entity.setHasGroupingRows(req.hasGroupingRows());
         entity.setHasColorFlags(req.hasColorFlags());
+        entity.setAutoDiscoverTabs(req.autoDiscoverTabs());
         entity.setSummaryRowsAboveHeader(req.summaryRowsAboveHeader());
+        entity.setSummaryRowRange(req.summaryRowRange());
+        entity.setTitleRow(req.titleRow());
+        entity.setTitleText(req.titleText());
+        if (req.detectKeys() != null) entity.setDetectKeys(req.detectKeys());
+        if (req.legend() != null) entity.setLegend(req.legend());
+        if (req.notes() != null) entity.setNotes(req.notes());
         return entity;
     }
 
@@ -119,10 +147,14 @@ public class BbTemplateService {
             tab.setTabRole(TabRole.valueOf(tabReq.tabRole()));
             tab.setTabSort(tabReq.tabSort());
             tab.setSheetName(tabReq.sheetName());
+            tab.setSleeveName(tabReq.sleeveName());
             tab.setHeaderRowIndex(tabReq.headerRowIndex());
             tab.setHeaderRowSpan(tabReq.headerRowSpan() < 1 ? 1 : tabReq.headerRowSpan());
             if (tabReq.skipRowKeywords() != null) {
                 tab.setSkipRowKeywords(tabReq.skipRowKeywords());
+            }
+            if (tabReq.columns() != null) {
+                tab.setColumns(tabReq.columns());
             }
             tabRepo.save(tab);
             saveGroups(tab, tabReq.groups());

@@ -5,6 +5,8 @@ import com.ubs.pesubapi.dto.LpRateDto;
 import com.ubs.pesubapi.service.LpRateService;
 import com.ubs.pesubapi.util.EffectivePeriod;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,6 +18,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/lps/rates")
 public class LpRateController {
+
+    private static final Logger log = LoggerFactory.getLogger(LpRateController.class);
 
     private final LpRateService lpRateService;
 
@@ -44,6 +48,8 @@ public class LpRateController {
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Integer> batchUpsert(@Valid @RequestBody LpRateBatchRequest req) {
         int saved = lpRateService.upsertBatch(req);
+        log.info("LP rates batch upsert effectiveDate={} rows={} saved={}",
+            req.effectiveDate(), req.rates() != null ? req.rates().size() : 0, saved);
         return Map.of("saved", saved);
     }
 
