@@ -30,8 +30,8 @@ import java.util.*;
  * <ul>
  *   <li>{@code Template} — one data row: template_slug, agent_bank, template_class, sheet_name,
  *       header_row_index (1-based Excel row), header_row_span, auto_learned, tranche_count,
- *       has_grouping_rows, has_color_flags, summary_rows_above_header, summary_row_range,
- *       detect_keys (comma-separated)</li>
+ *       has_grouping_rows, has_color_flags, auto_discover_tabs, summary_rows_above_header,
+ *       summary_row_range, detect_keys (comma-separated)</li>
  *   <li>{@code Tabs} — one row per tab: tab_role, tab_sort, sheet_name, sleeve_name,
  *       header_row_index (1-based), header_row_span, skip_row_keywords (CSV),
  *       expected_source_headers_json (JSON array of column headers)</li>
@@ -64,6 +64,11 @@ public class BbTemplateImportService {
     public BbTemplateDto importFromExcel(MultipartFile file) {
         try (Workbook wb = WorkbookFactory.create(file.getInputStream())) {
             BbTemplateRequest req = parseWorkbook(wb);
+            log.info("BB template import parsed file='{}' slug='{}' agent='{}' class={} sheet='{}' headerRow={} autoDiscover={} tabs={} notes={}",
+                fileName(file), req.templateSlug(), req.agentName(), req.templateClass(),
+                req.sheetName(), req.headerRowIndex(), req.autoDiscoverTabs(),
+                req.tabs() != null ? req.tabs().size() : 0,
+                req.notes() != null ? req.notes().size() : 0);
             return templateService.create(req);
         } catch (ResponseStatusException e) {
             log.warn("BB template import rejected file='{}': {}", fileName(file), e.getReason());
