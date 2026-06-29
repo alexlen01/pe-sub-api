@@ -20,6 +20,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -49,7 +50,7 @@ class SubmissionForcedTemplateTest extends IntegrationTestBase {
         reset(extractionClient);
         when(extractionClient.extract(anyString(), any(Path.class), nullable(String.class),
                 nullable(Integer.class), nullable(String.class), nullable(Integer.class),
-                nullable(String.class)))
+                nullable(String.class), anyList(), anyBoolean(), anyList()))
             .thenReturn(emptyExtraction());
 
         extractionRepo.deleteAll();
@@ -110,7 +111,7 @@ class SubmissionForcedTemplateTest extends IntegrationTestBase {
     void upload_persistsForcedTemplate_andRemapReusesIt() throws Exception {
         MockMultipartFile file = new MockMultipartFile(
             "file",
-            "Agent-BB-Petershill IV.xlsx",
+            "Agent-BB-KKR-Ascendant-Fund.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             new byte[] { 1, 2, 3 });
 
@@ -119,13 +120,13 @@ class SubmissionForcedTemplateTest extends IntegrationTestBase {
                 .param("facilityId", String.valueOf(facilityId))
                 .param("agentBank", "Goldman Sachs Bank USA")
                 .param("periodMonth", "2026-06")
-                .param("forceTemplate", " Petershill IV "))
+                .param("forceTemplate", " KKR Ascendant Fund "))
             .andExpect(status().isCreated());
 
         SubmissionExtraction stored = extractionRepo.findAll().stream()
             .filter(e -> e.getForcedTemplate() != null)
             .findFirst().orElseThrow();
-        assertThat(stored.getForcedTemplate()).isEqualTo("Petershill IV");
+        assertThat(stored.getForcedTemplate()).isEqualTo("KKR Ascendant Fund");
 
         mvc.perform(post("/api/submissions/{id}/remap", stored.getSubmissionId())
                 .contentType("application/json")
@@ -133,15 +134,15 @@ class SubmissionForcedTemplateTest extends IntegrationTestBase {
             .andExpect(status().isOk());
 
         verify(extractionClient, times(2)).extract(anyString(), any(Path.class),
-            eq("Borrowing Base"), eq(10), eq("Goldman Sachs Bank USA"), eq(1),
-            eq("Petershill IV"));
+            eq("Borrowing Base"), eq(9), eq("Goldman Sachs Bank USA"), eq(1),
+            eq("KKR Ascendant Fund"), eq(List.of()), eq(false), anyList());
     }
 
     @Test
     void upload_forceTemplateOverridesAgentBankTemplateHints() throws Exception {
         MockMultipartFile file = new MockMultipartFile(
             "file",
-            "Agent-BB-Petershill IV.xlsx",
+            "Agent-BB-KKR-Ascendant-Fund.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             new byte[] { 1, 2, 3 });
 
@@ -150,12 +151,44 @@ class SubmissionForcedTemplateTest extends IntegrationTestBase {
                 .param("facilityId", String.valueOf(facilityId))
                 .param("agentBank", "Wells Fargo (Blue Owl GP Stakes V)")
                 .param("periodMonth", "2026-06")
-                .param("forceTemplate", "Petershill IV"))
+                .param("forceTemplate", "KKR Ascendant Fund"))
             .andExpect(status().isCreated());
 
         verify(extractionClient).extract(anyString(), any(Path.class),
-            eq("Borrowing Base"), eq(10), eq("Wells Fargo (Blue Owl GP Stakes V)"), eq(1),
-            eq("Petershill IV"));
+            eq("Borrowing Base"), eq(9), eq("Wells Fargo (Blue Owl GP Stakes V)"), eq(1),
+            eq("KKR Ascendant Fund"), eq(List.of()), eq(false), anyList());
+    }
+
+    @Test
+    void upload_exposesDbBackedAdvanceRateAndBorrowingBaseKeysToUiRows() throws Exception {
+        when(extractionClient.extract(anyString(), any(Path.class), nullable(String.class),
+                nullable(Integer.class), nullable(String.class), nullable(Integer.class),
+                nullable(String.class), anyList(), anyBoolean(), anyList()))
+            .thenReturn(kkrExtractionWithDbBackedKeys());
+
+        MockMultipartFile file = new MockMultipartFile(
+            "file",
+            "Agent-BB-KKR-Ascendant-Fund.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            new byte[] { 1, 2, 3 });
+
+        String created = mvc.perform(multipart("/api/submissions")
+                .file(file)
+                .param("facilityId", String.valueOf(facilityId))
+                .param("agentBank", "JP Morgan Chase Bank NA")
+                .param("periodMonth", "2026-06")
+                .param("forceTemplate", "JP Morgan (KKR Ascendant Fund)"))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+
+        int createdSubmissionId = com.jayway.jsonpath.JsonPath.read(created, "$.id");
+
+        mvc.perform(get("/api/submissions/{id}/extracted-lps", createdSubmissionId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].name").value("Acme Pension Fund"))
+            .andExpect(jsonPath("$[0].agentRate").value("90.0%"))
+            .andExpect(jsonPath("$[0].agentBB").value("315,000"))
+            .andExpect(jsonPath("$[0].agentBBFmt").value("$315,000"));
     }
 
     @Test
@@ -190,5 +223,25 @@ class SubmissionForcedTemplateTest extends IntegrationTestBase {
             0,
             List.of(),
             List.of("Parent / Sponsor"));
+    }
+
+    private ExtractionResponse kkrExtractionWithDbBackedKeys() {
+        return new ExtractionResponse(
+            new ExtractionResponse.TemplateInfo("JPM", "KKR Ascendant Fund", 9, "Borrowing Base"),
+            List.of(new ExtractionResponse.ExtractedRecord(
+                5,
+                Map.of(
+                    "INVESTOR_NAME", new ExtractionResponse.FieldValue("Acme Pension Fund", 1.0, "Investor"),
+                    "COMMITMENT", new ExtractionResponse.FieldValue("500,000", 1.0, "Total Commitment"),
+                    "UNCALLED", new ExtractionResponse.FieldValue("350,000", 1.0, "Unfunded Commitment"),
+                    "ADVANCE_RATE", new ExtractionResponse.FieldValue("90%", 1.0, "Advance Rate"),
+                    "BORROWING_BASE", new ExtractionResponse.FieldValue("315,000", 1.0, "Borrowing Base")
+                ),
+                false,
+                List.of(),
+                null)),
+            0,
+            List.of(),
+            List.of());
     }
 }

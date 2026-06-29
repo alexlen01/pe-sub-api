@@ -26,6 +26,7 @@ public record LpClassificationRequest(
         String  parent,
         Boolean spv,
         String  type,             // Investor Type
+        String  region,
         Boolean ig,               // Investment Grade?
         String  agentCls,         // Agent LP Category (verbatim from Agent BB)
         String  cls,              // UBS LP Category (follows Agent LP Category)

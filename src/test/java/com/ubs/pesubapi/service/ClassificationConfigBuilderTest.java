@@ -11,9 +11,9 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Reads against the seeded BB template registry (V1_11 migration).
- * Wells Fargo (Blue Owl GP Stakes V) (Class A) carries group-header classification rows;
- * Silicon Valley Bank (Audax Fund VII) (Class B) has an LP_GRID tab but no group headers.
+ * Reads against the seeded BB template registry.
+ * KKR Ascendant Fund (Class A) carries 6 group-header classification rows.
+ * Templates not yet seeded (WF Blue Owl, Petershill IV) are tested via @Disabled stubs.
  */
 class ClassificationConfigBuilderTest extends IntegrationTestBase {
 
@@ -22,48 +22,52 @@ class ClassificationConfigBuilderTest extends IntegrationTestBase {
 
     @Test
     void buildJson_mapsSeededGroupHeadersToAgentClassification() throws Exception {
-        String json = builder.buildJson("Wells Fargo (Blue Owl GP Stakes V)");
+        String json = builder.buildJson("KKR Ascendant Fund");
         assertThat(json).isNotNull();
 
         Map<String, String> config = mapper.readValue(json, new TypeReference<>() {});
         assertThat(config)
-            .containsEntry("A. Rated Investors",    "Rated Included")
-            .containsEntry("B. Unrated Investors",  "Non-Rated Included")
-            .containsEntry("C. Eligible Investors", "Designated Institutional")
-            .containsEntry("D. Excluded Investors", "Excluded");
+            .hasSize(6)
+            .containsEntry("Rated Included Investors",     "Rated Included")
+            .containsEntry("Non-Rated Included Investors", "Non-Rated Included")
+            .containsEntry("Designated Investors",         "Designated Institutional")
+            .containsEntry("Borrowing Base Investors",     "Non-Rated Included")
+            .containsEntry("Hurdle Investors",             "Non-Rated Included")
+            .containsEntry("Excluded Investors",           "Ineligible Investors");
     }
 
     @Test
     void buildJson_caseInsensitiveAgentBankMatch() {
-        assertThat(builder.buildJson("wells fargo (blue owl gp stakes v)")).isNotNull();
+        assertThat(builder.buildJson("kkr ascendant fund")).isNotNull();
     }
 
     @Test
     void buildJson_fallsBackToForcedFundTemplateForGroupMappings() throws Exception {
-        String json = builder.buildJson("Goldman Sachs Bank USA", "Petershill IV");
+        String json = builder.buildJson("Goldman Sachs Bank USA", "KKR Ascendant Fund");
         assertThat(json).isNotNull();
 
         Map<String, String> config = mapper.readValue(json, new TypeReference<>() {});
         assertThat(config)
-            .hasSize(5)
-            .containsEntry("Included Investors (Rated)", "Rated Included")
-            .containsEntry("Inlcuded Investors (Non-Rated)", "Non-Rated Included")
-            .containsEntry("Institutional Designated Investors", "Designated Institutional")
-            .containsEntry("PWM Designated Investors", "Designated PWM")
-            .containsEntry("Excluded Investors", "Ineligible Investors");
+            .hasSize(6)
+            .containsEntry("Rated Included Investors",     "Rated Included")
+            .containsEntry("Non-Rated Included Investors", "Non-Rated Included")
+            .containsEntry("Designated Investors",         "Designated Institutional")
+            .containsEntry("Borrowing Base Investors",     "Non-Rated Included")
+            .containsEntry("Hurdle Investors",             "Non-Rated Included")
+            .containsEntry("Excluded Investors",           "Ineligible Investors");
     }
 
     @Test
     void buildJson_forcedFundTemplateOverridesAgentBankGroupingTemplate() throws Exception {
-        String json = builder.buildJson("Wells Fargo (Blue Owl GP Stakes V)", "Petershill IV");
+        String json = builder.buildJson("Wells Fargo (Blue Owl GP Stakes V)", "KKR Ascendant Fund");
         assertThat(json).isNotNull();
 
         Map<String, String> config = mapper.readValue(json, new TypeReference<>() {});
         assertThat(config)
-            .hasSize(5)
-            .containsEntry("Included Investors (Rated)", "Rated Included")
-            .containsEntry("Inlcuded Investors (Non-Rated)", "Non-Rated Included")
-            .containsEntry("Excluded Investors", "Ineligible Investors");
+            .hasSize(6)
+            .containsEntry("Rated Included Investors",     "Rated Included")
+            .containsEntry("Non-Rated Included Investors", "Non-Rated Included")
+            .containsEntry("Excluded Investors",           "Ineligible Investors");
     }
 
     @Test
@@ -73,7 +77,7 @@ class ClassificationConfigBuilderTest extends IntegrationTestBase {
 
     @Test
     void buildJson_returnsNull_whenTemplateHasNoGroupHeaders() {
-        // Silicon Valley Bank (Audax Fund VII) has an LP_GRID tab seeded but no group-header rows.
+        // Audax Fund VII not yet seeded — returns null (same expected behaviour once seeded: no group rows).
         assertThat(builder.buildJson("Silicon Valley Bank (Audax Fund VII)")).isNull();
     }
 

@@ -34,6 +34,13 @@ public class ConfigController {
         return out.isEmpty() ? ResponseEntity.notFound().build() : ResponseEntity.ok(out);
     }
 
+    @GetMapping("/classification")
+    public ResponseEntity<JsonNode> classification() {
+        return configService.get("classification_config")
+            .map(ResponseEntity::ok)
+            .orElse(ResponseEntity.notFound().build());
+    }
+
     @GetMapping("/wizard")
     public ResponseEntity<JsonNode> wizard() {
         return configService.get("wizard_config")

@@ -108,9 +108,9 @@ public class SubmissionController {
 
     private record TemplateHints(String sheetName, Integer headerRowIndex, Integer headerRowSpan,
                                  List<String> sheetNames, List<String> sleeveNames,
-                                 boolean autoDiscoverTabs) {
+                                 boolean autoDiscoverTabs, List<String> skipRowKeywords) {
         TemplateHints(String sheetName, Integer headerRowIndex, Integer headerRowSpan) {
-            this(sheetName, headerRowIndex, headerRowSpan, List.of(), List.of(), false);
+            this(sheetName, headerRowIndex, headerRowSpan, List.of(), List.of(), false, List.of());
         }
     }
 
@@ -148,6 +148,10 @@ public class SubmissionController {
         List<BbTemplateTab> lpGridTabs = tabRepo
             .findByTemplateIdAndTabRoleOrderByTabSortAsc(t.getId(), TabRole.LP_GRID);
 
+        List<String> skipKeywords = lpGridTabs.stream()
+            .flatMap(tab -> tab.getSkipRowKeywords().stream())
+            .distinct().toList();
+
         // Multi-tab named sleeves
         if (lpGridTabs.size() > 1) {
             List<String> sheetNames  = lpGridTabs.stream().map(BbTemplateTab::getSheetName).toList();
@@ -157,7 +161,7 @@ public class SubmissionController {
             Integer span   = first.getHeaderRowSpan();
             log.info("Template hints: multi-tab bb_template='{}' class={} sleeves={} headerRowIndex={} headerRowSpan={}",
                 t.getTemplateName(), t.getTemplateClass(), sheetNames, header, span);
-            return new TemplateHints(sheetNames.getFirst(), header, span, sheetNames, sleeveNames, false);
+            return new TemplateHints(sheetNames.getFirst(), header, span, sheetNames, sleeveNames, false, skipKeywords);
         }
 
         // Auto-discover tabs
@@ -167,7 +171,7 @@ public class SubmissionController {
             Integer span   = ref != null ? ref.getHeaderRowSpan() : null;
             log.info("Template hints: auto-discover-tabs bb_template='{}' class={} headerRowIndex={} headerRowSpan={}",
                 t.getTemplateName(), t.getTemplateClass(), header, span);
-            return new TemplateHints(null, header, span, List.of(), List.of(), true);
+            return new TemplateHints(null, header, span, List.of(), List.of(), true, skipKeywords);
         }
 
         // Single tab (existing behaviour)
@@ -177,7 +181,7 @@ public class SubmissionController {
         Integer span   = grid != null ? grid.getHeaderRowSpan() : null;
         log.info("Template hints: using bb_template='{}' class={} sheet='{}' headerRowIndex={} headerRowSpan={} forcedTemplate='{}'",
             t.getTemplateName(), t.getTemplateClass(), sheet, header, span, forcedTemplate);
-        return new TemplateHints(sheet, header, span);
+        return new TemplateHints(sheet, header, span, List.of(), List.of(), false, skipKeywords);
     }
 
     private List<BbTemplate> templatesFor(String agentBank, String forcedTemplate) {
@@ -273,10 +277,10 @@ public class SubmissionController {
         ExtractionResponse extraction = isMultiTab
             ? extractionClient.extract(String.valueOf(facilityId), filePath,
                 hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
-                forcedTemplate, hints.sheetNames(), hints.autoDiscoverTabs())
+                forcedTemplate, hints.sheetNames(), hints.autoDiscoverTabs(), hints.skipRowKeywords())
             : extractionClient.extract(String.valueOf(facilityId), filePath,
                 hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
-                forcedTemplate);
+                forcedTemplate, List.of(), false, hints.skipRowKeywords());
 
         if (extraction == null) {
             log.warn("Extraction skipped for submission {} — pe-sub-extraction unreachable", sub.getId());
@@ -356,7 +360,7 @@ public class SubmissionController {
                 row.put("sizeValueTier",  fieldStr(rec.fields(), "Size Value / Tier"));
                 row.put("lpSizeCriteria", fieldStr(rec.fields(), "LP Size Criteria"));
                 row.put("lpSizeBil",      fieldStr(rec.fields(), "LP Size ($ Bil)"));
-                row.put("agentRate",    fmtRate(fieldDec(rec.fields(), "AGENT_RATE")));
+                row.put("agentRate",    fmtRate(fieldDec(rec.fields(), "AGENT_RATE", "ADVANCE_RATE")));
                 row.put("agentConc",    fmtRate(fieldDec(rec.fields(), "CONCENTRATION_LIMIT")));
                 row.put("conf",         overallConf(rec));
                 row.put("requiresReview", rec.requiresReview());
@@ -370,8 +374,8 @@ public class SubmissionController {
                 row.put("calledCap",   fmtMoneyOrRaw(rec.fields(), "Called Capital"));
                 row.put("pctCalled",   fieldStr(rec.fields(), "% of LP Called"));
                 row.put("pctUncalled", fieldStr(rec.fields(), "% of Uncalled Capital"));
-                row.put("agentBB",     fieldStr(rec.fields(), "Borrowing Base"));
-                row.put("pctBB",       fieldStr(rec.fields(), "% of Borrowing Base"));
+                row.put("agentBB",     fieldStr(rec.fields(), "BORROWING_BASE", "Borrowing Base"));
+                row.put("pctBB",       fieldStr(rec.fields(), "PCT_OF_BORROWING_BASE", "% of Borrowing Base"));
                 ObjectNode canonicalValues = mapper.createObjectNode();
                 for (FmCanonicalField cf : canonicalFields) {
                     String display = displayValueForCanonical(rec.fields(), cf);
@@ -385,7 +389,7 @@ public class SubmissionController {
                 row.set("warnings", warnings);
 
                 BigDecimal uncalledDec = fieldDec(rec.fields(), "UNCALLED");
-                BigDecimal rateDec     = fieldDec(rec.fields(), "AGENT_RATE");
+                BigDecimal rateDec     = fieldDec(rec.fields(), "AGENT_RATE", "ADVANCE_RATE");
                 BigDecimal rateNorm    = rateDec != null
                     ? (rateDec.compareTo(BigDecimal.ONE) < 0
                         ? rateDec
@@ -557,10 +561,10 @@ public class SubmissionController {
         ExtractionResponse extraction = isMultiTab
             ? extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
                 hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
-                forcedTemplate, hints.sheetNames(), hints.autoDiscoverTabs())
+                forcedTemplate, hints.sheetNames(), hints.autoDiscoverTabs(), hints.skipRowKeywords())
             : extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
                 hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
-                forcedTemplate);
+                forcedTemplate, List.of(), false, hints.skipRowKeywords());
         if (extraction == null) {
             auditService.log("Re-extraction Failed",
                 "Submission #" + id + " re-extraction failed: pe-sub-extraction unreachable",
@@ -683,10 +687,10 @@ public class SubmissionController {
         ExtractionResponse extraction = isMultiTabRemap
             ? extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
                 hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
-                forcedTemplate, hints.sheetNames(), hints.autoDiscoverTabs())
+                forcedTemplate, hints.sheetNames(), hints.autoDiscoverTabs(), hints.skipRowKeywords())
             : extractionClient.extract(String.valueOf(sub.getFacilityId()), Paths.get(sub.getFilePath()),
                 hints.sheetName(), hints.headerRowIndex(), sub.getAgentBank(), hints.headerRowSpan(),
-                forcedTemplate);
+                forcedTemplate, List.of(), false, hints.skipRowKeywords());
         if (extraction == null) {
             return ResponseEntity.status(502).body("pe-sub-extraction unreachable — alias saved, re-extraction pending.");
         }
@@ -916,7 +920,7 @@ public class SubmissionController {
             toDecimalFieldFromStr(fields.get("COMMITMENT")),
             toDecimalFieldFromStr(fields.get("UNCALLED")),
             toDecimalFieldFromStr(fields.get("AUM")),
-            toDecimalFieldFromStr(fields.get("AGENT_RATE")),
+            toDecimalFieldFromStr(fieldValue(fields, "AGENT_RATE", "ADVANCE_RATE")),
             toDecimalFieldFromStr(fields.get("CONCENTRATION_LIMIT")),
             toStringField(fields.get("S&P Rating")),
             toStringField(fields.get("Moody's Rating")),
@@ -943,14 +947,23 @@ public class SubmissionController {
         return new IngestRequest.DecimalField(parseNumericSafe(f.value()), f.confidence(), f.sourceHeader());
     }
 
-    private String fieldStr(Map<String, ExtractionResponse.FieldValue> fields, String key) {
-        ExtractionResponse.FieldValue f = fields != null ? fields.get(key) : null;
+    private String fieldStr(Map<String, ExtractionResponse.FieldValue> fields, String... keys) {
+        ExtractionResponse.FieldValue f = fieldValue(fields, keys);
         return (f != null && f.value() != null) ? f.value() : "";
     }
 
-    private BigDecimal fieldDec(Map<String, ExtractionResponse.FieldValue> fields, String key) {
-        ExtractionResponse.FieldValue f = fields != null ? fields.get(key) : null;
+    private BigDecimal fieldDec(Map<String, ExtractionResponse.FieldValue> fields, String... keys) {
+        ExtractionResponse.FieldValue f = fieldValue(fields, keys);
         return f != null ? parseNumericSafe(f.value()) : null;
+    }
+
+    private ExtractionResponse.FieldValue fieldValue(Map<String, ExtractionResponse.FieldValue> fields, String... keys) {
+        if (fields == null || fields.isEmpty() || keys == null) return null;
+        for (String key : keys) {
+            ExtractionResponse.FieldValue f = fields.get(key);
+            if (f != null) return f;
+        }
+        return null;
     }
 
     private BigDecimal parseNumericSafe(String raw) {

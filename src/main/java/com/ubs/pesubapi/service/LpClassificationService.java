@@ -54,6 +54,7 @@ public class LpClassificationService {
             if (row.parent()         != null) lp.setParent(row.parent());
             if (row.spv()            != null) lp.setSpv(row.spv());
             if (row.type()           != null) lp.setInvType(row.type());
+            if (row.region()         != null) lp.setRegion(row.region());
             if (row.ig()             != null) lp.setIg(row.ig());
             if (row.cls()            != null) lp.setCls(row.cls());
             if (row.agentCls()       != null) lp.setAgentCls(row.agentCls());

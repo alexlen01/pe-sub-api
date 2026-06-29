@@ -84,6 +84,17 @@ public class ExtractionClientService {
                                       String forceTemplate,
                                       List<String> sheetNames,
                                       boolean autoDiscoverTabs) {
+        return extract(facilityId, filePath, sheetNameHint, headerRowHint, agentBank,
+            headerRowSpan, forceTemplate, sheetNames, autoDiscoverTabs, List.of());
+    }
+
+    public ExtractionResponse extract(String facilityId, Path filePath,
+                                      String sheetNameHint, Integer headerRowHint,
+                                      String agentBank, Integer headerRowSpan,
+                                      String forceTemplate,
+                                      List<String> sheetNames,
+                                      boolean autoDiscoverTabs,
+                                      List<String> skipRowKeywords) {
         try {
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             body.add("facilityId", facilityId);
@@ -106,6 +117,9 @@ public class ExtractionClientService {
             }
             if (autoDiscoverTabs) {
                 body.add("autoDiscoverTabs", "true");
+            }
+            if (skipRowKeywords != null && !skipRowKeywords.isEmpty()) {
+                skipRowKeywords.forEach(k -> body.add("skipRowKeywords", k));
             }
 
             log.info("Calling pe-sub-extraction facilityId={} file='{}' agentBank='{}' sheetHint='{}' headerRowHint={} headerRowSpan={} forcedTemplate='{}' sheetNames={} autoDiscoverTabs={} aliasConfig={} classificationConfig={}",

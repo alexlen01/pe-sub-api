@@ -5,12 +5,12 @@ import com.ubs.pesubapi.dto.BbResult;
 import com.ubs.pesubapi.dto.BbSummary;
 import com.ubs.pesubapi.dto.ComputedLp;
 import com.ubs.pesubapi.entity.Lp;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Port of pe-sub-common/src/engine/calculator.ts.
@@ -19,28 +19,23 @@ import java.util.Map;
 @Service
 public class BbCalculationService {
 
-    // Advance rate by LP category. Covers BOTH taxonomies the platform persists:
-    //   • legacy LP Master tiers   ('Rated', 'Unrated >2bn', …)
-    //   • UBS LP Category           ('Rated Investor', 'FoF & Other > $10Bn AUM', …) — the labels
-    //     the Shadow BB seeds from the Agent Advance Rate (classificationConfig.UBS_CLS_DEFAULT_RATE).
-    // A blank/unrecognised category falls back to 0%.
-    private static final Map<String, Double> BUSA_RATES = Map.ofEntries(
-        Map.entry("Rated",                       0.90),
-        Map.entry("Unrated >2bn",                0.75),
-        Map.entry("Unrated 1–2bn",               0.65),   // em dash
-        Map.entry("Eligible",                    0.50),
-        Map.entry("Excluded",                    0.00),
-        Map.entry("Rated Investor",              0.90),
-        Map.entry("FoF & Other > $10Bn AUM",     0.75),
-        Map.entry("Unrated NAV > $1Bn",          0.65),
-        Map.entry("Corp Pension > $5Bn Assets", 0.65),
-        Map.entry("Other Institutional",         0.50),
-        Map.entry("Included (PWM)",              0.50)
-    );
+    private final ConfigService configService;
+
+    public BbCalculationService(ConfigService configService) {
+        this.configService = configService;
+    }
 
     /** Returns the BUSA advance rate for a given LP classification. */
     public double getRateForCls(String cls) {
-        return BUSA_RATES.getOrDefault(cls, 0.0);
+        if (cls == null || cls.isBlank()) return 0.0;
+        JsonNode cfg = configService.get("classification_config").orElse(null);
+        if (cfg == null) return 0.0;
+
+        double legacy = parsePct(cfg.path("BUSA_RATE_MAP").path(cls).asText(""));
+        if (legacy >= 0.0) return legacy;
+
+        double ubs = parsePct(cfg.path("UBS_CLS_DEFAULT_RATE").path(cls).asText(""));
+        return ubs >= 0.0 ? ubs : 0.0;
     }
 
     // The UBS Advance Rate is an independent manual-input column on the Shadow BB: the same class
@@ -56,6 +51,16 @@ public class BbCalculationService {
             } catch (NumberFormatException ignored) { /* fall through to class default */ }
         }
         return getRateForCls(lp.getCls());
+    }
+
+    private static double parsePct(String raw) {
+        if (raw == null || raw.isBlank()) return -1.0;
+        try {
+            double n = Double.parseDouble(raw.replace("%", "").trim());
+            return n > 1 ? n / 100.0 : n;
+        } catch (NumberFormatException ignored) {
+            return -1.0;
+        }
     }
 
     public BbResult compute(List<Lp> lps, double concLimitM) {
