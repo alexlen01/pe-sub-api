@@ -1,7 +1,7 @@
 package com.ubs.pesubapi.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.repository.LpMasterRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -24,12 +24,12 @@ class MatchingServiceTest {
 
     @BeforeEach
     void setUp() {
-        LpRepository lpRepo = mock(LpRepository.class);
+        LpMasterRepository lpMasterRepo = mock(LpMasterRepository.class);
         ConfigService configService = mock(ConfigService.class);
         // Empty config → service falls back to documented defaults
         // (autoAccept 95, reviewQueue 80, jwWeight 0.6, levWeight 0.4).
         when(configService.get("matching_config")).thenReturn(Optional.empty());
-        service = new MatchingService(lpRepo, configService, new ObjectMapper());
+        service = new MatchingService(lpMasterRepo, configService, new ObjectMapper());
     }
 
     @Test

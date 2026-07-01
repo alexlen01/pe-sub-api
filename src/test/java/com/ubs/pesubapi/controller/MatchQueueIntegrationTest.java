@@ -4,10 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ubs.pesubapi.IntegrationTestBase;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.entity.Lp;
+import com.ubs.pesubapi.entity.LpMaster;
 import com.ubs.pesubapi.entity.Submission;
 import com.ubs.pesubapi.entity.SubmissionExtraction;
 import com.ubs.pesubapi.repository.AuditLogRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
+import com.ubs.pesubapi.repository.LpMasterRepository;
 import com.ubs.pesubapi.repository.LpRateRepository;
 import com.ubs.pesubapi.repository.LpRepository;
 import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
@@ -29,15 +31,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class MatchQueueIntegrationTest extends IntegrationTestBase {
 
-    @Autowired MockMvc                       mvc;
-    @Autowired ObjectMapper                  mapper;
-    @Autowired FacilityRepository            facilityRepo;
-    @Autowired SubmissionRepository          submissionRepo;
+    @Autowired MockMvc                        mvc;
+    @Autowired ObjectMapper                   mapper;
+    @Autowired FacilityRepository             facilityRepo;
+    @Autowired LpMasterRepository             lpMasterRepo;
+    @Autowired SubmissionRepository           submissionRepo;
     @Autowired SubmissionExtractionRepository extractionRepo;
-    @Autowired MatchQueueEntryRepository     matchQueueRepo;
-    @Autowired LpRepository                  lpRepo;
-    @Autowired LpRateRepository              rateRepo;
-    @Autowired AuditLogRepository            auditLogRepo;
+    @Autowired MatchQueueEntryRepository      matchQueueRepo;
+    @Autowired LpRepository                   lpRepo;
+    @Autowired LpRateRepository               rateRepo;
+    @Autowired AuditLogRepository             auditLogRepo;
 
     private int facilityId;
     private int submissionId;
@@ -64,6 +67,10 @@ class MatchQueueIntegrationTest extends IntegrationTestBase {
         lp.setRegion("US");
         lp.setCls("Rated");
         lpRepo.save(lp);
+
+        LpMaster master = new LpMaster();
+        master.setInvestorName("Texas Teachers Retirement System");   // TEST ONLY
+        lpMasterRepo.save(master);
 
         Submission s = new Submission();
         s.setFacilityId(facilityId);

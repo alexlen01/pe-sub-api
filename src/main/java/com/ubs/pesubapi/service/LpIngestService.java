@@ -4,10 +4,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.ubs.pesubapi.dto.IngestRequest;
 import com.ubs.pesubapi.dto.IngestResult;
 import com.ubs.pesubapi.entity.Lp;
+import com.ubs.pesubapi.entity.LpMaster;
 import com.ubs.pesubapi.entity.MatchQueueEntry;
+import com.ubs.pesubapi.repository.LpMasterRepository;
 import com.ubs.pesubapi.repository.LpRepository;
 import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -24,13 +27,16 @@ public class LpIngestService {
     private static final double MIN_FIELD_CONFIDENCE = 0.7;
 
     private final LpRepository              lpRepo;
+    private final LpMasterRepository        lpMasterRepo;
     private final MatchingService           matchingService;
     private final MatchQueueEntryRepository matchQueueRepo;
 
     public LpIngestService(LpRepository lpRepo,
+                           LpMasterRepository lpMasterRepo,
                            MatchingService matchingService,
                            MatchQueueEntryRepository matchQueueRepo) {
         this.lpRepo          = lpRepo;
+        this.lpMasterRepo    = lpMasterRepo;
         this.matchingService = matchingService;
         this.matchQueueRepo  = matchQueueRepo;
     }
@@ -117,49 +123,64 @@ public class LpIngestService {
     }
 
     /**
-     * Commits resolved match-queue entries to LP Master.
+     * Commits all extracted LP rows to the facility, replacing any prior records for that facility.
      * Called when the analyst advances from step 4 (Match Queue) to step 5 (Run Shadow BB).
-     * Match Queue is name-only: accepted proposed matches use the chosen LP Master name, rejected
-     * proposed matches use the extracted Agent BB name. No fields are copied from, or written to,
-     * the matched LP record; the current facility's row is populated from Agent BB extraction only.
+     *
+     * Every extracted row is inserted regardless of its match queue decision:
+     * - Accepted (matched to LP Master): uses the LP Master name; empty fields pre-populated
+     *   from LP Master stable identity, ratings, and UBS credit profile before extraction wins.
+     * - All other rows (Rejected, Pending, New, or no queue entry): use the extracted name;
+     *   no LP Master enrichment applied.
+     *
+     * Existing facility LP records are deleted before insertion so a re-run produces an exact
+     * 1-to-1 replacement rather than a merge with stale records.
      */
+    @Transactional
     public void commitMatchQueueDecisions(int submissionId, int facilityId, JsonNode extractedLps) {
         if (extractedLps == null || !extractedLps.isArray()) return;
 
         Map<Integer, JsonNode> byRow = new HashMap<>();
-        extractedLps.forEach(row -> byRow.put(row.path("rowIndex").asInt(-1), row));
+        extractedLps.forEach(node -> byRow.put(node.path("rowIndex").asInt(-1), node));
 
-        // Index existing facility LPs by name so a resolved "new" entry whose name already exists
-        // (e.g. the same Agent BB committed twice) updates the record in place rather than inserting
-        // a duplicate. Records created earlier in this same pass are tracked here too, so duplicate
-        // resolved names within one submission also collapse onto a single record.
-        Map<String, Lp> byName = lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).stream()
-            .collect(Collectors.toMap(lp -> lp.getInvestorName(), lp -> lp, (a, b) -> a, HashMap::new));
+        Map<Integer, MatchQueueEntry> queueByRow =
+            matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(submissionId).stream()
+                .collect(Collectors.toMap(e -> e.getRowIndex(), e -> e, (a, b) -> a, HashMap::new));
 
-        for (MatchQueueEntry entry : matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(submissionId)) {
-            String decision = entry.getDecision();
-            if (!"Accepted".equals(decision) && !"Rejected".equals(decision)) continue;
-            JsonNode row = byRow.get(entry.getRowIndex());
-            if (row == null) continue;
+        // Replace all existing facility LP records — this submission is authoritative.
+        lpRepo.deleteByFacilityId(facilityId);
 
-            boolean createAsNew = "Rejected".equals(decision) || entry.isNew();
-            String name = lpNameForCommit(entry, createAsNew);
-            if (name == null || name.isBlank()) continue;
+        // Insert every extracted row; no row is discarded regardless of match queue status.
+        byRow.keySet().stream().sorted().forEach(rowIndex -> {
+            JsonNode row = byRow.get(rowIndex);
+            String extractedName = row.path("name").asText("").trim();
+            if (extractedName.isBlank()) return;
 
-            Lp lp = byName.get(name);
-            if (lp == null) {
-                lp = new Lp();
-                lp.setFacilityId(facilityId);
-                lp.setInvestorName(name);
-                lp.setInvType("Institutional");
-                lp.setRegion("US");
-                lp.setCls("Eligible");
+            MatchQueueEntry entry = queueByRow.get(rowIndex);
+            boolean isAccepted = entry != null
+                && "Accepted".equals(entry.getDecision())
+                && !entry.isNew();
+            String name = isAccepted ? lpNameForCommit(entry, false) : extractedName;
+            if (name == null || name.isBlank()) name = extractedName;
+
+            Lp lp = new Lp();
+            lp.setFacilityId(facilityId);
+            lp.setInvestorName(name);
+            lp.setInvestorType("");
+            lp.setInstVsHnw("Institutional");
+            lp.setRegion("US");
+            lp.setCls("Eligible");
+
+            // For accepted LP Master matches: pre-populate empty fields from LP Master
+            // (stable identity, ratings, UBS credit profile) before extraction fields win.
+            if (isAccepted) {
+                final Lp lpRef = lp;
+                lpMasterRepo.findByInvestorName(name).ifPresent(m -> applyLpMasterBaseline(lpRef, m));
             }
-            lp.setSourceSeq(entry.getRowIndex());   // preserve the Agent BB row order
+
+            lp.setSourceSeq(rowIndex);
             applyExtractedJsonRow(lp, row);
-            lp = lpRepo.save(lp);
-            byName.put(lp.getInvestorName(), lp);
-        }
+            lpRepo.save(lp);
+        });
     }
 
     /**
@@ -191,7 +212,7 @@ public class LpIngestService {
         // Agent LP Category verbatim from the Agent BB (e.g. "Pension Fund", "Designated PWM",
         // "Rated Included"). Persisted here so it survives the Commit Decisions step — the bb.run and
         // classification-edit paths already set it; this path previously dropped it, leaving the agent
-        // value blank in Shadow BB. It is distinct from invType (Investor Type), a manual field.
+        // value blank in Shadow BB. It is distinct from Investor Type, a manual field.
         String agentCls  = textOrNull(row, "agentClass");
         String calledCap = textOrNull(row, "calledCap");
         String pctCalled = textOrNull(row, "pctCalled");
@@ -218,6 +239,116 @@ public class LpIngestService {
         if (pctUncalled != null) lp.setPctUncalled(pctUncalled);
         if (notes     != null) lp.setNotes(notes);
         lp.setUpdatedAt(LocalDateTime.now());
+    }
+
+    /**
+     * Applies LP Master stable attributes and UBS credit profile as a baseline onto a
+     * facility LP record before Agent BB extraction fields are overlaid.
+     *
+     * Stable identity/financial scale fields are applied only when the LP record currently
+     * holds its default/blank value, so a manually-edited facility record is not silently
+     * clobbered.  UBS credit profile fields (cls, ubsRate, ubsConc) are applied
+     * unconditionally — they are never set by extraction, so LP Master is the only source
+     * of pre-populated credit decisions for this submission cycle.
+     */
+    private void applyLpMasterBaseline(Lp lp, LpMaster master) {
+        // Stable identity — override defaults set at new-record creation time
+        if (master.getInvestorType() != null && !master.getInvestorType().isBlank()
+                && (lp.getInvestorType() == null || lp.getInvestorType().isBlank())) {
+            lp.setInvestorType(master.getInvestorType());
+        }
+        if (master.getInstVsHnw() != null && !master.getInstVsHnw().isBlank()
+                && (lp.getInstVsHnw() == null || lp.getInstVsHnw().isBlank())) {
+            lp.setInstVsHnw(master.getInstVsHnw());
+        }
+        if (master.getRegion() != null && !master.getRegion().isBlank()
+                && "US".equals(lp.getRegion())) {
+            lp.setRegion(master.getRegion());
+        }
+        lp.setSpv(master.isSpv());
+        lp.setHighQty(master.isHighQty());
+        lp.setIg(master.isIg());
+        if (master.getParent() != null && !master.getParent().isBlank() && lp.getParent() == null) {
+            lp.setParent(master.getParent());
+        }
+
+        // Ratings — apply when LP Master has a value and the facility record is still blank
+        if (!master.getSp().isBlank()    && lp.getSp().isBlank())    lp.setSp(master.getSp());
+        if (!master.getMdy().isBlank()   && lp.getMdy().isBlank())   lp.setMdy(master.getMdy());
+        if (!master.getFitch().isBlank() && lp.getFitch().isBlank()) lp.setFitch(master.getFitch());
+
+        // Financial scale — fill nulls from LP Master
+        if (master.getAum()          != null && lp.getAum()          == null) lp.setAum(master.getAum());
+        if (master.getNav()          != null && lp.getNav()          == null) lp.setNav(master.getNav());
+        if (master.getPension()      != null && lp.getPension()      == null) lp.setPension(master.getPension());
+        if (master.getPensionFunded()!= null && lp.getPensionFunded()== null) lp.setPensionFunded(master.getPensionFunded());
+
+        // UBS credit profile — always apply; these fields are never set by extraction so
+        // LP Master is the sole pre-populated source ahead of the credit officer's review
+        if (master.getUbsClassification() != null && !master.getUbsClassification().isBlank()) {
+            lp.setCls(master.getUbsClassification());
+        }
+        if (master.getUbsDefaultAdvRate() != null && !master.getUbsDefaultAdvRate().isBlank()) {
+            lp.setUbsRate(master.getUbsDefaultAdvRate());
+        }
+        if (master.getUbsDefaultConcLimit() != null && !master.getUbsDefaultConcLimit().isBlank()) {
+            lp.setUbsConc(master.getUbsDefaultConcLimit());
+        }
+    }
+
+    /**
+     * Writes finalized UBS credit-profile decisions back to LP Master after a Shadow BB
+     * run is accepted.  Called from {@code SubmissionController /complete}.
+     *
+     * For each LP record in the facility: if an LP Master row exists, update its UBS
+     * classification / advance rate / concentration limit from the accepted facility record.
+     * If no LP Master row exists yet (LP was new in this submission), create one now so
+     * future submissions across any facility benefit from this cycle's decisions.
+     * The {@code lp_master_id} FK is stamped onto the facility record after upsert.
+     */
+    @Transactional
+    public void writeBackToLpMaster(int facilityId) {
+        for (Lp lp : lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)) {
+            LpMaster master = lpMasterRepo.findByInvestorName(lp.getInvestorName())
+                .orElseGet(() -> {
+                    LpMaster m = new LpMaster();
+                    m.setInvestorName(lp.getInvestorName());
+                    return m;
+                });
+
+            // UBS credit profile — the definitive output of the accepted Shadow BB cycle
+            if (lp.getCls()     != null && !lp.getCls().isBlank())     master.setUbsClassification(lp.getCls());
+            if (lp.getUbsRate() != null && !lp.getUbsRate().isBlank()) master.setUbsDefaultAdvRate(lp.getUbsRate());
+            if (lp.getUbsConc() != null && !lp.getUbsConc().isBlank()) master.setUbsDefaultConcLimit(lp.getUbsConc());
+
+            // Stable identity — refresh blanks with anything the facility record now carries
+            if (lp.getInvestorType() != null && !lp.getInvestorType().isBlank() && (master.getInvestorType() == null || master.getInvestorType().isBlank())) master.setInvestorType(lp.getInvestorType());
+            if (lp.getInstVsHnw()  != null && !lp.getInstVsHnw().isBlank()  && (master.getInstVsHnw()  == null || master.getInstVsHnw().isBlank()))  master.setInstVsHnw(lp.getInstVsHnw());
+            if (lp.getRegion()  != null && !lp.getRegion().isBlank()  && (master.getRegion()  == null || master.getRegion().isBlank()))  master.setRegion(lp.getRegion());
+            if (lp.getParent()  != null && !lp.getParent().isBlank()  && (master.getParent()  == null || master.getParent().isBlank()))  master.setParent(lp.getParent());
+            master.setSpv(lp.isSpv());
+            master.setHighQty(lp.isHighQty());
+            master.setIg(lp.isIg());
+
+            // Ratings — overwrite with latest cycle values when non-blank
+            if (!lp.getSp().isBlank())    master.setSp(lp.getSp());
+            if (!lp.getMdy().isBlank())   master.setMdy(lp.getMdy());
+            if (!lp.getFitch().isBlank()) master.setFitch(lp.getFitch());
+
+            // Financial scale — overwrite with latest cycle values when non-null
+            if (lp.getAum()          != null) master.setAum(lp.getAum());
+            if (lp.getNav()          != null) master.setNav(lp.getNav());
+            if (lp.getPension()      != null) master.setPension(lp.getPension());
+            if (lp.getPensionFunded()!= null) master.setPensionFunded(lp.getPensionFunded());
+
+            LpMaster saved = lpMasterRepo.save(master);
+
+            // Stamp the FK so future lookups can join directly
+            if (!saved.getId().equals(lp.getLpMasterId())) {
+                lp.setLpMasterId(saved.getId());
+                lpRepo.save(lp);
+            }
+        }
     }
 
     private String textOrNull(JsonNode node, String field) {

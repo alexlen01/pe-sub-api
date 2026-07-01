@@ -53,15 +53,42 @@ CREATE TABLE facilities (
 --
 -- One LP record per (facility_id, investor_name): the same name appears at most once
 -- per facility. This constraint backs the idempotent ingest/commit upsert.
+CREATE TABLE lp_master (
+    id                       SERIAL        PRIMARY KEY,
+    investor_name            VARCHAR(255)  NOT NULL UNIQUE,
+    parent                   VARCHAR(255),
+    spv                      BOOLEAN       NOT NULL DEFAULT FALSE,
+    high_qty                 BOOLEAN       NOT NULL DEFAULT TRUE,
+    investor_type            VARCHAR(50),
+    inst_vs_hnw              VARCHAR(30),
+    region_location          VARCHAR(100),
+    investment_grade         BOOLEAN       NOT NULL DEFAULT FALSE,
+    sp                       VARCHAR(20)   NOT NULL DEFAULT '',
+    mdy                      VARCHAR(20)   NOT NULL DEFAULT '',
+    fitch                    VARCHAR(20)   NOT NULL DEFAULT '',
+    aum                      VARCHAR(50),
+    nav                      VARCHAR(50),
+    pension                  VARCHAR(50),
+    pension_funded           VARCHAR(50),
+    ubs_classification       VARCHAR(50),
+    ubs_default_adv_rate     VARCHAR(20),
+    ubs_default_conc_limit   VARCHAR(20),
+    notes                    TEXT,
+    created_at               TIMESTAMP     NOT NULL DEFAULT NOW(),
+    updated_at               TIMESTAMP     NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE lp_records (
     id                SERIAL PRIMARY KEY,
     facility_id       INTEGER      NOT NULL REFERENCES facilities(id),
+    lp_master_id      INTEGER      REFERENCES lp_master(id),
     investor_name     VARCHAR(255) NOT NULL,
     parent            VARCHAR(255),
     spv               BOOLEAN      NOT NULL DEFAULT FALSE,
     high_qty          BOOLEAN      NOT NULL DEFAULT TRUE,
-    inv_type           VARCHAR(50)  NOT NULL,
-    region             VARCHAR(100) NOT NULL,
+    investor_type      VARCHAR(50)  NOT NULL,
+    inst_vs_hnw        VARCHAR(30)  NOT NULL DEFAULT 'Institutional',
+    region_location    VARCHAR(100) NOT NULL,
     investment_grade   BOOLEAN      NOT NULL DEFAULT FALSE,
     classification     VARCHAR(50)  NOT NULL,
     classification_tag VARCHAR(50),
@@ -98,6 +125,8 @@ CREATE TABLE lp_records (
     updated_at         TIMESTAMP    NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_lp_records_facility_investor UNIQUE (facility_id, investor_name)
 );
+
+CREATE INDEX idx_lp_records_lp_master ON lp_records(lp_master_id);
 
 CREATE TABLE bb_snapshots (
     id             SERIAL PRIMARY KEY,

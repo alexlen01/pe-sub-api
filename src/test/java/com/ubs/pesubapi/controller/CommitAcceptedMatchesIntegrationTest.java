@@ -27,17 +27,21 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
- * Pins the commit step (Match Queue → Run Shadow BB) against two regressions:
+ * Pins the commit step (Match Queue → Run Shadow BB).
  *
- * <ol>
- *   <li><b>Dropped rows.</b> The match queue stores each entry's extraction {@code rowIndex}
- *       (the source-sheet row, which starts below the header — e.g. 7 — not at 0). Commit looks
- *       each accepted entry's row up by that same index. A previous mismatch (queue used the
- *       0-based array position) meant the first {@code header-offset} accepted entries found no
- *       row and were silently skipped, so a 900-row file inserted only 893 records.</li>
- *   <li><b>Lost natural order.</b> Inserted LPs must be returnable in the order they appeared in
- *       the uploaded file, not alphabetically.</li>
- * </ol>
+ * <ul>
+ *   <li><b>All-rows insertion.</b> Every extracted row is inserted regardless of its match queue
+ *       decision (Accepted, Rejected, Pending, or absent). Previously Pending entries were
+ *       silently skipped, so a 900-row file with 892 unresolved rows inserted only 8 records.</li>
+ *   <li><b>Row-index alignment.</b> The match queue stores each entry's extraction
+ *       {@code rowIndex} (the source-sheet row, not the 0-based array position). A prior bug
+ *       mismatched these, causing the first header-offset accepted entries to find no row and
+ *       be dropped.</li>
+ *   <li><b>Natural order.</b> Inserted LPs are ordered by their source-file position, not
+ *       alphabetically.</li>
+ *   <li><b>Delete-replace.</b> A re-run replaces existing facility LP records rather than
+ *       merging, so stale records from the previous upload are not carried forward.</li>
+ * </ul>
  */
 class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
 
@@ -152,7 +156,84 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
 
     @SuppressWarnings("null")
     @Test
-    void commit_usesMatchNameOnly_andDoesNotPopulateOrUpdateMatchedLpRecord() throws Exception {
+    void commit_insertsPendingRows_asNew() throws Exception {
+        // Build the match queue — all rows are NO_MATCH (LP Master is empty) so all start Pending.
+        mvc.perform(post("/api/submissions/{id}/confirm", submissionId))
+            .andExpect(status().isOk());
+
+        // Do NOT change any decisions — all remain Pending.
+        List<MatchQueueEntry> entries = matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(submissionId);
+        assertThat(entries).hasSize(N_ROWS);
+        assertThat(entries).allMatch(e -> "Pending".equals(e.getDecision()));
+
+        // Advance step 4 → 5 without resolving any decisions.
+        mvc.perform(patch("/api/submissions/{id}/shadow-bb-state", submissionId)
+                .contentType("application/json")
+                .content("{}"))
+            .andExpect(status().isOk());
+
+        // All rows must be inserted — none dropped because decision is Pending.
+        List<Lp> stored = lpRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
+        assertThat(stored).hasSize(N_ROWS);
+        List<String> storedNames = stored.stream().map(lp -> lp.getInvestorName()).toList();
+        assertThat(storedNames).containsExactlyElementsOf(NAMES);
+    }
+
+    @SuppressWarnings("null")
+    @Test
+    void commit_replacesExistingFacilityLps_onRerun() throws Exception {
+        // First commit: all rows accepted → inserts N_ROWS LPs.
+        mvc.perform(post("/api/submissions/{id}/confirm", submissionId))
+            .andExpect(status().isOk());
+        matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(submissionId)
+            .forEach(e -> { e.setDecision("Accepted"); matchQueueRepo.save(e); });
+        mvc.perform(patch("/api/submissions/{id}/shadow-bb-state", submissionId)
+                .contentType("application/json")
+                .content("{}"))
+            .andExpect(status().isOk());
+        assertThat(lpRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId)).hasSize(N_ROWS);
+
+        // Second submission for the same facility with a different 3-row extraction.
+        Submission s2 = new Submission();
+        s2.setFacilityId(facilityId);
+        s2.setAgentBank("Goldman Sachs Bank USA");
+        s2.setPeriodMonth("2026-06");
+        s2.setFileName("Agent-BB-June-2026.xlsx");
+        s2.setStatus("Extracting");
+        s2.setWizardStep(3);
+        int sub2Id = submissionRepo.save(s2).getId();
+
+        SubmissionExtraction ext2 = new SubmissionExtraction();
+        ext2.setSubmissionId(sub2Id);
+        ext2.setTotalRows(3);
+        ext2.setFlaggedCount(0);
+        ext2.setExtractedLps(mapper.readTree("""
+            [
+              {"rowIndex":7,"name":"New Fund Alpha"},
+              {"rowIndex":8,"name":"New Fund Beta"},
+              {"rowIndex":9,"name":"New Fund Gamma"}
+            ]"""));
+        extractionRepo.save(ext2);
+
+        mvc.perform(post("/api/submissions/{id}/confirm", sub2Id))
+            .andExpect(status().isOk());
+        matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(sub2Id)
+            .forEach(e -> { e.setDecision("Accepted"); matchQueueRepo.save(e); });
+        mvc.perform(patch("/api/submissions/{id}/shadow-bb-state", sub2Id)
+                .contentType("application/json")
+                .content("{}"))
+            .andExpect(status().isOk());
+
+        // Facility must now have exactly 3 LPs from the second submission — old 12 are gone.
+        List<Lp> stored = lpRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
+        assertThat(stored).hasSize(3);
+        assertThat(stored.stream().map(lp -> lp.getInvestorName()).toList())
+            .containsExactly("New Fund Alpha", "New Fund Beta", "New Fund Gamma");
+    }
+
+    @SuppressWarnings("null")
+    @Test
+    void commit_usesMatchedLpMasterName_andEnrichesEmptyFieldsFromLpMaster() throws Exception {
         Facility otherFacility = new Facility();
         otherFacility.setName("Different Levered Facility");
         otherFacility.setAgentBank("Goldman Sachs Bank USA");
@@ -189,9 +270,10 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
             """));
         extractionRepo.save(ext);
 
-        // Accepted auto-matches may carry a matched_lp_id from another facility, but submission
-        // commit is name-only: it creates the current facility's row using the matched name and
-        // Agent BB fields. Rejected proposed matches use the Agent BB name.
+        // Accepted entries use the LP Master name; empty fields are enriched from LP Master when
+        // a record is found there. In this test the matched LP is in lpRepo (not lpMasterRepo),
+        // so lpMasterRepo returns empty and no baseline is applied — extraction fields only.
+        // Rejected entries use the extracted Agent BB name and receive no LP Master enrichment.
         MatchQueueEntry accepted = new MatchQueueEntry();
         accepted.setSubmissionId(submissionId);
         accepted.setFacilityId(facilityId);

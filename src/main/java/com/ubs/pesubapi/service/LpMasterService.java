@@ -52,8 +52,9 @@ public class LpMasterService {
         lp.setParent(row.parent());
         lp.setSpv(row.spv());
         lp.setHighQty(row.hq());
-        lp.setInvType(row.type() != null ? row.type() : "Institutional");
-        lp.setRegion(row.region() != null ? row.region() : "");
+        lp.setInvestorType(row.investorType() != null ? row.investorType() : "");
+        lp.setInstVsHnw(row.instVsHnw() != null ? row.instVsHnw() : "Institutional");
+        lp.setRegionLocation(row.regionLocation() != null ? row.regionLocation() : "");
         lp.setIg(row.ig());
         lp.setCls(row.cls() != null ? row.cls() : "Eligible");
         lp.setAgentCls(row.agentCls());

@@ -1,6 +1,7 @@
 package com.ubs.pesubapi.dto;
 
 import com.ubs.pesubapi.entity.Lp;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.LocalDateTime;
 
@@ -11,8 +12,12 @@ public record LpDto(
     String        parent,
     boolean       spv,
     boolean       hq,
-    String        type,
-    String        region,
+    @JsonProperty("investor_type")
+    String        investorType,
+    @JsonProperty("inst_vs_hnw")
+    String        instVsHnw,
+    @JsonProperty("region_location")
+    String        regionLocation,
     boolean       ig,
     String        agentCls,
     String        cls,
@@ -48,7 +53,7 @@ public record LpDto(
     public static LpDto from(Lp lp) {
         return new LpDto(
             lp.getId(), lp.getFacilityId(), lp.getInvestorName(), lp.getParent(),
-            lp.isSpv(), lp.isHighQty(), lp.getInvType(), lp.getRegion(), lp.isIg(),
+            lp.isSpv(), lp.isHighQty(), lp.getInvestorType(), lp.getInstVsHnw(), lp.getRegionLocation(), lp.isIg(),
             lp.getAgentCls(), lp.getCls(), lp.getClsTag(), lp.getSp(), lp.getMdy(), lp.getFitch(),
             lp.getAum(), lp.getNav(),
             lp.getPension(), lp.getPensionFunded(),

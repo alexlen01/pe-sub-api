@@ -1,5 +1,7 @@
 package com.ubs.pesubapi.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
 /**
@@ -15,8 +17,15 @@ public record CommitBbRequest(List<CommitLpRow> lps) {
         String  parent,
         boolean spv,
         boolean hq,
-        String  type,
-        String  region,
+        @JsonProperty("investor_type")
+        @JsonAlias({"investorType"})
+        String  investorType,
+        @JsonProperty("inst_vs_hnw")
+        @JsonAlias({"instVsHnw", "type"})
+        String  instVsHnw,
+        @JsonProperty("region_location")
+        @JsonAlias({"region", "regionLocation"})
+        String  regionLocation,
         boolean ig,
         String  agentCls,       // Agent LP Category (verbatim from Agent BB)
         String  cls,            // UBS LP Category (follows Agent LP Category)

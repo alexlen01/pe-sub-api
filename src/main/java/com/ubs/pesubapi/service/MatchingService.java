@@ -3,7 +3,7 @@ package com.ubs.pesubapi.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ubs.pesubapi.entity.MatchQueueEntry;
-import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.repository.LpMasterRepository;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 
@@ -14,12 +14,12 @@ import java.util.stream.Collectors;
 @Service
 public class MatchingService {
 
-    private final LpRepository  lpRepo;
-    private final ConfigService configService;
-    private final ObjectMapper  mapper;
+    private final LpMasterRepository lpMasterRepo;
+    private final ConfigService      configService;
+    private final ObjectMapper       mapper;
 
-    public MatchingService(LpRepository lpRepo, ConfigService configService, ObjectMapper mapper) {
-        this.lpRepo        = lpRepo;
+    public MatchingService(LpMasterRepository lpMasterRepo, ConfigService configService, ObjectMapper mapper) {
+        this.lpMasterRepo  = lpMasterRepo;
         this.configService = configService;
         this.mapper        = mapper;
     }
@@ -224,7 +224,7 @@ public class MatchingService {
     public @NonNull List<MatchQueueEntry> buildMatchQueueEntries(
             int submissionId, int facilityId, JsonNode extractedLps) {
         if (extractedLps == null || !extractedLps.isArray()) return new ArrayList<>();
-        List<String> masterNames = lpRepo.findAllDistinctNames();
+        List<String> masterNames = lpMasterRepo.findAllInvestorNames();
         Prepared prepared = prepare(masterNames);
 
         // Collect the non-blank rows carrying the extraction's own row index. This must be the
@@ -277,7 +277,7 @@ public class MatchingService {
     public MatchTestResult test(String inputName) {
         Config cfg   = parseConfig();
         String norm  = normalize(inputName, cfg);
-        List<String> lpNames = lpRepo.findAllDistinctNames();
+        List<String> lpNames = lpMasterRepo.findAllInvestorNames();
 
         List<MatchCandidate> matches = lpNames.stream()
             .map(lpName -> candidate(lpName, score(norm, normalize(lpName, cfg), cfg), cfg))

@@ -856,6 +856,9 @@ public class SubmissionController {
                 facilities.save(f);
                 facilityName = f.getName();
             }
+            // Write finalized UBS classification / rate / conc decisions back to LP Master
+            // so future submissions for any facility benefit from this cycle's credit profile.
+            ingestService.writeBackToLpMaster(facilityId);
         }
 
         auditService.log("Shadow BB Completed", "Submission #" + id + " Shadow BB accepted",

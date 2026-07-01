@@ -30,11 +30,14 @@ public class Lp {
     @Column(name = "high_qty", nullable = false)
     private boolean highQty = true;
 
-    @Column(name = "inv_type", nullable = false)
-    private String invType;
+    @Column(name = "investor_type", nullable = false)
+    private String investorType = "";
 
-    @Column(nullable = false)
-    private String region;
+    @Column(name = "inst_vs_hnw", nullable = false)
+    private String instVsHnw = "Institutional";
+
+    @Column(name = "region_location", nullable = false)
+    private String regionLocation;
 
     @Column(name = "investment_grade", nullable = false)
     private boolean ig = false;
@@ -123,6 +126,9 @@ public class Lp {
 
     private String notes;
 
+    @Column(name = "lp_master_id")
+    private Integer lpMasterId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -143,8 +149,11 @@ public class Lp {
     public String getParent()           { return parent; }
     public boolean isSpv()              { return spv; }
     public boolean isHighQty()          { return highQty; }
-    public String getInvType()          { return invType; }
-    public String getRegion()           { return region; }
+    public String getInvestorType()     { return investorType; }
+    public String getInstVsHnw()        { return instVsHnw; }
+    public String getInvType()          { return instVsHnw; }
+    public String getRegionLocation()   { return regionLocation; }
+    public String getRegion()           { return regionLocation; }
     public boolean isIg()               { return ig; }
     public String getCls()              { return cls; }
     public String getClsTag()           { return clsTag; }
@@ -175,15 +184,27 @@ public class Lp {
     public String getRecallableDist()   { return recallableDist; }
     public boolean isTf()               { return tf; }
     public String getNotes()            { return notes; }
+    public Integer getLpMasterId()       { return lpMasterId; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 
     // Setters for creation
     public void setFacilityId(Integer v)     { this.facilityId = v; }
+    public void setLpMasterId(Integer v)     { this.lpMasterId = v; }
     public void setSourceSeq(Integer v)      { this.sourceSeq = v; }
     public void setInvestorName(String v)    { this.investorName = v; }
-    public void setInvType(String v)         { this.invType = v; }
-    public void setRegion(String v)          { this.region = v; }
+    public void setInvestorType(String v)    { this.investorType = v != null ? v : ""; }
+    public void setInstVsHnw(String v)       { this.instVsHnw = v != null && !v.isBlank() ? v : "Institutional"; }
+    public void setInvType(String v) {
+        if ("Institutional".equals(v) || "HNW".equals(v)) {
+            setInstVsHnw(v);
+            if (investorType == null) investorType = "";
+        } else {
+            setInvestorType(v);
+        }
+    }
+    public void setRegionLocation(String v)  { this.regionLocation = v; }
+    public void setRegion(String v)          { this.regionLocation = v; }
     public void setParent(String v)          { this.parent = v; }
     public void setSpv(boolean v)            { this.spv = v; }
     public void setHighQty(boolean v)        { this.highQty = v; }

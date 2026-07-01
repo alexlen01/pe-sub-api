@@ -53,8 +53,9 @@ public class LpClassificationService {
             if (row.name() != null && !row.name().isBlank()) lp.setInvestorName(row.name());
             if (row.parent()         != null) lp.setParent(row.parent());
             if (row.spv()            != null) lp.setSpv(row.spv());
-            if (row.type()           != null) lp.setInvType(row.type());
-            if (row.region()         != null) lp.setRegion(row.region());
+            if (row.investorType()  != null) lp.setInvestorType(row.investorType());
+            if (row.instVsHnw()     != null) lp.setInstVsHnw(row.instVsHnw());
+            if (row.regionLocation() != null) lp.setRegionLocation(row.regionLocation());
             if (row.ig()             != null) lp.setIg(row.ig());
             if (row.cls()            != null) lp.setCls(row.cls());
             if (row.agentCls()       != null) lp.setAgentCls(row.agentCls());

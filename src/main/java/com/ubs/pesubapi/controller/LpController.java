@@ -111,6 +111,13 @@ public class LpController {
                                         HttpServletRequest request) {
         return repo.findById(id).map(lp -> {
             String prevCls = lp.getCls();
+            if (body.containsKey("investor_type")) lp.setInvestorType((String) body.get("investor_type"));
+            if (body.containsKey("investorType"))  lp.setInvestorType((String) body.get("investorType"));
+            if (body.containsKey("inst_vs_hnw"))   lp.setInstVsHnw((String) body.get("inst_vs_hnw"));
+            if (body.containsKey("instVsHnw"))     lp.setInstVsHnw((String) body.get("instVsHnw"));
+            if (body.containsKey("region_location")) lp.setRegionLocation((String) body.get("region_location"));
+            if (body.containsKey("regionLocation"))  lp.setRegionLocation((String) body.get("regionLocation"));
+            if (body.containsKey("region"))          lp.setRegionLocation((String) body.get("region"));
             if (body.containsKey("cls"))    lp.setCls((String) body.get("cls"));
             if (body.containsKey("clsTag")) lp.setClsTag((String) body.get("clsTag"));
             if (body.containsKey("abb"))    lp.setAbb((String) body.get("abb"));

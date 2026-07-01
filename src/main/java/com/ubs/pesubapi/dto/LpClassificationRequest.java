@@ -1,5 +1,7 @@
 package com.ubs.pesubapi.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
 /**
@@ -25,8 +27,15 @@ public record LpClassificationRequest(
         // Identity & classification (manual)
         String  parent,
         Boolean spv,
-        String  type,             // Investor Type
-        String  region,
+        @JsonProperty("investor_type")
+        @JsonAlias({"investorType"})
+        String  investorType,
+        @JsonProperty("inst_vs_hnw")
+        @JsonAlias({"instVsHnw", "type"})
+        String  instVsHnw,
+        @JsonProperty("region_location")
+        @JsonAlias({"region", "regionLocation"})
+        String  regionLocation,
         Boolean ig,               // Investment Grade?
         String  agentCls,         // Agent LP Category (verbatim from Agent BB)
         String  cls,              // UBS LP Category (follows Agent LP Category)

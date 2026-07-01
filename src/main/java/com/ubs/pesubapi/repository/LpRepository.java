@@ -25,6 +25,8 @@ public interface LpRepository extends JpaRepository<Lp, Integer> {
     @Query("SELECT l.facilityId, COUNT(l) FROM Lp l GROUP BY l.facilityId")
     List<Object[]> countGroupedByFacilityId();
 
+    void deleteByFacilityId(Integer facilityId);
+
     @Query("SELECT DISTINCT l.investorName FROM Lp l ORDER BY l.investorName")
     List<String> findAllDistinctNames();
 }

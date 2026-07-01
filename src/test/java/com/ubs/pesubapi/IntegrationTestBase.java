@@ -42,6 +42,7 @@ public abstract class IntegrationTestBase {
                 bb_snapshots,
                 audit_log,
                 lp_records,
+                lp_master,
                 facilities
             CASCADE
             """);

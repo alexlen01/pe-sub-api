@@ -1,6 +1,7 @@
 package com.ubs.pesubapi.dto;
 
 import com.ubs.pesubapi.entity.Lp;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 public record ComputedLp(
     Integer id,
@@ -9,8 +10,12 @@ public record ComputedLp(
     String  parent,
     boolean spv,
     boolean hq,
-    String  type,
-    String  region,
+    @JsonProperty("investor_type")
+    String  investorType,
+    @JsonProperty("inst_vs_hnw")
+    String  instVsHnw,
+    @JsonProperty("region_location")
+    String  regionLocation,
     boolean ig,
     String  cls,
     String  sp,
@@ -43,7 +48,7 @@ public record ComputedLp(
             || "Unrated 1–2bn".equals(cls);
         return new ComputedLp(
             lp.getId(), lp.getFacilityId(), lp.getInvestorName(), lp.getParent(),
-            lp.isSpv(), lp.isHighQty(), lp.getInvType(), lp.getRegion(), lp.isIg(),
+            lp.isSpv(), lp.isHighQty(), lp.getInvestorType(), lp.getInstVsHnw(), lp.getRegionLocation(), lp.isIg(),
             lp.getCls(), lp.getSp(), lp.getMdy(), lp.getFitch(),
             lp.getAum(), lp.getUc(), lp.getAbb(), lp.isInc(), lp.isRcl(), lp.isTf(),
             fmt(busaRate), lp.getAgentRate() != null ? lp.getAgentRate() : "",
