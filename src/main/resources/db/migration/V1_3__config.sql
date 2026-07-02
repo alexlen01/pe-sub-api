@@ -63,7 +63,7 @@ INSERT INTO config (key, value) VALUES ('classification_config', $json$
     "Eligible": "No qualifying rating. AUM < USD 1bn. Otherwise meets all eligibility requirements",
     "Excluded": "Fails eligibility (jurisdiction, ERISA, concentration limit, etc.)"
   },
-  "INVESTOR_TYPE_OPTS": ["Pension Fund", "Endowment", "Foundation", "Family Office", "Fund of Funds", "Sovereign Wealth Fund", "Insurance Company", "Healthcare", "Corporate", "Public Pension", "Other Institutional", "HNW"],
+  "INVESTOR_TYPE_OPTS": ["", "Pension Fund", "Endowment", "Foundation", "Family Office", "Fund of Funds", "Sovereign Wealth Fund", "Insurance Company", "Healthcare", "Corporate", "Public Pension", "Other Institutional", "HNW"],
   "LP_CATEGORY_LABEL": {
     "Rated": "Rated Investors",
     "Unrated >2bn": "Unrated Investors",
