@@ -50,6 +50,11 @@ CREATE TABLE facilities (
 -- recallable_dist : dollar value behind the `rcl` flag.
 -- source_seq      : LP's row position in the originating Agent BB (extraction row index);
 --                   nullable — legacy / manually-created LPs sort last (NULL LAST).
+-- *_num columns   : precise money in absolute dollars (uncalled_capital_num, cap_commit_num,
+--                   aum_num, agent_bb_num) stored alongside the formatted display strings. The BB
+--                   engine (BbCalculationService.moneyM) reads these first and falls back to
+--                   parsing the display string only when null, so the borrowing base is computed
+--                   from exact dollars rather than a re-parsed "$12.3M". Nullable + additive.
 --
 -- One LP record per (facility_id, investor_name): the same name appears at most once
 -- per facility. This constraint backs the idempotent ingest/commit upsert.
@@ -97,13 +102,16 @@ CREATE TABLE lp_records (
     mdy                VARCHAR(20)  NOT NULL DEFAULT '',
     fitch              VARCHAR(20)  NOT NULL DEFAULT '',
     aum                VARCHAR(50),
+    aum_num            NUMERIC(20, 2),
     nav                VARCHAR(50),
     pension            VARCHAR(50),
     pension_funded     VARCHAR(50),
     cap_commit         VARCHAR(50),
+    cap_commit_num     NUMERIC(20, 2),
     pct_cap_commit     VARCHAR(20),
     called_cap         VARCHAR(50),
     uncalled_capital   VARCHAR(50),
+    uncalled_capital_num NUMERIC(20, 2),
     pct_uncalled       VARCHAR(20),
     pct_called         VARCHAR(20),
     agent_conc         VARCHAR(20),
@@ -113,6 +121,7 @@ CREATE TABLE lp_records (
     agent_rate         VARCHAR(20),
     ubs_rate           VARCHAR(20),
     agent_bb           VARCHAR(50),
+    agent_bb_num       NUMERIC(20, 2),
     ubs_bb             VARCHAR(50),
     included           BOOLEAN      NOT NULL DEFAULT TRUE,
     rcl                BOOLEAN      NOT NULL DEFAULT FALSE,

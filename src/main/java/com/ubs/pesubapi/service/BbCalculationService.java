@@ -8,6 +8,7 @@ import com.ubs.pesubapi.entity.Lp;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -89,8 +90,8 @@ public class BbCalculationService {
     private ComputedLp computeOne(Lp lp, double facilityConc) {
         double busaRate    = advanceRateFraction(lp);
         boolean excluded   = !lp.isInc() || "Excluded".equals(lp.getCls());
-        double ucM         = parseMoney(lp.getUc());
-        double abbM        = parseMoney(lp.getAbb());
+        double ucM         = moneyM(lp.getUcNum(),  lp.getUc());
+        double abbM        = moneyM(lp.getAbbNum(), lp.getAbb());
         // Use per-LP dollar limit stored in ubsConc (e.g. "$25.0M") when present;
         // fall back to the facility-level concLimitM for LPs without a stored override.
         double concLimitM  = perLpConc(lp.getUbsConc(), facilityConc);
@@ -157,16 +158,40 @@ public class BbCalculationService {
         return breaches;
     }
 
-    /** Parses formatted money strings like "$25.0M", "$1.4T", "$620M". */
-    static double parseMoney(String s) {
+    /**
+     * Money in $millions, numeric-first (C2): the precise numeric column (absolute dollars) when
+     * present, otherwise the legacy formatted display string. Lets the engine read exact values
+     * for rows written after the numeric migration while staying correct for pre-migration rows.
+     */
+    public static double moneyM(BigDecimal numericDollars, String display) {
+        if (numericDollars != null) return numericDollars.doubleValue() / 1_000_000.0;
+        return parseMoney(display);
+    }
+
+    /**
+     * Parses formatted money strings like "$25.0M", "$1.4T", "$620M" into $millions.
+     * Suffix-less values mirror the TS reference (parseM in bbCalculationService.ts): a
+     * dollar sign or a magnitude ≥ 100,000 marks an absolute-dollar amount ("$500000" →
+     * 0.5), anything else is already in $millions. Without this branch the two engines
+     * diverge by six orders of magnitude on sub-$1M amounts.
+     */
+    public static double parseMoney(String s) {
         if (s == null || s.isBlank() || "N/A".equals(s) || "—".equals(s)) return 0;
         String clean = s.replaceAll("[$,]", "").replace("–", "-");
         double mult = 1;
+        boolean suffixed = true;
         if (clean.toUpperCase().endsWith("T")) { mult = 1_000_000; clean = clean.substring(0, clean.length() - 1); }
         else if (clean.toUpperCase().endsWith("B")) { mult = 1_000;   clean = clean.substring(0, clean.length() - 1); }
         else if (clean.toUpperCase().endsWith("M")) { mult = 1;       clean = clean.substring(0, clean.length() - 1); }
         else if (clean.toUpperCase().endsWith("K")) { mult = 0.001;   clean = clean.substring(0, clean.length() - 1); }
-        try { return Double.parseDouble(clean) * mult; }
+        else { suffixed = false; }
+        try {
+            double value = Double.parseDouble(clean) * mult;
+            if (!suffixed && (s.contains("$") || Math.abs(value) >= 100_000)) {
+                return value / 1_000_000;
+            }
+            return value;
+        }
         catch (NumberFormatException e) { return 0; }
     }
 }

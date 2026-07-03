@@ -238,7 +238,36 @@ public class LpIngestService {
         if (pctCalled  != null) lp.setPctCalled(pctCalled);
         if (pctUncalled != null) lp.setPctUncalled(pctUncalled);
         if (notes     != null) lp.setNotes(notes);
+
+        // Precise numeric money (C2): prefer the exact value carried in the stored JSON; fall back
+        // to parsing the display string for extractions saved before the numeric fields existed.
+        BigDecimal ucNum   = moneyDollars(row, "uncalledNum", "uncalled");
+        BigDecimal commNum  = moneyDollars(row, "commitNum",  "commit");
+        BigDecimal aumNum  = moneyDollars(row, "aumNum",     "aum");
+        BigDecimal abbNum  = moneyDollars(row, "agentBBNum", "agentBB");
+        if (ucNum   != null) lp.setUcNum(ucNum);
+        if (commNum != null) lp.setCapCommitNum(commNum);
+        if (aumNum  != null) lp.setAumNum(aumNum);
+        if (abbNum  != null) lp.setAbbNum(abbNum);
+
         lp.setUpdatedAt(LocalDateTime.now());
+    }
+
+    /**
+     * Precise money in absolute dollars: the numeric field from the stored extraction JSON when
+     * present, else the display string parsed back to dollars. Returns null when neither yields a
+     * usable value, letting the engine fall through to its own string parse.
+     */
+    private BigDecimal moneyDollars(JsonNode row, String numericKey, String displayKey) {
+        JsonNode num = row.get(numericKey);
+        if (num != null && num.isNumber()) return num.decimalValue();
+        if (num != null && num.isTextual() && !num.asText().isBlank()) {
+            try { return new BigDecimal(num.asText().trim()); } catch (NumberFormatException ignored) { /* fall through */ }
+        }
+        String display = textOrNull(row, displayKey);
+        if (display == null) return null;
+        double millions = BbCalculationService.parseMoney(display);
+        return millions == 0 ? null : BigDecimal.valueOf(millions * 1_000_000.0);
     }
 
     /**
@@ -383,9 +412,11 @@ public class LpIngestService {
         BigDecimal rate = valueIfValid(row.agentRate());
         BigDecimal conc = valueIfValid(row.concentrationLimit());
 
-        if (aum  != null) { lp.setAum(formatMoney(aum));        changed.add("aum"); }
-        if (comm != null) { lp.setCapCommit(formatMoney(comm));  changed.add("capCommit"); }
-        if (uc   != null) { lp.setUc(formatMoney(uc));           changed.add("uc"); }
+        // Dual-write: keep the formatted string for display and store the precise value (C2) so
+        // the BB engine reads exact dollars instead of re-parsing a rounded "$12.3M".
+        if (aum  != null) { lp.setAum(formatMoney(aum));  lp.setAumNum(aum);       changed.add("aum"); }
+        if (comm != null) { lp.setCapCommit(formatMoney(comm)); lp.setCapCommitNum(comm); changed.add("capCommit"); }
+        if (uc   != null) { lp.setUc(formatMoney(uc));    lp.setUcNum(uc);         changed.add("uc"); }
         if (rate != null) { lp.setAgentRate(formatRate(rate));   changed.add("agentRate"); }
         if (conc != null) { lp.setAgentConc(formatRate(conc));   changed.add("agentConc"); }
 

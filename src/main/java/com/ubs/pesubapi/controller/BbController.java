@@ -1,24 +1,23 @@
 package com.ubs.pesubapi.controller;
 
-import com.ubs.pesubapi.dto.BbResult;
+import com.ubs.pesubapi.dto.BbSnapshotDto;
 import com.ubs.pesubapi.dto.CommitBbRequest;
 import com.ubs.pesubapi.entity.BbSnapshot;
 import com.ubs.pesubapi.entity.Facility;
-import com.ubs.pesubapi.exception.ResourceNotFoundException;
 import com.ubs.pesubapi.repository.BbSnapshotRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.security.CurrentUserService;
 import com.ubs.pesubapi.service.AuditLogService;
 import com.ubs.pesubapi.service.BbCalculationService;
-import com.ubs.pesubapi.service.LpMasterService;
 import com.ubs.pesubapi.service.NotificationService;
+import com.ubs.pesubapi.service.ShadowBbService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -32,21 +31,23 @@ public class BbController {
     private final LpRepository          lpRepo;
     private final BbSnapshotRepository  snapshotRepo;
     private final BbCalculationService  calculator;
-    private final LpMasterService       lpMasterService;
+    private final ShadowBbService       shadowBbService;
     private final NotificationService   notifier;
     private final AuditLogService       auditService;
+    private final CurrentUserService    currentUser;
 
     public BbController(FacilityRepository facilityRepo, LpRepository lpRepo,
                         BbSnapshotRepository snapshotRepo, BbCalculationService calculator,
-                        LpMasterService lpMasterService, NotificationService notifier,
-                        AuditLogService auditService) {
+                        ShadowBbService shadowBbService, NotificationService notifier,
+                        AuditLogService auditService, CurrentUserService currentUser) {
         this.facilityRepo    = facilityRepo;
         this.lpRepo          = lpRepo;
         this.snapshotRepo    = snapshotRepo;
         this.calculator      = calculator;
-        this.lpMasterService = lpMasterService;
+        this.shadowBbService = shadowBbService;
         this.notifier        = notifier;
         this.auditService    = auditService;
+        this.currentUser     = currentUser;
     }
 
     /**
@@ -55,51 +56,39 @@ public class BbController {
      * operation that materialises Steps 3a–3d from BB_PROCESS_FLOW.md in one transaction.
      */
     @PostMapping("/run/{facilityId}")
-    public ResponseEntity<BbSnapshot> run(
+    public ResponseEntity<BbSnapshotDto> run(
             @PathVariable int facilityId,
             @RequestBody(required = false) CommitBbRequest request,
             HttpServletRequest httpRequest) {
 
-        Facility facility = facilityRepo.findById(facilityId)
-            .orElseThrow(() -> new ResourceNotFoundException("Facility not found: " + facilityId));
-
-        if (request != null && request.lps() != null && !request.lps().isEmpty()) {
-            lpMasterService.upsertAll(facilityId, request.lps());
-            log.info("Shadow BB request upserted LP master rows facilityId={} rows={}", facilityId, request.lps().size());
-        }
-
-        List<com.ubs.pesubapi.entity.Lp> lps = lpRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
-        BbResult result = calculator.compute(lps, facility.getConcLimitM().doubleValue());
-
-        BbSnapshot snapshot = new BbSnapshot();
-        snapshot.setFacilityId(facilityId);
-        snapshot.setResult(result);
-        BbSnapshot saved = snapshotRepo.save(snapshot);
+        // Upsert + compute + snapshot + facility stamp run in one transaction inside the service.
+        ShadowBbService.RunResult run = shadowBbService.runAndSnapshot(facilityId, request);
+        BbSnapshot saved = run.snapshot();
+        var summary = saved.getResult().summary();
         log.info("Shadow BB calculated facilityId={} snapshotId={} lpCount={} totalABB={} totalUBB={} breaches={}",
-            facilityId, saved.getId(), lps.size(), result.summary().totalABB(), result.summary().totalUBB(),
-            result.breaches() != null ? result.breaches().size() : 0);
+            facilityId, saved.getId(), run.lpCount(), summary.totalABB(), summary.totalUBB(),
+            saved.getResult().breaches() != null ? saved.getResult().breaches().size() : 0);
 
-        facility.setLastRunAt(LocalDateTime.now());
-        facilityRepo.save(facility);
-
-        String detail = lps.size() + " LPs · UBS BB $"
-            + String.format("%.1f", result.summary().totalUBB()) + "M";
-        notifier.broadcast("Shadow BB calculated for " + facility.getName()
-            + " — UBS BB $" + String.format("%.1f", result.summary().totalUBB()) + "M");
-        auditService.log("BB Recalculated", detail, facilityId, "J. Smith",
+        // Audit + notify only after the transaction has committed, so neither fires on rollback.
+        String detail = run.lpCount() + " LPs · UBS BB $" + String.format("%.1f", summary.totalUBB()) + "M";
+        notifier.broadcast("Shadow BB calculated for " + run.facilityName()
+            + " — UBS BB $" + String.format("%.1f", summary.totalUBB()) + "M");
+        auditService.log("BB Recalculated", detail, facilityId, currentUser.displayName(),
             auditService.extractIp(httpRequest));
 
-        return ResponseEntity.status(201).body(saved);
+        return ResponseEntity.status(201).body(BbSnapshotDto.from(saved));
     }
 
     @GetMapping("/snapshots/{facilityId}")
-    public List<BbSnapshot> snapshots(@PathVariable int facilityId) {
-        return snapshotRepo.findByFacilityIdOrderByCalculatedAtAsc(facilityId);
+    public List<BbSnapshotDto> snapshots(@PathVariable int facilityId) {
+        return snapshotRepo.findByFacilityIdOrderByCalculatedAtAsc(facilityId)
+            .stream().map(BbSnapshotDto::from).toList();
     }
 
     @GetMapping("/snapshots/{facilityId}/latest")
-    public ResponseEntity<BbSnapshot> latestSnapshot(@PathVariable int facilityId) {
+    public ResponseEntity<BbSnapshotDto> latestSnapshot(@PathVariable int facilityId) {
         return snapshotRepo.findTopByFacilityIdOrderByCalculatedAtDesc(facilityId)
+            .map(BbSnapshotDto::from)
             .map(ResponseEntity::ok)
             .orElse(ResponseEntity.noContent().build());
     }
@@ -112,32 +101,32 @@ public class BbController {
         if (lps.isEmpty()) return ResponseEntity.ok(emptySummaryExt());
 
         int    totalLPs       = lps.size();
-        double totalCapCommit = lps.stream().mapToDouble(lp -> parseMoney(lp.getCapCommit())).sum();
+        double totalCapCommit = lps.stream().mapToDouble(lp -> capCommitM(lp)).sum();
         // Called Capital is a calculated column (SHADOW_BB_ANALYSIS): Capital Commitments − Uncalled
         // Capital. Most LPs carry no stored called_cap, so derive it per-LP rather than summing a
         // column of blanks (which previously yielded $0).
         double totalCalledCap = lps.stream().mapToDouble(BbController::calledCapM).sum();
-        double totalUncalled  = lps.stream().mapToDouble(lp -> parseMoney(lp.getUc())).sum();
+        double totalUncalled  = lps.stream().mapToDouble(lp -> ucM(lp)).sum();
         double pctCalled      = totalCapCommit > 0 ? totalCalledCap / totalCapCommit : 0;
 
         // Uncalled-weighted population shares (SHADOW_BB_ANALYSIS Table 1):
         // each metric = Σ(uncalled of matching LPs) ÷ Σ(total uncalled), not a headcount ratio.
-        double instUncalled   = lps.stream().filter(lp -> "Institutional".equals(lp.getInstVsHnw())).mapToDouble(lp -> parseMoney(lp.getUc())).sum();
-        double hnwUncalled    = lps.stream().filter(lp -> "HNW".equals(lp.getInstVsHnw())).mapToDouble(lp -> parseMoney(lp.getUc())).sum();
-        double igUncalled     = lps.stream().filter(lp -> lp.isIg()).mapToDouble(lp -> parseMoney(lp.getUc())).sum();
+        double instUncalled   = lps.stream().filter(lp -> "Institutional".equals(lp.getInstVsHnw())).mapToDouble(lp -> ucM(lp)).sum();
+        double hnwUncalled    = lps.stream().filter(lp -> "HNW".equals(lp.getInstVsHnw())).mapToDouble(lp -> ucM(lp)).sum();
+        double igUncalled     = lps.stream().filter(lp -> lp.isIg()).mapToDouble(lp -> ucM(lp)).sum();
         double pctInstitutional = totalUncalled > 0 ? instUncalled / totalUncalled : 0;
         double pctHNW           = totalUncalled > 0 ? hnwUncalled  / totalUncalled : 0;
         double igRatio          = totalUncalled > 0 ? igUncalled   / totalUncalled : 0;
 
         List<Double> sortedUc = lps.stream()
-            .mapToDouble(lp -> parseMoney(lp.getUc()))
+            .mapToDouble(lp -> ucM(lp))
             .boxed().sorted(Comparator.reverseOrder()).toList();
         double top10Uc        = sortedUc.stream().limit(10).mapToDouble(d -> d).sum();
         double top20Uc        = sortedUc.stream().limit(20).mapToDouble(d -> d).sum();
         double pctTop10       = totalUncalled > 0 ? top10Uc / totalUncalled : 0;
         double pctTop20       = totalUncalled > 0 ? top20Uc / totalUncalled : 0;
         // % of Uncalled Capital from LPs with AUM > $25bn (parseMoney returns $millions, so $25bn = 25_000).
-        double gt25bnUncalled       = lps.stream().filter(lp -> parseMoney(lp.getAum()) > 25_000).mapToDouble(lp -> parseMoney(lp.getUc())).sum();
+        double gt25bnUncalled       = lps.stream().filter(lp -> aumM(lp) > 25_000).mapToDouble(lp -> ucM(lp)).sum();
         double pctUncalledGt25bnAum = totalUncalled > 0 ? gt25bnUncalled / totalUncalled : 0;
 
         double agentBBRaw = 0, ubsBBRaw = 0;
@@ -175,7 +164,7 @@ public class BbController {
             String rateKey = String.format("%.0f%%", rate * 100);
             busaMap.computeIfAbsent(rateKey, k -> new double[]{0, 0});
             busaMap.get(rateKey)[0]++;
-            busaMap.get(rateKey)[1] += parseMoney(lp.getUc());
+            busaMap.get(rateKey)[1] += ucM(lp);
         }
         List<Map<String, Object>> busaBreakdown = busaMap.entrySet().stream()
             .filter(e -> e.getValue()[0] > 0)
@@ -195,7 +184,7 @@ public class BbController {
                 ? lp.getAgentRate() : "0%";
             agentMap.computeIfAbsent(rateKey, k -> new double[]{0, 0});
             agentMap.get(rateKey)[0]++;
-            agentMap.get(rateKey)[1] += parseMoney(lp.getUc());
+            agentMap.get(rateKey)[1] += ucM(lp);
         }
         List<Map<String, Object>> agentBreakdown = agentMap.entrySet().stream()
             .sorted((a, b) -> {
@@ -220,7 +209,7 @@ public class BbController {
         for (var lp : lps) {
             String bucket = canonicalClassBucket(lp.getCls());
             clsMap.get(bucket)[0]++;
-            clsMap.get(bucket)[1] += parseMoney(lp.getUc());
+            clsMap.get(bucket)[1] += ucM(lp);
         }
         List<Map<String, Object>> clsBreakdown = clsMap.entrySet().stream()
             .filter(e -> e.getValue()[0] > 0)
@@ -264,23 +253,20 @@ public class BbController {
      *  Capital Commitments − Uncalled Capital (never negative). */
     private static double calledCapM(com.ubs.pesubapi.entity.Lp lp) {
         if (lp.getCalledCap() != null && !lp.getCalledCap().isBlank()) return parseMoney(lp.getCalledCap());
-        return Math.max(0, parseMoney(lp.getCapCommit()) - parseMoney(lp.getUc()));
+        return Math.max(0, capCommitM(lp) - ucM(lp));
     }
 
+    // Single source of truth for money parsing — a private near-copy previously lived here
+    // and had already drifted from the engine's version (no N/A or en-dash handling).
     private static double parseMoney(String value) {
-        if (value == null || value.isBlank()) return 0.0;
-        try {
-            String clean = value.replaceAll("[$,]", "");
-            double mult = 1;
-            if (clean.toUpperCase().endsWith("M")) { mult = 1;     clean = clean.substring(0, clean.length() - 1); }
-            else if (clean.toUpperCase().endsWith("B")) { mult = 1000; clean = clean.substring(0, clean.length() - 1); }
-            else if (clean.toUpperCase().endsWith("T")) { mult = 1_000_000; clean = clean.substring(0, clean.length() - 1); }
-            else if (clean.toUpperCase().endsWith("K")) { mult = 0.001; clean = clean.substring(0, clean.length() - 1); }
-            return Double.parseDouble(clean) * mult;
-        } catch (NumberFormatException e) {
-            return 0.0;
-        }
+        return BbCalculationService.parseMoney(value);
     }
+
+    // Numeric-first money reads ($millions) — the precise C2 numeric column when present, else the
+    // legacy display string. Keeps summaryExt aligned with the engine's computeOne.
+    private static double ucM(com.ubs.pesubapi.entity.Lp lp)        { return BbCalculationService.moneyM(lp.getUcNum(), lp.getUc()); }
+    private static double capCommitM(com.ubs.pesubapi.entity.Lp lp) { return BbCalculationService.moneyM(lp.getCapCommitNum(), lp.getCapCommit()); }
+    private static double aumM(com.ubs.pesubapi.entity.Lp lp)       { return BbCalculationService.moneyM(lp.getAumNum(), lp.getAum()); }
 
     /** Rolls a granular LP classification (UBS or legacy taxonomy) up into one of the four
      *  canonical eligibility buckets used by SHADOW_BB_ANALYSIS Table 5. */

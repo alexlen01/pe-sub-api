@@ -1,0 +1,51 @@
+package com.ubs.pesubapi.security;
+
+import com.ubs.pesubapi.IntegrationTestBase;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.web.servlet.MockMvc;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+/**
+ * Default (dev) security mode: every request is authenticated as the configured dev analyst, so
+ * the header-less UI and the existing suite work unchanged. Role boundaries are still enforced —
+ * the service-only ingest endpoint rejects an operator role.
+ */
+@SuppressWarnings("null")
+class SecurityDevModeIntegrationTest extends IntegrationTestBase {
+
+    private static final String INGEST_BODY = """
+        {"facilityId":1,"extraction":{"template":{"format":"UNKNOWN","version":null,"headerRowIndex":0},"records":[],"totalFlagged":0}}
+        """;
+
+    @Autowired MockMvc mvc;
+
+    @Test
+    void protectedEndpoint_isAuthenticatedByDefault() throws Exception {
+        mvc.perform(get("/api/facilities")).andExpect(status().isOk());
+    }
+
+    @Test
+    void publicPing_isReachableWithoutRole() throws Exception {
+        mvc.perform(get("/api/ping")).andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(username = "analyst", roles = {"ANALYST"})
+    void ingest_asAnalyst_isForbidden() throws Exception {
+        mvc.perform(post("/api/lps/ingest").contentType(MediaType.APPLICATION_JSON).content("{}"))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(username = "extraction-svc", roles = {"SERVICE"})
+    void ingest_asServiceRole_passesAuthorization() throws Exception {
+        mvc.perform(post("/api/lps/ingest").contentType(MediaType.APPLICATION_JSON).content(INGEST_BODY))
+            .andExpect(status().isOk());
+    }
+}

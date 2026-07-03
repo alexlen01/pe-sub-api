@@ -38,11 +38,15 @@ public class AuditLogService {
     }
 
     public String extractIp(HttpServletRequest req) {
+        String remote = toIpv4(req.getRemoteAddr());
         String forwarded = req.getHeader("X-Forwarded-For");
-        String raw = (forwarded != null && !forwarded.isBlank())
-            ? forwarded.split(",")[0].trim()
-            : req.getRemoteAddr();
-        return toIpv4(raw);
+        // X-Forwarded-For is client-supplied: honour it only when the direct peer is the
+        // local reverse proxy (vite dev proxy / same-host gateway), otherwise any caller
+        // could plant an arbitrary IP in the audit trail.
+        if (forwarded != null && !forwarded.isBlank() && "127.0.0.1".equals(remote)) {
+            return toIpv4(forwarded.split(",")[0].trim());
+        }
+        return remote;
     }
 
     private static String toIpv4(String ip) {

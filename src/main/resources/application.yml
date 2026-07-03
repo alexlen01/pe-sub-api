@@ -1,4 +1,7 @@
 spring:
+  threads:
+    virtual:
+      enabled: true
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/pesub}
     username: ${SPRING_DATASOURCE_USERNAME:pesub}
@@ -30,6 +33,17 @@ server:
 
 pe-sub-extraction:
   base-url: ${PE_SUB_EXTRACTION_URL:http://localhost:3002}
+
+# Authentication. mode=dev (default) authenticates every request as the dev identity below, so
+# local runs and the header-less UI work without a login flow. In production set mode=gateway:
+# identity is then taken from the SSO reverse-proxy headers and a request without them is 401.
+app:
+  security:
+    mode: ${APP_SECURITY_MODE:dev}
+    user-header: X-Auth-User
+    roles-header: X-Auth-Roles
+    dev-user: ${APP_SECURITY_DEV_USER:local.analyst@ubs.dev}
+    dev-roles: ANALYST
 
 logging:
   file:

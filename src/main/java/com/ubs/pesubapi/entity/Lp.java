@@ -1,6 +1,7 @@
 package com.ubs.pesubapi.entity;
 
 import jakarta.persistence.*;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -112,6 +113,21 @@ public class Lp {
     @Column(name = "agent_bb")
     private String abb;
 
+    // Precise money (absolute dollars) alongside the display-string columns above. The BB engine
+    // reads these first and falls back to parsing the formatted string only when null (rows written
+    // before the C2 numeric migration). See BbCalculationService.moneyM.
+    @Column(name = "uncalled_capital_num")
+    private BigDecimal ucNum;
+
+    @Column(name = "cap_commit_num")
+    private BigDecimal capCommitNum;
+
+    @Column(name = "aum_num")
+    private BigDecimal aumNum;
+
+    @Column(name = "agent_bb_num")
+    private BigDecimal abbNum;
+
     @Column(name = "included", nullable = false)
     private boolean inc = true;
 
@@ -179,6 +195,10 @@ public class Lp {
     public String getUbsConc()          { return ubsConc; }
     public String getAgentRate()        { return agentRate; }
     public String getAbb()              { return abb; }
+    public BigDecimal getUcNum()         { return ucNum; }
+    public BigDecimal getCapCommitNum()  { return capCommitNum; }
+    public BigDecimal getAumNum()        { return aumNum; }
+    public BigDecimal getAbbNum()        { return abbNum; }
     public boolean isInc()              { return inc; }
     public boolean isRcl()              { return rcl; }
     public String getRecallableDist()   { return recallableDist; }
@@ -230,6 +250,13 @@ public class Lp {
     public void setUc(String uc)                 { this.uc = uc; }
     public void setAgentRate(String agentRate)   { this.agentRate = agentRate; }
     public void setAgentConc(String agentConc)   { this.agentConc = agentConc; }
+
+    // Precise numeric money (absolute dollars). Written alongside the display strings; null = fall
+    // back to string parsing (legacy rows / paths without a precise source value).
+    public void setUcNum(BigDecimal v)           { this.ucNum = v; }
+    public void setCapCommitNum(BigDecimal v)    { this.capCommitNum = v; }
+    public void setAumNum(BigDecimal v)          { this.aumNum = v; }
+    public void setAbbNum(BigDecimal v)          { this.abbNum = v; }
 
     // Setters for Shadow BB commit (full LP Master population)
     public void setNav(String nav)                     { this.nav = nav; }

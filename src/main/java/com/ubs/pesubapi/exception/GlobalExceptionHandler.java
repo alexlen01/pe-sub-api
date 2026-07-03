@@ -51,8 +51,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ProblemDetail> handleDataIntegrity(DataIntegrityViolationException ex) {
-        String detail = ex.getMostSpecificCause().getMessage();
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, detail);
+        // Raw driver messages expose table/constraint names and column values; keep them
+        // server-side and return a stable, generic conflict message to the client.
+        log.warn("Data integrity violation: {}", ex.getMostSpecificCause().getMessage());
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
+            "The request conflicts with existing data.");
         problem.setTitle("Data Integrity Violation");
         return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
     }

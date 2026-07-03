@@ -6,6 +6,7 @@ import com.ubs.pesubapi.repository.LpRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -75,11 +76,26 @@ public class LpMasterService {
         lp.setUbsConc(row.ubsConc());
         lp.setAgentRate(row.agentRate());
         lp.setAbb(row.abb());
+        // C2: keep the precise numeric columns in lockstep with the display strings written here.
+        // This run's payload carries only formatted strings, so numeric is derived from them —
+        // critically clearing any stale numeric left by a prior extraction-commit cycle, which
+        // would otherwise be read in preference to the string just written.
+        lp.setUcNum(numDollars(row.uc()));
+        lp.setCapCommitNum(numDollars(row.capCommit()));
+        lp.setAumNum(numDollars(row.aum()));
+        lp.setAbbNum(numDollars(row.abb()));
         lp.setUbb(row.ubb());
         lp.setAgentExcessConc(row.agentExcessConc());
         lp.setUbsExcessConc(row.ubsExcessConc());
         lp.setInc(row.inc());
         lp.setRcl(row.rcl());
         lp.setNotes(row.notes());
+    }
+
+    /** Formatted money string → absolute dollars, or null when blank/unparseable so the numeric
+     *  column is cleared and the engine falls back to the display string. */
+    private static BigDecimal numDollars(String display) {
+        double millions = BbCalculationService.parseMoney(display);
+        return millions == 0 ? null : BigDecimal.valueOf(millions * 1_000_000.0);
     }
 }

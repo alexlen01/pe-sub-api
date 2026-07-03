@@ -23,6 +23,7 @@ import com.ubs.pesubapi.repository.FmCanonicalFieldRepository;
 import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
 import com.ubs.pesubapi.repository.SubmissionExtractionRepository;
 import com.ubs.pesubapi.repository.SubmissionRepository;
+import com.ubs.pesubapi.security.CurrentUserService;
 import com.ubs.pesubapi.service.AsyncTaskRunner;
 import com.ubs.pesubapi.service.AuditLogService;
 import com.ubs.pesubapi.service.ExtractionClientService;
@@ -80,6 +81,7 @@ public class SubmissionController {
     private final TemplateRecognitionService     recognitionService;
     private final AsyncTaskRunner                asyncTaskRunner;
     private final ObjectMapper                   mapper;
+    private final CurrentUserService             currentUser;
 
     @Value("${app.uploads.path:C:/Users/alexl/apps/pe-sub/uploads}")
     private String uploadsPath;
@@ -98,7 +100,8 @@ public class SubmissionController {
                                 BbTemplateTabRepository tabRepo,
                                 TemplateRecognitionService recognitionService,
                                 AsyncTaskRunner asyncTaskRunner,
-                                ObjectMapper mapper) {
+                                ObjectMapper mapper,
+                                CurrentUserService currentUser) {
         this.submissions        = submissions;
         this.facilities         = facilities;
         this.auditService       = auditService;
@@ -114,6 +117,7 @@ public class SubmissionController {
         this.recognitionService = recognitionService;
         this.asyncTaskRunner    = asyncTaskRunner;
         this.mapper             = mapper;
+        this.currentUser        = currentUser;
     }
 
     private record TemplateHints(String sheetName, Integer headerRowIndex, Integer headerRowSpan,
@@ -244,10 +248,19 @@ public class SubmissionController {
         }
 
         String original   = file.getOriginalFilename() != null ? file.getOriginalFilename() : "upload.xlsx";
-        String storedName = UUID.randomUUID() + "_" + original;
-        Path   dir        = Paths.get(uploadsPath);
+        // The client controls the original filename: keep only its last path segment and
+        // neutralise path-significant characters so the stored name cannot escape uploadsPath.
+        String safeName = original
+            .replaceAll(".*[\\\\/]", "")
+            .replaceAll("[^A-Za-z0-9._ ()\\-]", "_");
+        if (safeName.isBlank() || safeName.chars().allMatch(c -> c == '.')) safeName = "upload.xlsx";
+        String storedName = UUID.randomUUID() + "_" + safeName;
+        Path   dir        = Paths.get(uploadsPath).toAbsolutePath().normalize();
         Files.createDirectories(dir);
-        Path storedPath = dir.resolve(storedName);
+        Path storedPath = dir.resolve(storedName).normalize();
+        if (!storedPath.startsWith(dir)) {
+            return ResponseEntity.badRequest().body("Invalid file name.");
+        }
         Files.copy(file.getInputStream(), storedPath, StandardCopyOption.REPLACE_EXISTING);
 
         Submission sub = new Submission();
@@ -261,16 +274,20 @@ public class SubmissionController {
         log.info("Submission uploaded id={} facilityId={} agentBank='{}' periodMonth='{}' file='{}' storedPath='{}' forcedTemplate='{}'",
             saved.getId(), facilityId, agentBank, periodMonth, original, storedPath, forceTemplate);
 
+        // Resolve identity + IP on the request thread: the SecurityContext is thread-local and
+        // is not visible from the async extraction worker, so both are captured here and passed in.
+        String actor = currentUser.displayName();
+        String ip = auditService.extractIp(request);
+
         String detail = periodMonth + " · " + original + " · " + agentBank;
-        auditService.log("Upload", detail, facilityId, "J. Smith", auditService.extractIp(request));
+        auditService.log("Upload", detail, facilityId, actor, ip);
 
         // Heavy Excel parsing must not block the UI thread: persist as Processing, hand the
         // pipeline to the bounded extraction executor, and return immediately (202 Accepted).
         // The client polls the submission until its status flips to Review (or Error).
-        String ip = auditService.extractIp(request);
         asyncTaskRunner.run(() -> {
             try {
-                runExtractionPipeline(saved, facilityId, storedPath, forceTemplate, "J. Smith", ip);
+                runExtractionPipeline(saved, facilityId, storedPath, forceTemplate, actor, ip);
             } catch (Exception e) {
                 log.error("Extraction pipeline failed for submission {}", saved.getId(), e);
                 submissions.findById(saved.getId()).ifPresent(s -> {
@@ -438,6 +455,18 @@ public class SubmissionController {
                     ? uncalledDec.multiply(rateNorm).setScale(0, RoundingMode.HALF_UP)
                     : BigDecimal.ZERO;
                 bbRaws.add(bbRaw);
+
+                // C2: carry precise money (absolute dollars) alongside the rounded display strings
+                // so the committed LP records — and the BB engine — read exact values. Agent BB
+                // mirrors the display: the reported column when present, else the computed proxy.
+                BigDecimal agentBbDec = fieldDec(rec.fields(), "BORROWING_BASE", "Borrowing Base");
+                BigDecimal agentBbNum = agentBbDec != null ? agentBbDec
+                    : (bbRaw.compareTo(BigDecimal.ZERO) > 0 ? bbRaw : null);
+                putDec(row, "uncalledNum", uncalledDec);
+                putDec(row, "commitNum",   fieldDec(rec.fields(), "COMMITMENT"));
+                putDec(row, "aumNum",      fieldDec(rec.fields(), "AUM"));
+                putDec(row, "agentBBNum",  agentBbNum);
+
                 rows.add(row);
             }
 
@@ -599,7 +628,7 @@ public class SubmissionController {
         if (extraction == null) {
             auditService.log("Re-extraction Failed",
                 "Submission #" + id + " re-extraction failed: pe-sub-extraction unreachable",
-                sub.getFacilityId(), "J. Smith", auditService.extractIp(request));
+                sub.getFacilityId(), currentUser.displayName(), auditService.extractIp(request));
             return ResponseEntity.status(502).body("pe-sub-extraction unreachable.");
         }
 
@@ -614,7 +643,7 @@ public class SubmissionController {
             forcedTemplate);
         auditService.log("Re-extraction",
             extractionAuditDetail("Submission #" + id + " re-extracted", extraction, forcedTemplate),
-            sub.getFacilityId(), "J. Smith", auditService.extractIp(request));
+            sub.getFacilityId(), currentUser.displayName(), auditService.extractIp(request));
         return ResponseEntity.noContent().build();
     }
 
@@ -708,7 +737,7 @@ public class SubmissionController {
             auditService.log("Field Mapping Change",
                 "FM Alias Added: \"" + body.extractedHeader() + "\" → " + body.canonical()
                     + " (" + sub.getAgentBank() + ")",
-                sub.getFacilityId(), "J. Smith", auditService.extractIp(request));
+                sub.getFacilityId(), currentUser.displayName(), auditService.extractIp(request));
         }
 
         String forcedTemplate = resolveForcedTemplate(id, null);
@@ -794,7 +823,7 @@ public class SubmissionController {
         submissions.save(sub);
 
         auditService.log("Extraction Confirmed", "Submission #" + id + " extraction confirmed",
-            sub.getFacilityId(), "J. Smith", auditService.extractIp(request));
+            sub.getFacilityId(), currentUser.displayName(), auditService.extractIp(request));
         return ResponseEntity.ok(new ConfirmResponse(templateSaved, agentBank));
     }
 
@@ -862,7 +891,7 @@ public class SubmissionController {
         }
 
         auditService.log("Shadow BB Completed", "Submission #" + id + " Shadow BB accepted",
-            facilityId, "J. Smith", auditService.extractIp(request));
+            facilityId, currentUser.displayName(), auditService.extractIp(request));
 
         return ResponseEntity.ok(toDto(sub, facilityName));
     }
@@ -909,7 +938,7 @@ public class SubmissionController {
             });
         }
 
-        auditService.log("Abort", "Submission #" + id + " aborted", facilityId, "J. Smith", auditService.extractIp(request));
+        auditService.log("Abort", "Submission #" + id + " aborted", facilityId, currentUser.displayName(), auditService.extractIp(request));
 
         return ResponseEntity.noContent().build();
     }
@@ -973,6 +1002,12 @@ public class SubmissionController {
     private IngestRequest.DecimalField toDecimalFieldFromStr(ExtractionResponse.FieldValue f) {
         if (f == null) return null;
         return new IngestRequest.DecimalField(parseNumericSafe(f.value()), f.confidence(), f.sourceHeader());
+    }
+
+    // Writes a precise numeric (absolute dollars) into the row JSON, omitting it when null so the
+    // consumer's display-string fallback still applies (C2).
+    private static void putDec(ObjectNode row, String key, BigDecimal value) {
+        if (value != null) row.put(key, value);
     }
 
     private String fieldStr(Map<String, ExtractionResponse.FieldValue> fields, String... keys) {

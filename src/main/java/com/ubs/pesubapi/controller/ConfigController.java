@@ -1,6 +1,7 @@
 package com.ubs.pesubapi.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.ubs.pesubapi.security.CurrentUserService;
 import com.ubs.pesubapi.service.AuditLogService;
 import com.ubs.pesubapi.service.ConfigService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -20,10 +21,13 @@ public class ConfigController {
 
     private final ConfigService    configService;
     private final AuditLogService  auditService;
+    private final CurrentUserService currentUser;
 
-    public ConfigController(ConfigService configService, AuditLogService auditService) {
+    public ConfigController(ConfigService configService, AuditLogService auditService,
+                            CurrentUserService currentUser) {
         this.configService = configService;
         this.auditService  = auditService;
+        this.currentUser   = currentUser;
     }
 
     @GetMapping("/eligibility")
@@ -81,7 +85,7 @@ public class ConfigController {
         JsonNode saved = configService.put("matching_config", body).getValue();
         String label = SECTION_LABELS.getOrDefault(section, "Matching config");
         log.info("Matching config updated section='{}' label='{}'", section, label);
-        auditService.log("Match Config Change", label + " updated", null, "J. Smith", auditService.extractIp(req));
+        auditService.log("Match Config Change", label + " updated", null, currentUser.displayName(), auditService.extractIp(req));
         return ResponseEntity.ok(saved);
     }
 
@@ -102,7 +106,7 @@ public class ConfigController {
         configService.put(section, body);
         String label = ELIGIBILITY_LABELS.getOrDefault(section, section);
         log.info("Eligibility config updated section='{}' label='{}'", section, label);
-        auditService.log("Config Change", label + " updated", null, "J. Smith", auditService.extractIp(req));
+        auditService.log("Config Change", label + " updated", null, currentUser.displayName(), auditService.extractIp(req));
         return ResponseEntity.ok(body);
     }
 

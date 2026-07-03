@@ -6,6 +6,7 @@ import com.ubs.pesubapi.dto.LpClassificationRequest;
 import com.ubs.pesubapi.dto.LpDto;
 import com.ubs.pesubapi.entity.Lp;
 import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.security.CurrentUserService;
 import com.ubs.pesubapi.service.AuditLogService;
 import com.ubs.pesubapi.service.LpClassificationService;
 import com.ubs.pesubapi.service.LpIngestService;
@@ -32,15 +33,18 @@ public class LpController {
     private final AuditLogService        auditService;
     private final LpIngestService        ingestService;
     private final LpClassificationService classificationService;
+    private final CurrentUserService     currentUser;
 
     public LpController(LpRepository repo, NotificationService notifier,
                         AuditLogService auditService, LpIngestService ingestService,
-                        LpClassificationService classificationService) {
+                        LpClassificationService classificationService,
+                        CurrentUserService currentUser) {
         this.repo                  = repo;
         this.notifier              = notifier;
         this.auditService          = auditService;
         this.ingestService         = ingestService;
         this.classificationService = classificationService;
+        this.currentUser           = currentUser;
     }
 
     @PostMapping("/ingest")
@@ -51,7 +55,7 @@ public class LpController {
         if (result.updated() > 0) {
             auditService.log("LP Data Updated",
                 result.updated() + " LP records updated from " + result.templateFormat() + " extraction",
-                request.facilityId(), "J. Smith", auditService.extractIp(httpRequest));
+                request.facilityId(), currentUser.displayName(), auditService.extractIp(httpRequest));
         }
         return result;
     }
@@ -92,7 +96,7 @@ public class LpController {
             auditService.log("LP Category Saved",
                 updated + " LP record" + (updated != 1 ? "s" : "")
                     + " updated from Shadow BB classification",
-                req.facilityId(), "J. Smith", auditService.extractIp(request));
+                req.facilityId(), currentUser.displayName(), auditService.extractIp(request));
         }
         return Map.of("updated", updated);
     }
@@ -133,7 +137,7 @@ public class LpController {
                 String detail = lp.getInvestorName() + " → " + lp.getCls()
                     + (prevCls != null ? " (was " + prevCls + ")" : "");
                 auditService.log("LP Reclassified", detail, lp.getFacilityId(),
-                    "J. Smith", auditService.extractIp(request));
+                    currentUser.displayName(), auditService.extractIp(request));
             }
             return ResponseEntity.ok(LpDto.from(saved));
         }).orElse(ResponseEntity.notFound().build());

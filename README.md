@@ -87,6 +87,11 @@ full dollars or abbreviated `$M` by panel width). Key rules:
   This drives UBS BB, the BUSA distribution (Table 3) and the UBS advance rate.
 - **Total Called Capital** is calculated (`Capital Commitments − Uncalled Capital`) per LP when no
   `called_cap` is stored, rather than summing a column of blanks.
+- **Money precision** — LP money is stored twice: the formatted display string (`"$12.3M"`) and a
+  precise numeric column (`uncalled_capital_num`, `cap_commit_num`, `aum_num`, `agent_bb_num` on
+  `lp_records` in `V1_1__schema.sql`). The engine (`BbCalculationService.moneyM`) reads the numeric
+  first and only parses the rounded string when it is null — so the borrowing base is computed from
+  exact dollars, not a re-parsed `$M` approximation.
 - **Borrowing Base** (Table 2) derives from `facility_size` / `ubs_participation` plus the snapshot
   BB totals: UBS Participation Rate, Facility LTV (`size ÷ total uncalled`), Available Commitment
   (`MIN(size, agent BB)`), Facility Advance Rate (`agent BB ÷ total uncalled`).
@@ -115,6 +120,27 @@ mvn package -DskipTests  # skip tests during build
 java -jar target/pe-sub-api-0.1.0.jar
 ```
 
+## Authentication & authorization
+
+The API is stateless and header/token-based (no sessions, no CSRF cookies). Identity is resolved
+by a security filter that runs in one of two modes, selected by `app.security.mode`:
+
+| Mode | Behaviour |
+|---|---|
+| `dev` (default) | Every request is authenticated as the configured dev identity (`app.security.dev-user`, role `ANALYST`). Keeps local standalone runs and the header-less UI working without a login flow. |
+| `gateway` | Identity is taken from the SSO reverse-proxy headers `X-Auth-User` / `X-Auth-Roles`. A request without a valid user header is rejected `401`. Set this in any shared/production environment. |
+
+Roles mirror `pe-sub-docs/RBAC_ROLES.md`: **ANALYST** (day-to-day operator + configurator) and
+**ATM** (Account/Transaction Manager). Authorization highlights:
+
+- Configuration surfaces (`PUT /api/config/**`, `/api/field-mapping/**` mutations, `/api/bb-templates/**`) require `ANALYST`.
+- `POST /api/lps/ingest` is service-to-service only and requires the `SERVICE` role — it is never reachable by an operator.
+- Public (no auth): `GET /api/ping`, `GET /health`, `GET /api/notifications/**`, and CORS preflight.
+
+Audit entries now record the **authenticated principal** (previously a hardcoded operator name);
+in `dev` mode that is `app.security.dev-user`. The 4-eye separation on submission completion is a
+Phase-2 workflow control and is not yet enforced.
+
 ## Environment variables
 
 | Variable | Default | Description |
@@ -126,3 +152,5 @@ java -jar target/pe-sub-api-0.1.0.jar
 | `PE_SUB_EXTRACTION_URL` | `http://localhost:3002` | pe-sub-extraction base URL |
 | `LOG_PATH` | `C:/Users/alexl/apps/pe-sub/logs` | Log output directory |
 | `app.uploads.path` | `C:/Users/alexl/apps/pe-sub/uploads` | Uploaded file storage directory |
+| `APP_SECURITY_MODE` | `dev` | Authentication mode: `dev` or `gateway` |
+| `APP_SECURITY_DEV_USER` | `local.analyst@ubs.dev` | Identity stamped on audit entries in `dev` mode |
