@@ -141,6 +141,7 @@ public class SubmissionController {
     //   When auto_discover_tabs = TRUE the engine scans all sheets; sheetNames is empty
     //   and autoDiscoverTabs is set. The LP_GRID tab's headerRowIndex still anchors
     //   the header-detection scan for each discovered sheet.
+    @SuppressWarnings("unused")
     private TemplateHints hintsFor(String agentBank, String forcedTemplate) {
         List<BbTemplate> templates = templatesFor(agentBank, forcedTemplate);
         if (templates.isEmpty()) {

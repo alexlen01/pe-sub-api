@@ -40,6 +40,7 @@ public abstract class IntegrationTestBase {
                 lp_rates,
                 submissions,
                 bb_snapshots,
+                report_history,
                 audit_log,
                 lp_records,
                 lp_master,

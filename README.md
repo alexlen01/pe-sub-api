@@ -98,6 +98,31 @@ full dollars or abbreviated `$M` by panel width). Key rules:
 - **LP Classification** (Table 5) rolls the granular labels into four canonical buckets:
   Rated / Unrated / Eligible / Excluded Investors.
 
+## Reports (`/api/reports`)
+
+All report endpoints read from persisted BB snapshots — nothing is recomputed at report time.
+Money fields are in $millions; rate fields are decimal fractions (0.874 = 87.4%).
+
+- `GET /api/reports/collateral/{facilityId}[?snapshotId=]` — Collateral Market Value & Coverage
+  (BB certificate). Uses the facility's latest snapshot unless `snapshotId` names an earlier one
+  (404 if the snapshot belongs to another facility). Returns facility identity, the snapshot's
+  `summary` (UBS/Agent BB, EAR, deltas, LP counts), `totalEligibleUncalledM`, and `classBreakdown`
+  — one row per LP category (`cls`, `count`, `uncalledM`, `ubbM`, `rate`), legacy tiers first in
+  canonical order.
+- `GET /api/reports/ear/{facilityId}` — EAR trend: one `{calculatedAt, ear, agentEar, earDelta}`
+  point per snapshot, oldest first. Empty array when the facility has no snapshots yet.
+- `GET /api/reports/agent-banks` — UBS exposure aggregated by agent bank across every facility's
+  latest snapshot: `{agentBank, facilityCount, lpCount, ubsBBM, agentBBM, deltaM}`, sorted by
+  UBS BB descending. Facilities without a snapshot still count toward `facilityCount`.
+- `GET /api/reports/concentration/{facilityId}` — `{breaches: [...]}` from the latest snapshot
+  (types: `single-lp`, `top10`, `unrated`, `non-us`). 404 when no snapshot exists.
+- `GET /api/reports/history` — the 50 most recent report-generation entries, newest first.
+- `POST /api/reports/history` — records a generated report:
+  `{report, facilityId?, snapshotLabel?, format?}` → `201` with the stored entry. `report` is
+  required (400); an unknown `facilityId` is a 404; omitting it marks a portfolio-wide report.
+  History lives in `report_history` (`V1_4__report_history.sql`); `facility_name` is denormalised
+  so entries survive facility deletion.
+
 ## LP Master ordering & commit
 
 `lp_records.source_seq` (`V1_3__lp_source_seq.sql`) stores each LP's position in its

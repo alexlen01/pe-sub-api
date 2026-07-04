@@ -43,19 +43,17 @@ public class AsyncConfig {
     }
 
     private TaskDecorator mdcTaskDecorator() {
-        return task -> {
+        return task -> () -> {
             Map<String, String> callerContext = MDC.getCopyOfContextMap();
-            return () -> {
-                Map<String, String> previous = MDC.getCopyOfContextMap();
-                try {
-                    if (callerContext != null) MDC.setContextMap(callerContext);
-                    else MDC.clear();
-                    task.run();
-                } finally {
-                    if (previous != null) MDC.setContextMap(previous);
-                    else MDC.clear();
-                }
-            };
+            Map<String, String> previous = MDC.getCopyOfContextMap();
+            try {
+                if (callerContext != null) MDC.setContextMap(callerContext);
+                else MDC.clear();
+                task.run();
+            } finally {
+                if (previous != null) MDC.setContextMap(previous);
+                else MDC.clear();
+            }
         };
     }
 }

@@ -92,7 +92,7 @@ public class LpClassificationService {
         rate.setLpId(lp.getId());
         rate.setEffectiveDate(effectiveDate);
         rate.setClassification(row.cls() != null ? row.cls()
-            : (lp.getCls() != null ? lp.getCls() : "Eligible"));
+            : (lp.getCls() != null ? lp.getCls() : ""));
         if (row.ubsAdvRatePct() != null) {
             rate.setUbsAdvRatePct(toFraction(row.ubsAdvRatePct()));
         } else if (rate.getUbsAdvRatePct() == null) {
