@@ -108,54 +108,96 @@ public class BbCalculationService {
         return v > 0 ? v : facilityConc;
     }
 
+    /** The top-10 warning fires within this many percentage points below the breach limit
+     *  (config default 60% → warning band 50–60%, matching the documented process flow). */
+    private static final double TOP10_WARNING_BAND = 0.10;
+
+    /** Breach thresholds as fractions, sourced from the {@code conc_limits} config rows
+     *  (Config screen → Concentration Limits). Rows are keyed by their fixed labels; a
+     *  missing row or config key falls back to the seeded default so detection never
+     *  silently switches off. Rows without an engine rule (e.g. "Pension fund max") are
+     *  ignored here. */
+    private record ConcLimits(double singleLp, double top10, double unrated, double nonUs) {}
+
+    private ConcLimits loadConcLimits() {
+        double singleLp = 0.15, top10 = 0.60, unrated = 0.50, nonUs = 0.30;
+        JsonNode rows = configService.get("conc_limits").orElse(null);
+        if (rows != null && rows.isArray()) {
+            for (JsonNode row : rows) {
+                double pct = row.path("value").asDouble(-1);
+                if (pct < 0) continue;
+                switch (row.path("label").asText()) {
+                    case "Single LP max"           -> singleLp = pct / 100.0;
+                    case "Top-10 LP max"           -> top10    = pct / 100.0;
+                    case "Unrated max (aggregate)" -> unrated  = pct / 100.0;
+                    case "Non-US LP max"           -> nonUs    = pct / 100.0;
+                    default -> { }
+                }
+            }
+        }
+        return new ConcLimits(singleLp, top10, unrated, nonUs);
+    }
+
     private List<BbBreach> detectBreaches(List<ComputedLp> lps, double totalUBB) {
         List<BbBreach> breaches = new ArrayList<>();
         if (totalUBB <= 0) return breaches;
 
+        ConcLimits limits = loadConcLimits();
         List<ComputedLp> included = lps.stream().filter(lp -> lp.inc()).toList();
 
-        // Single LP > 15%
+        // Single LP over configured limit
         for (ComputedLp lp : included) {
             double pct = lp.ubbM() / totalUBB;
-            if (pct > 0.15) {
+            if (pct > limits.singleLp()) {
                 breaches.add(new BbBreach("single-lp", "breach",
-                    lp.name() + " exceeds 15% single-LP concentration", pct, 0.15));
+                    lp.name() + " exceeds " + pctLabel(limits.singleLp()) + " single-LP concentration",
+                    pct, limits.singleLp()));
             }
         }
 
-        // Top-10 > 60% (warning at 50%)
+        // Top-10 over configured limit (warning inside the band below it)
         double top10UBB = included.stream()
             .sorted(Comparator.comparingDouble((ComputedLp lp) -> lp.ubbM()).reversed())
             .limit(10)
             .mapToDouble(lp -> lp.ubbM()).sum();
-        double top10Pct = top10UBB / totalUBB;
-        if (top10Pct > 0.60) {
+        double top10Pct  = top10UBB / totalUBB;
+        double top10Warn = Math.max(0, limits.top10() - TOP10_WARNING_BAND);
+        if (top10Pct > limits.top10()) {
             breaches.add(new BbBreach("top10", "breach",
-                "Top-10 LPs exceed 60% of UBS BB", top10Pct, 0.60));
-        } else if (top10Pct > 0.50) {
+                "Top-10 LPs exceed " + pctLabel(limits.top10()) + " of UBS BB", top10Pct, limits.top10()));
+        } else if (top10Pct > top10Warn) {
             breaches.add(new BbBreach("top10", "warning",
-                "Top-10 LPs between 50–60% of UBS BB", top10Pct, 0.60));
+                "Top-10 LPs between " + pctLabel(top10Warn) + "–" + pctLabel(limits.top10()) + " of UBS BB",
+                top10Pct, limits.top10()));
         }
 
-        // Unrated aggregate > 50%
+        // Unrated aggregate over configured limit
         double unratedUBB = included.stream()
             .filter(lp -> !lp.highQuality())
             .mapToDouble(lp -> lp.ubbM()).sum();
-        if (unratedUBB / totalUBB > 0.50) {
+        if (unratedUBB / totalUBB > limits.unrated()) {
             breaches.add(new BbBreach("unrated", "breach",
-                "Unrated LP aggregate exceeds 50% of UBS BB", unratedUBB / totalUBB, 0.50));
+                "Unrated LP aggregate exceeds " + pctLabel(limits.unrated()) + " of UBS BB",
+                unratedUBB / totalUBB, limits.unrated()));
         }
 
-        // Non-US aggregate > 30%
+        // Non-US aggregate over configured limit
         double nonUsUBB = included.stream()
             .filter(lp -> !lp.hq())
             .mapToDouble(lp -> lp.ubbM()).sum();
-        if (nonUsUBB / totalUBB > 0.30) {
+        if (nonUsUBB / totalUBB > limits.nonUs()) {
             breaches.add(new BbBreach("non-us", "breach",
-                "Non-US LP aggregate exceeds 30% of UBS BB", nonUsUBB / totalUBB, 0.30));
+                "Non-US LP aggregate exceeds " + pctLabel(limits.nonUs()) + " of UBS BB",
+                nonUsUBB / totalUBB, limits.nonUs()));
         }
 
         return breaches;
+    }
+
+    /** "0.15" → "15%", "0.075" → "7.5%". */
+    private static String pctLabel(double fraction) {
+        double pct = fraction * 100;
+        return (pct == Math.rint(pct) ? String.valueOf((long) pct) : String.valueOf(pct)) + "%";
     }
 
     /**

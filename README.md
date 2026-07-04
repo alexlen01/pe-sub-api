@@ -115,7 +115,13 @@ Money fields are in $millions; rate fields are decimal fractions (0.874 = 87.4%)
   latest snapshot: `{agentBank, facilityCount, lpCount, ubsBBM, agentBBM, deltaM}`, sorted by
   UBS BB descending. Facilities without a snapshot still count toward `facilityCount`.
 - `GET /api/reports/concentration/{facilityId}` — `{breaches: [...]}` from the latest snapshot
-  (types: `single-lp`, `top10`, `unrated`, `non-us`). 404 when no snapshot exists.
+  (types: `single-lp`, `top10`, `unrated`, `non-us`). 404 when no snapshot exists. Breaches are
+  detected on every BB run using the thresholds in the `conc_limits` config key (Config screen →
+  Concentration Limits), matched by row label: `Single LP max`, `Top-10 LP max`,
+  `Unrated max (aggregate)`, `Non-US LP max`. A missing row or key falls back to the seeded
+  defaults (15/60/50/30%). The top-10 rule emits a `warning` within 10 percentage points below
+  its limit and a `breach` above it. The `Pension fund max` row has no engine rule yet and is
+  display-only.
 - `GET /api/reports/history` — the 50 most recent report-generation entries, newest first.
 - `POST /api/reports/history` — records a generated report:
   `{report, facilityId?, snapshotLabel?, format?}` → `201` with the stored entry. `report` is

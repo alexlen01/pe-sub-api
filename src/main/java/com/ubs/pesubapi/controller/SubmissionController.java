@@ -8,15 +8,12 @@ import com.ubs.pesubapi.dto.IngestRequest;
 import com.ubs.pesubapi.dto.ResolvedTemplate;
 import com.ubs.pesubapi.dto.WorkbookSignals;
 import com.ubs.pesubapi.entity.BbTemplate;
-import com.ubs.pesubapi.entity.BbTemplateTab;
-import com.ubs.pesubapi.entity.BbTemplateTab.TabRole;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.entity.Submission;
 import com.ubs.pesubapi.entity.SubmissionExtraction;
 import com.ubs.pesubapi.entity.FmAlias;
 import com.ubs.pesubapi.entity.FmCanonicalField;
 import com.ubs.pesubapi.repository.BbTemplateRepository;
-import com.ubs.pesubapi.repository.BbTemplateTabRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.FmAliasRepository;
 import com.ubs.pesubapi.repository.FmCanonicalFieldRepository;
@@ -77,7 +74,6 @@ public class SubmissionController {
     private final FmCanonicalFieldRepository     canonicalFieldRepo;
     private final FmAliasRepository              aliasRepo;
     private final BbTemplateRepository           templateRepo;
-    private final BbTemplateTabRepository        tabRepo;
     private final TemplateRecognitionService     recognitionService;
     private final AsyncTaskRunner                asyncTaskRunner;
     private final ObjectMapper                   mapper;
@@ -97,7 +93,6 @@ public class SubmissionController {
                                 FmCanonicalFieldRepository canonicalFieldRepo,
                                 FmAliasRepository aliasRepo,
                                 BbTemplateRepository templateRepo,
-                                BbTemplateTabRepository tabRepo,
                                 TemplateRecognitionService recognitionService,
                                 AsyncTaskRunner asyncTaskRunner,
                                 ObjectMapper mapper,
@@ -113,122 +108,10 @@ public class SubmissionController {
         this.canonicalFieldRepo = canonicalFieldRepo;
         this.aliasRepo          = aliasRepo;
         this.templateRepo       = templateRepo;
-        this.tabRepo            = tabRepo;
         this.recognitionService = recognitionService;
         this.asyncTaskRunner    = asyncTaskRunner;
         this.mapper             = mapper;
         this.currentUser        = currentUser;
-    }
-
-    private record TemplateHints(String sheetName, Integer headerRowIndex, Integer headerRowSpan,
-                                 List<String> sheetNames, List<String> sleeveNames,
-                                 boolean autoDiscoverTabs, List<String> skipRowKeywords) {
-        TemplateHints(String sheetName, Integer headerRowIndex, Integer headerRowSpan) {
-            this(sheetName, headerRowIndex, headerRowSpan, List.of(), List.of(), false, List.of());
-        }
-    }
-
-    // Resolves extraction hints for a registered template name. The LP_GRID tab is the
-    // canonical source of sheet name / header row / header span; the bb_templates
-    // top-level columns are a single-tab shortcut fallback (used by auto-learned templates).
-    //
-    // Multi-tab workbooks (e.g. Audax Fund VII with Nerdio/Apptio/Marlin sleeves):
-    //   When multiple LP_GRID tabs are registered, sheetNames carries all tab names in
-    //   order and sheetName/headerRow are taken from the first tab as a hint for the
-    //   extraction engine's header detection.
-    //
-    // Auto-discover workbooks (e.g. CCP VII Lev M & M):
-    //   When auto_discover_tabs = TRUE the engine scans all sheets; sheetNames is empty
-    //   and autoDiscoverTabs is set. The LP_GRID tab's headerRowIndex still anchors
-    //   the header-detection scan for each discovered sheet.
-    @SuppressWarnings("unused")
-    private TemplateHints hintsFor(String agentBank, String forcedTemplate) {
-        List<BbTemplate> templates = templatesFor(agentBank, forcedTemplate);
-        if (templates.isEmpty()) {
-            log.info("Template hints: no bb_template match for agentBank='{}' forcedTemplate='{}'; extraction will auto-detect sheet/header",
-                agentBank, forcedTemplate);
-            return new TemplateHints(null, null, null);
-        }
-        if (templates.size() > 1) {
-            String sharedSheet = templates.stream()
-                .map(BbTemplate::getSheetName)
-                .filter(s -> s != null)
-                .findFirst().orElse(null);
-            log.info("Template hints: {} candidate templates for agentBank='{}' forcedTemplate='{}'; using shared sheet='{}' and leaving header auto-detected",
-                templates.size(), agentBank, forcedTemplate, sharedSheet);
-            return new TemplateHints(sharedSheet, null, null);
-        }
-        BbTemplate t = templates.getFirst();
-
-        List<BbTemplateTab> lpGridTabs = tabRepo
-            .findByTemplateIdAndTabRoleOrderByTabSortAsc(t.getId(), TabRole.LP_GRID);
-
-        List<String> skipKeywords = lpGridTabs.stream()
-            .flatMap(tab -> tab.getSkipRowKeywords().stream())
-            .distinct().toList();
-
-        // Multi-tab named sleeves
-        if (lpGridTabs.size() > 1) {
-            List<String> sheetNames  = lpGridTabs.stream().map(BbTemplateTab::getSheetName).toList();
-            List<String> sleeveNames = lpGridTabs.stream().map(BbTemplateTab::getSleeveName).toList();
-            BbTemplateTab first = lpGridTabs.getFirst();
-            Integer header = first.getHeaderRowIndex() != null ? first.getHeaderRowIndex() : t.getHeaderRowIndex();
-            Integer span   = first.getHeaderRowSpan();
-            log.info("Template hints: multi-tab bb_template='{}' class={} sleeves={} headerRowIndex={} headerRowSpan={}",
-                t.getTemplateName(), t.getTemplateClass(), sheetNames, header, span);
-            return new TemplateHints(sheetNames.getFirst(), header, span, sheetNames, sleeveNames, false, skipKeywords);
-        }
-
-        // Auto-discover tabs
-        if (t.isAutoDiscoverTabs()) {
-            BbTemplateTab ref = lpGridTabs.isEmpty() ? null : lpGridTabs.getFirst();
-            Integer header = ref != null && ref.getHeaderRowIndex() != null ? ref.getHeaderRowIndex() : t.getHeaderRowIndex();
-            Integer span   = ref != null ? ref.getHeaderRowSpan() : null;
-            log.info("Template hints: auto-discover-tabs bb_template='{}' class={} headerRowIndex={} headerRowSpan={}",
-                t.getTemplateName(), t.getTemplateClass(), header, span);
-            return new TemplateHints(null, header, span, List.of(), List.of(), true, skipKeywords);
-        }
-
-        // Single tab (existing behaviour)
-        BbTemplateTab grid = lpGridTabs.isEmpty() ? null : lpGridTabs.getFirst();
-        String  sheet  = grid != null && grid.getSheetName()     != null ? grid.getSheetName()     : t.getSheetName();
-        Integer header = grid != null && grid.getHeaderRowIndex() != null ? grid.getHeaderRowIndex() : t.getHeaderRowIndex();
-        Integer span   = grid != null ? grid.getHeaderRowSpan() : null;
-        log.info("Template hints: using bb_template='{}' class={} sheet='{}' headerRowIndex={} headerRowSpan={} forcedTemplate='{}'",
-            t.getTemplateName(), t.getTemplateClass(), sheet, header, span, forcedTemplate);
-        return new TemplateHints(sheet, header, span, List.of(), List.of(), false, skipKeywords);
-    }
-
-    private List<BbTemplate> templatesFor(String agentBank, String forcedTemplate) {
-        String forcedKey = normalizedTemplateKey(forcedTemplate);
-        if (forcedKey != null) {
-            List<BbTemplate> forced = templateRepo.findAll().stream()
-                .filter(t -> templateNameMatches(t.getTemplateName(), forcedKey))
-                .toList();
-            if (!forced.isEmpty()) return forced;
-        }
-
-        List<BbTemplate> byAgent = agentBank != null && !agentBank.isBlank()
-            ? templateRepo.findAllByTemplateNameIgnoreCase(agentBank)
-            : List.of();
-        if (!byAgent.isEmpty()) return byAgent;
-        return List.of();
-    }
-
-    private boolean templateNameMatches(String templateName, String forcedKey) {
-        String templateKey = normalizedTemplateKey(templateName);
-        return templateKey != null
-            && (templateKey.equals(forcedKey)
-                || templateKey.startsWith(forcedKey + " ")
-                || templateKey.endsWith(" " + forcedKey));
-    }
-
-    private String normalizedTemplateKey(String value) {
-        if (value == null || value.isBlank()) return null;
-        return value.toLowerCase()
-            .replaceAll("[^a-z0-9\\s]", " ")
-            .replaceAll("\\s+", " ")
-            .trim();
     }
 
     // ── POST /api/submissions ────────────────────────────────────────────────
