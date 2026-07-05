@@ -1,7 +1,7 @@
 package com.ubs.pesubapi.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.ubs.pesubapi.dto.ExtractionResponse;
 import com.ubs.pesubapi.dto.ResolvedTemplate;
 import com.ubs.pesubapi.dto.WorkbookSignals;
@@ -133,7 +133,7 @@ public class ExtractionClientService {
         if (groupMap == null || groupMap.isEmpty()) return null;
         try {
             return mapper.writeValueAsString(groupMap);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Failed to serialise group map — extraction will use standard classification values: {}", e.getMessage());
             return null;
         }

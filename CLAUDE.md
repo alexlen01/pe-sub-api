@@ -1,6 +1,6 @@
 # pe-sub-api — Development Rules
 
-Spring Boot 3.5 / Java 21 REST API. Runs at `http://localhost:3001`.
+Spring Boot 4.1 / Java 25 REST API. Runs at `http://localhost:3001`.
 
 ---
 
@@ -32,11 +32,11 @@ Grep/Glob → Read relevant section → Understand layer → Edit → Verify
 Run the full build and test suite after any significant code change (new endpoint, schema change, service refactor, test addition):
 
 ```powershell
-$env:JAVA_HOME = "C:\Users\alexl\AppData\Roaming\Code\User\globalStorage\pleiades.java-extension-pack-jdk\java\21"
-$env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
-$PROJ = "C:\Users\alexl\Projects\pe-sub-api"
-cd $PROJ
-& "$env:JAVA_HOME\bin\java.exe" "-Dmaven.multiModuleProjectDirectory=$PROJ" "--enable-native-access=ALL-UNNAMED" -classpath ".mvn\wrapper\maven-wrapper.jar" org.apache.maven.wrapper.MavenWrapperMain install
+mvn install
+```
+
+```bash
+mvn install
 ```
 
 - The build must end with `BUILD SUCCESS` before the change is considered complete.
@@ -63,15 +63,15 @@ After any significant change (new endpoint, schema migration, changed response s
 
 ---
 
-## Java 21 & Spring Boot 3.5 Rules
+## Java 25 & Spring Boot 4.1 Rules
 
 1. Adhere to Clean Code and SOLID principles. Prioritize modularity, single responsibility, and dependency injection over quick fixes.
 2. Use Java Records for DTOs and immutable data containers.
 3. Use Pattern Matching for switch blocks and `instanceof` checks.
 4. Use Sequenced Collections (`.getFirst()`, `.getLast()`) instead of manual indexing.
 5. Use text blocks (`"""`) for multi-line strings and SQL queries.
-6. **Virtual-thread safe:** assume `spring.threads.virtual.enabled=true`. Write clean blocking imperative code. Use `ReentrantLock`, never `synchronized`, to avoid thread pinning.
-7. Use modern Spring Boot 3.5 standards (`@RestControllerAdvice`, `ProblemDetail`, etc.).
+6. **Virtual-thread safe:** assume `spring.threads.virtual.enabled=true`. Write clean blocking imperative code. On JDK 24+ (JEP 491) `synchronized` no longer pins virtual threads, so `synchronized` and `ReentrantLock` are both acceptable — do not refactor existing `ReentrantLock` code just for this.
+7. Use modern Spring Boot 4.1 standards (`@RestControllerAdvice`, `ProblemDetail`, etc.).
 8. Use standard Spring Data JPA interfaces. Always return `Optional` for searches that may return empty. Keep all DB operations inside `@Service` classes.
 
 ---

@@ -1,8 +1,8 @@
 package com.ubs.pesubapi.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import com.ubs.pesubapi.dto.ExtractionResponse;
 import com.ubs.pesubapi.dto.IngestRequest;
 import com.ubs.pesubapi.dto.ResolvedTemplate;
@@ -58,7 +58,7 @@ public class SubmissionController {
         Integer id, Integer facilityId, String facilityName,
         String agentBank, String periodMonth, String status,
         String fileName, Integer uploadedBy, String notes,
-        int wizardStep, com.fasterxml.jackson.databind.JsonNode shadowBbOverrides,
+        int wizardStep, tools.jackson.databind.JsonNode shadowBbOverrides,
         LocalDateTime createdAt, LocalDateTime updatedAt
     ) {}
 
@@ -79,7 +79,7 @@ public class SubmissionController {
     private final ObjectMapper                   mapper;
     private final CurrentUserService             currentUser;
 
-    @Value("${app.uploads.path:C:/Users/alexl/apps/pe-sub/uploads}")
+    @Value("${app.uploads.path:uploads}")
     private String uploadsPath;
 
     public SubmissionController(SubmissionRepository submissions,
@@ -716,7 +716,7 @@ public class SubmissionController {
     // classification/rate overrides set by the credit officer on the Run Shadow BB screen.
     // Called on "Commit Decisions" (no overrides yet) and on "Save" (with overrides).
 
-    record ShadowBbStateRequest(com.fasterxml.jackson.databind.JsonNode overrides) {}
+    record ShadowBbStateRequest(tools.jackson.databind.JsonNode overrides) {}
 
     @Transactional
     @PatchMapping("/{id}/shadow-bb-state")

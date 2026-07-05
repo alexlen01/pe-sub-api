@@ -1,7 +1,7 @@
 package com.ubs.pesubapi.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.ubs.pesubapi.entity.BbTemplate;
 import com.ubs.pesubapi.entity.BbTemplateGroup;
 import com.ubs.pesubapi.entity.BbTemplateTab;
@@ -86,7 +86,7 @@ public class ClassificationConfigBuilder {
 
         try {
             return mapper.writeValueAsString(config);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Failed to serialise classification config for {} — extraction will use standard values: {}",
                 templateName, e.getMessage());
             return null;

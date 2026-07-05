@@ -2,14 +2,12 @@ package com.ubs.pesubapi.config;
 
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.http.client.ClientHttpRequestFactoryBuilder;
-import org.springframework.boot.http.client.ClientHttpRequestFactorySettings;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 import java.time.Duration;
-import java.util.Objects;
 
 @Configuration
 public class ExtractionClientConfig {
@@ -25,12 +23,12 @@ public class ExtractionClientConfig {
     @Bean
     public RestClient peSubExtractionClient() {
         String url = extractionBaseUrl != null ? extractionBaseUrl : "http://localhost:3002";
-        ClientHttpRequestFactorySettings settings = ClientHttpRequestFactorySettings.defaults()
-            .withConnectTimeout(CONNECT_TIMEOUT)
-            .withReadTimeout(READ_TIMEOUT);
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(CONNECT_TIMEOUT);
+        requestFactory.setReadTimeout(READ_TIMEOUT);
         return RestClient.builder()
             .baseUrl(url)
-            .requestFactory(Objects.requireNonNull(ClientHttpRequestFactoryBuilder.detect().build(settings)))
+            .requestFactory(requestFactory)
             .requestInterceptor((request, body, execution) -> {
                 String txId = MDC.get(TransactionLoggingFilter.MDC_KEY);
                 if (txId != null && !txId.isBlank()) {

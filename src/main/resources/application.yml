@@ -2,6 +2,11 @@ spring:
   threads:
     virtual:
       enabled: true
+  jackson:
+    deserialization:
+      # Jackson 3 fails on null-for-primitive by default; Jackson 2 mapped null -> false/0.
+      # Keep the pre-Boot-4 API contract: absent/null booleans in request bodies must not 500.
+      fail-on-null-for-primitives: false
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/pesub}
     username: ${SPRING_DATASOURCE_USERNAME:pesub}
@@ -47,4 +52,4 @@ app:
 
 logging:
   file:
-    path: ${LOG_PATH:C:/Users/alexl/apps/pe-sub/logs}
+    path: ${LOG_PATH:logs}

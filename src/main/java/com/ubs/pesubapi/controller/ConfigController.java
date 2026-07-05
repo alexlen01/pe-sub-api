@@ -1,6 +1,6 @@
 package com.ubs.pesubapi.controller;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.ubs.pesubapi.security.CurrentUserService;
 import com.ubs.pesubapi.service.AuditLogService;
 import com.ubs.pesubapi.service.ConfigService;

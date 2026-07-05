@@ -1,7 +1,7 @@
 package com.ubs.pesubapi.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.ubs.pesubapi.entity.FmAlias;
 import com.ubs.pesubapi.entity.FmCanonicalField;
 import com.ubs.pesubapi.repository.FmAliasRepository;
@@ -99,7 +99,7 @@ public class AliasConfigBuilder {
 
         try {
             return mapper.writeValueAsString(result);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Failed to serialise alias config — extraction will use hardcoded fallback: {}", e.getMessage());
             return null;
         }

@@ -1,6 +1,6 @@
 package com.ubs.pesubapi.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.ubs.pesubapi.entity.ConfigEntry;
 import com.ubs.pesubapi.repository.ConfigRepository;
 import jakarta.annotation.PostConstruct;

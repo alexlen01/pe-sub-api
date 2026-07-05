@@ -1,7 +1,8 @@
 package com.ubs.pesubapi.entity.converter;
 
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import com.ubs.pesubapi.dto.BbResult;
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
@@ -11,8 +12,9 @@ public class BbResultConverter implements AttributeConverter<BbResult, String> {
 
     // Ignore unknown properties so snapshots persisted under an older BbResult/ComputedLp shape
     // (e.g. the removed `rank` field) still deserialize cleanly.
-    private static final ObjectMapper mapper = new ObjectMapper()
-        .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+    private static final ObjectMapper mapper = JsonMapper.builder()
+        .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+        .build();
 
     @Override
     public String convertToDatabaseColumn(BbResult result) {

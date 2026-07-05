@@ -1,6 +1,6 @@
 package com.ubs.pesubapi.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.ubs.pesubapi.dto.IngestRequest;
 import com.ubs.pesubapi.dto.IngestResult;
 import com.ubs.pesubapi.entity.Lp;

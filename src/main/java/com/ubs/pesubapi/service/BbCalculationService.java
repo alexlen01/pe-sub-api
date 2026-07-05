@@ -5,7 +5,7 @@ import com.ubs.pesubapi.dto.BbResult;
 import com.ubs.pesubapi.dto.BbSummary;
 import com.ubs.pesubapi.dto.ComputedLp;
 import com.ubs.pesubapi.entity.Lp;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;

@@ -7,17 +7,17 @@
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.5.15</version>
+    <version>4.1.0</version>
     <relativePath/>
   </parent>
 
-  <groupId>com.ubs</groupId>
+  <groupId>com.ubs.lending</groupId>
   <artifactId>pe-sub-api</artifactId>
-  <version>0.1.0</version>
+  <version>1.0.0</version>
   <name>pe-sub-api</name>
 
   <properties>
-    <java.version>21</java.version>
+    <java.version>25</java.version>
   </properties>
 
   <dependencies>
@@ -47,9 +47,11 @@
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
     </dependency>
+    <!-- Boot 4.x modularized auto-configuration: Flyway migrations only run when this
+         starter is present; a bare flyway-core dependency is no longer auto-configured. -->
     <dependency>
-      <groupId>org.flywaydb</groupId>
-      <artifactId>flyway-core</artifactId>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-flyway</artifactId>
     </dependency>
     <dependency>
       <groupId>org.flywaydb</groupId>
@@ -69,7 +71,7 @@
     <dependency>
       <groupId>org.apache.poi</groupId>
       <artifactId>poi-ooxml</artifactId>
-      <version>5.2.5</version>
+      <version>5.5.1</version>
     </dependency>
 
     <dependency>
@@ -77,9 +79,23 @@
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- Boot 4.x modularized test support: MockMvc auto-configuration
+         (org.springframework.boot.webmvc.test.autoconfigure) lives here, not in starter-test. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-webmvc-test</artifactId>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>org.springframework.security</groupId>
       <artifactId>spring-security-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- Boot 4.x modularized test support: the MockMvc <-> Spring Security test integration
+         (@WithMockUser visibility in MockMvc requests) moved into this module. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-security-test</artifactId>
       <scope>test</scope>
     </dependency>
     <!-- Zonky embedded PostgreSQL: Docker-free, full Postgres (JSONB/casts) compatibility.
@@ -87,7 +103,7 @@
     <dependency>
       <groupId>io.zonky.test</groupId>
       <artifactId>embedded-database-spring-test</artifactId>
-      <version>2.6.0</version>
+      <version>2.8.0</version>
       <scope>test</scope>
       <!-- This starter transitively drags in org.testcontainers:{postgresql,mssqlserver,
            mysql,mariadb} for its DOCKER provider. We only use the ZONKY provider (in-process
@@ -104,7 +120,7 @@
     <dependency>
       <groupId>io.zonky.test</groupId>
       <artifactId>embedded-postgres</artifactId>
-      <version>2.0.7</version>
+      <version>2.2.2</version>
       <scope>test</scope>
     </dependency>
   </dependencies>
@@ -115,7 +131,7 @@
       <dependency>
         <groupId>io.zonky.test.postgres</groupId>
         <artifactId>embedded-postgres-binaries-bom</artifactId>
-        <version>16.2.0</version>
+        <version>18.4.0</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>

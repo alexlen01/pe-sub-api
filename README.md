@@ -1,10 +1,10 @@
 # pe-sub-api
 
-Spring Boot 3.5 / Java 21 REST API for the PE Sub Borrowing Base Platform.
+Spring Boot 4.1 / Java 25 REST API for the PE Sub Borrowing Base Platform.
 
 ## Prerequisites
 
-- Java 21
+- Java 25
 - Maven 3.9+
 - Docker (for PostgreSQL)
 
@@ -146,9 +146,9 @@ find no row at commit and are silently skipped (the cause of a 900-row file inse
 ## Other commands
 
 ```bash
-mvn package              # build fat JAR → target/pe-sub-api-0.1.0.jar
+mvn package              # build fat JAR → target/pe-sub-api-1.0.0.jar
 mvn package -DskipTests  # skip tests during build
-java -jar target/pe-sub-api-0.1.0.jar
+java -jar target/pe-sub-api-1.0.0.jar
 ```
 
 ## Authentication & authorization
@@ -181,7 +181,7 @@ Phase-2 workflow control and is not yet enforced.
 | `SPRING_DATASOURCE_PASSWORD` | `password` | DB password |
 | `PORT` | `3001` | HTTP port |
 | `PE_SUB_EXTRACTION_URL` | `http://localhost:3002` | pe-sub-extraction base URL |
-| `LOG_PATH` | `C:/Users/alexl/apps/pe-sub/logs` | Log output directory |
-| `app.uploads.path` | `C:/Users/alexl/apps/pe-sub/uploads` | Uploaded file storage directory |
+| `LOG_PATH` | `logs` | Log output directory |
+| `app.uploads.path` | `uploads` | Uploaded file storage directory |
 | `APP_SECURITY_MODE` | `dev` | Authentication mode: `dev` or `gateway` |
 | `APP_SECURITY_DEV_USER` | `local.analyst@ubs.dev` | Identity stamped on audit entries in `dev` mode |

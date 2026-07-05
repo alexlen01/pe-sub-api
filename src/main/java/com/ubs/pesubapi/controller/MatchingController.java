@@ -122,7 +122,7 @@ public class MatchingController {
         String status,
         boolean isNew,
         List<String> reasons,
-        com.fasterxml.jackson.databind.JsonNode matchDetails
+        tools.jackson.databind.JsonNode matchDetails
     ) {}
 
     private MatchQueueItemDto toDto(MatchQueueEntry e, String facilityName) {

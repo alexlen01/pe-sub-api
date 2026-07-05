@@ -1,7 +1,7 @@
 package com.ubs.pesubapi.service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import com.ubs.pesubapi.dto.BbTemplateDto;
 import com.ubs.pesubapi.dto.BbTemplateRequest;
 import com.ubs.pesubapi.dto.BbTemplateRequest.BbTemplateGroupRequest;

@@ -1,6 +1,6 @@
 package com.ubs.pesubapi.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ubs.pesubapi.IntegrationTestBase;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.entity.Lp;
