@@ -292,6 +292,7 @@ public class SubmissionController {
                 row.put("rowIndex",     rec.rowIndex());
                 if (rec.fundSleeve() != null) row.put("fundSleeve", rec.fundSleeve());
                 row.put("name",         fieldStr(rec.fields(), "INVESTOR_NAME"));
+                row.put("investorType", fieldStr(rec.fields(), "INVESTOR_TYPE"));
                 row.put("agentClass",   fieldStr(rec.fields(), "AGENT_LP_CLASSIFICATION"));
                 row.put("commit",       fmtMoney(fieldDec(rec.fields(), "COMMITMENT")));
                 row.put("uncalled",     fmtMoney(fieldDec(rec.fields(), "UNCALLED")));
@@ -863,6 +864,7 @@ public class SubmissionController {
             toDecimalFieldFromStr(fields.get("AUM")),
             toDecimalFieldFromStr(fieldValue(fields, "AGENT_RATE", "ADVANCE_RATE")),
             toDecimalFieldFromStr(fields.get("CONCENTRATION_LIMIT")),
+            toStringField(fields.get("INVESTOR_TYPE")),
             toStringField(fields.get("S&P Rating")),
             toStringField(fields.get("Moody's Rating")),
             toStringField(fields.get("Fitch Rating")),

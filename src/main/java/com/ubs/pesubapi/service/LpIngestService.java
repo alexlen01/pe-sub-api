@@ -147,7 +147,9 @@ public class LpIngestService {
                 .collect(Collectors.toMap(e -> e.getRowIndex(), e -> e, (a, b) -> a, HashMap::new));
 
         // Replace all existing facility LP records — this submission is authoritative.
-        lpRepo.deleteByFacilityId(facilityId);
+        Map<String, Lp> existingByName = lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).stream()
+            .collect(Collectors.toMap(lp -> lp.getInvestorName(), lp -> lp, (a, b) -> a, HashMap::new));
+        Map<String, Lp> toSave = new HashMap<>();
 
         // Insert every extracted row; no row is discarded regardless of match queue status.
         byRow.keySet().stream().sorted().forEach(rowIndex -> {
@@ -162,13 +164,8 @@ public class LpIngestService {
             String name = isAccepted ? lpNameForCommit(entry, false) : extractedName;
             if (name == null || name.isBlank()) name = extractedName;
 
-            Lp lp = new Lp();
-            lp.setFacilityId(facilityId);
-            lp.setInvestorName(name);
-            lp.setInvestorType("");
-            lp.setInstVsHnw("Institutional");
-            lp.setRegion("US");
-            lp.setCls("Eligible");
+            Lp lp = existingByName.getOrDefault(name, new Lp());
+            resetForCommit(lp, facilityId, name);
 
             // For accepted LP Master matches: pre-populate empty fields from LP Master
             // (stable identity, ratings, UBS credit profile) before extraction fields win.
@@ -179,8 +176,17 @@ public class LpIngestService {
 
             lp.setSourceSeq(rowIndex);
             applyExtractedJsonRow(lp, row);
-            lpRepo.save(lp);
+            toSave.put(name, lp);
         });
+
+        lpRepo.saveAll(toSave.values());
+
+        List<Lp> stale = existingByName.entrySet().stream()
+            .filter(e -> !toSave.containsKey(e.getKey()))
+            .map(Map.Entry::getValue)
+            .toList();
+        clearMatchReferences(stale);
+        lpRepo.deleteAll(stale);
     }
 
     /**
@@ -198,6 +204,69 @@ public class LpIngestService {
         return entry.getExtractedName();
     }
 
+    private void resetForCommit(Lp lp, int facilityId, String investorName) {
+        lp.setFacilityId(facilityId);
+        lp.setInvestorName(investorName);
+        lp.setParent(null);
+        lp.setSpv(false);
+        lp.setHighQty(true);
+        lp.setInvestorType("");
+        lp.setInstVsHnw("Institutional");
+        lp.setRegion("US");
+        lp.setIg(false);
+        lp.setCls("Eligible");
+        lp.setClsTag(null);
+        lp.setAgentCls(null);
+        lp.setSp("");
+        lp.setMdy("");
+        lp.setFitch("");
+        lp.setAum(null);
+        lp.setAumNum(null);
+        lp.setNav(null);
+        lp.setPension(null);
+        lp.setPensionFunded(null);
+        lp.setCapCommit(null);
+        lp.setCapCommitNum(null);
+        lp.setPctCapCommit(null);
+        lp.setCalledCap(null);
+        lp.setUc(null);
+        lp.setUcNum(null);
+        lp.setPctUncalled(null);
+        lp.setPctCalled(null);
+        lp.setAgentConc(null);
+        lp.setUbsConc(null);
+        lp.setAgentRate(null);
+        lp.setUbsRate(null);
+        lp.setAbb(null);
+        lp.setAbbNum(null);
+        lp.setUbb(null);
+        lp.setAgentExcessConc(null);
+        lp.setUbsExcessConc(null);
+        lp.setInc(false);
+        lp.setRcl(false);
+        lp.setRecallableDist(null);
+        lp.setTf(false);
+        lp.setNotes(null);
+        lp.setLpMasterId(null);
+    }
+
+    private void clearMatchReferences(List<Lp> stale) {
+        if (stale.isEmpty()) return;
+        List<Integer> staleIds = stale.stream()
+            .map(Lp::getId)
+            .filter(id -> id != null)
+            .toList();
+        if (staleIds.isEmpty()) return;
+        Integer facilityId = stale.getFirst().getFacilityId();
+        List<MatchQueueEntry> entries = matchQueueRepo.findByFacilityIdOrderByRowIndexAsc(facilityId);
+        entries.forEach(entry -> {
+            if (entry.getMatchedLpId() != null && staleIds.contains(entry.getMatchedLpId())) {
+                entry.setMatchedLpId(null);
+            }
+        });
+        matchQueueRepo.saveAll(entries);
+    }
+
     private void applyExtractedJsonRow(Lp lp, JsonNode row) {
         String aum     = textOrNull(row, "aum");
         String commit  = textOrNull(row, "commit");
@@ -209,11 +278,12 @@ public class LpIngestService {
         String sp      = textOrNull(row, "sp");
         String mdy     = textOrNull(row, "moodys");
         String fitch   = textOrNull(row, "fitch");
+        String investorType = extractedText(row, "investorType", "Investor Type");
         // Agent LP Category verbatim from the Agent BB (e.g. "Pension Fund", "Designated PWM",
         // "Rated Included"). Persisted here so it survives the Commit Decisions step — the bb.run and
         // classification-edit paths already set it; this path previously dropped it, leaving the agent
         // value blank in Shadow BB. It is distinct from Investor Type, a manual field.
-        String agentCls  = textOrNull(row, "agentClass");
+        String agentCls  = extractedText(row, "agentClass", "LP Category");
         String calledCap = textOrNull(row, "calledCap");
         String pctCalled = textOrNull(row, "pctCalled");
         String pctUncalled = textOrNull(row, "pctUncalled");
@@ -232,6 +302,7 @@ public class LpIngestService {
         if (sp       != null) lp.setSp(sp);
         if (mdy      != null) lp.setMdy(mdy);
         if (fitch    != null) lp.setFitch(fitch);
+        if (investorType != null) lp.setInvestorType(investorType);
         if (agentCls != null) lp.setAgentCls(agentCls);
         if (agentBB  != null) lp.setAbb(agentBB);
         if (calledCap  != null) lp.setCalledCap(calledCap);
@@ -385,6 +456,14 @@ public class LpIngestService {
         return (v == null || v.isBlank() || "null".equals(v)) ? null : v;
     }
 
+    private String extractedText(JsonNode row, String directField, String canonicalField) {
+        String direct = textOrNull(row, directField);
+        if (direct != null) return direct;
+        JsonNode canonicals = row.path("canonicalFields");
+        if (!canonicals.isObject()) return null;
+        return textOrNull(canonicals, canonicalField);
+    }
+
     private void persistQueueEntry(int submissionId, int facilityId, int rowIndex,
                                    String extractedName, Integer matchedLpId,
                                    String matchedLpName, int matchScore,
@@ -424,6 +503,7 @@ public class LpIngestService {
         String mdy      = strValueIfValid(row.mdy());
         String fitch    = strValueIfValid(row.fitch());
         String nav      = strValueIfValid(row.nav());
+        String investorType = strValueIfValid(row.investorType());
         String agentCls = strValueIfValid(row.agentCls());
         String parent   = strValueIfValid(row.parent());
         String notes    = strValueIfValid(row.notes());
@@ -432,6 +512,7 @@ public class LpIngestService {
         if (mdy      != null) { lp.setMdy(mdy);             changed.add("mdy"); }
         if (fitch    != null) { lp.setFitch(fitch);         changed.add("fitch"); }
         if (nav      != null) { lp.setNav(nav);             changed.add("nav"); }
+        if (investorType != null) { lp.setInvestorType(investorType); changed.add("investorType"); }
         if (agentCls != null) { lp.setAgentCls(agentCls);   changed.add("agentCls"); }
         if (parent   != null) { lp.setParent(parent);       changed.add("parent"); }
         if (notes    != null) { lp.setNotes(notes);         changed.add("notes"); }

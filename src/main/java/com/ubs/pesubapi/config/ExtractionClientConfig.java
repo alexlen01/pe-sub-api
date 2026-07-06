@@ -4,9 +4,10 @@ import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
+import java.net.http.HttpClient;
 import java.time.Duration;
 
 @Configuration
@@ -23,8 +24,11 @@ public class ExtractionClientConfig {
     @Bean
     public RestClient peSubExtractionClient() {
         String url = extractionBaseUrl != null ? extractionBaseUrl : "http://localhost:3002";
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(CONNECT_TIMEOUT);
+        // Pooled java.net.http.HttpClient: connection reuse and streaming request bodies,
+        // unlike SimpleClientHttpRequestFactory (HttpURLConnection) which buffers multipart
+        // forwards fully in memory and re-handshakes every call.
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(
+            HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build());
         requestFactory.setReadTimeout(READ_TIMEOUT);
         return RestClient.builder()
             .baseUrl(url)

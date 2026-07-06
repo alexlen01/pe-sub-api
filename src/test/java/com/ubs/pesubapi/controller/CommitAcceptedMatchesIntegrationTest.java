@@ -67,8 +67,11 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
     private static final List<String> AGENT_CLASSES = List.of(
         "Pension Fund", "Designated PWM", "Rated Included",
         "Non-Rated Included", "Designated Institutional", "Investment Consultant");
+    private static final List<String> INVESTOR_TYPES = List.of(
+        "Public Pension", "Family Office", "Endowment", "Insurance Company");
 
     private static String agentClassFor(int i) { return AGENT_CLASSES.get(i % AGENT_CLASSES.size()); }
+    private static String investorTypeFor(int i) { return INVESTOR_TYPES.get(i % INVESTOR_TYPES.size()); }
 
     private int facilityId;
     private int submissionId;
@@ -95,7 +98,8 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
             if (i > 0) json.append(',');
             json.append("{\"rowIndex\":").append(HEADER_OFFSET + i)
                 .append(",\"name\":\"").append(NAMES.get(i)).append("\"")
-                .append(",\"agentClass\":\"").append(agentClassFor(i)).append("\"}");
+                .append(",\"agentClass\":\"").append(agentClassFor(i)).append("\"")
+                .append(",\"investorType\":\"").append(investorTypeFor(i)).append("\"}");
         }
         json.append(']');
 
@@ -143,14 +147,16 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         //    overridden by the invType (Investor Type) default.
         for (int i = 0; i < N_ROWS; i++) {
             assertThat(stored.get(i).getAgentCls()).isEqualTo(agentClassFor(i));
+            assertThat(stored.get(i).getInvestorType()).isEqualTo(investorTypeFor(i));
         }
 
-        // And the listing endpoint returns the same natural order and the agent classification.
+        // And the listing endpoint returns the same natural order plus mapped classification fields.
         mvc.perform(get("/api/lps").param("facilityId", String.valueOf(facilityId)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(N_ROWS)))
             .andExpect(jsonPath("$[0].name").value(NAMES.get(0)))
             .andExpect(jsonPath("$[0].agentCls").value(agentClassFor(0)))
+            .andExpect(jsonPath("$[0].investor_type").value(investorTypeFor(0)))
             .andExpect(jsonPath("$[" + (N_ROWS - 1) + "].name").value(NAMES.get(N_ROWS - 1)));
     }
 
@@ -177,6 +183,65 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         assertThat(stored).hasSize(N_ROWS);
         List<String> storedNames = stored.stream().map(lp -> lp.getInvestorName()).toList();
         assertThat(storedNames).containsExactlyElementsOf(NAMES);
+    }
+
+    @SuppressWarnings("null")
+    @Test
+    void commit_sameUploadTwice_updatesExistingRowsWithoutDuplicateKey() throws Exception {
+        mvc.perform(post("/api/submissions/{id}/confirm", submissionId))
+            .andExpect(status().isOk());
+        matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(submissionId)
+            .forEach(e -> { e.setDecision("Accepted"); matchQueueRepo.save(e); });
+        mvc.perform(patch("/api/submissions/{id}/shadow-bb-state", submissionId)
+                .contentType("application/json")
+                .content("{}"))
+            .andExpect(status().isOk());
+
+        List<Integer> firstIds = lpRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId).stream()
+            .map(Lp::getId)
+            .toList();
+        assertThat(firstIds).hasSize(N_ROWS);
+
+        Submission s2 = new Submission();
+        s2.setFacilityId(facilityId);
+        s2.setAgentBank("Goldman Sachs Bank USA");
+        s2.setPeriodMonth("2026-06");
+        s2.setFileName("Agent-BB-Blue-Owl-GP-Stakes-V-June-2026.xlsx");
+        s2.setStatus("Extracting");
+        s2.setWizardStep(3);
+        int sub2Id = submissionRepo.save(s2).getId();
+
+        SubmissionExtraction ext2 = new SubmissionExtraction();
+        ext2.setSubmissionId(sub2Id);
+        ext2.setTotalRows(N_ROWS);
+        ext2.setFlaggedCount(0);
+        StringBuilder json = new StringBuilder("[");
+        for (int i = 0; i < N_ROWS; i++) {
+            if (i > 0) json.append(',');
+            json.append("{\"rowIndex\":").append(HEADER_OFFSET + i)
+                .append(",\"name\":\"").append(NAMES.get(i)).append("\"")
+                .append(",\"agentClass\":\"").append(agentClassFor(i)).append("\"")
+                .append(",\"investorType\":\"").append(investorTypeFor(i)).append("\"}");
+        }
+        json.append(']');
+        ext2.setExtractedLps(mapper.readTree(json.toString()));
+        extractionRepo.save(ext2);
+
+        mvc.perform(post("/api/submissions/{id}/confirm", sub2Id))
+            .andExpect(status().isOk());
+        matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(sub2Id)
+            .forEach(e -> { e.setDecision("Accepted"); matchQueueRepo.save(e); });
+        mvc.perform(patch("/api/submissions/{id}/shadow-bb-state", sub2Id)
+                .contentType("application/json")
+                .content("{}"))
+            .andExpect(status().isOk());
+
+        List<Lp> stored = lpRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
+        assertThat(stored).hasSize(N_ROWS);
+        assertThat(stored.stream().map(Lp::getId).toList()).containsExactlyElementsOf(firstIds);
+        assertThat(stored.stream().map(Lp::getInvestorName).toList()).containsExactlyElementsOf(NAMES);
+        assertThat(stored.get(0).getInvestorType()).isEqualTo(investorTypeFor(0));
+        assertThat(stored.get(0).getAgentCls()).isEqualTo(agentClassFor(0));
     }
 
     @SuppressWarnings("null")
@@ -255,7 +320,10 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
               {
                 "rowIndex": 7,
                 "name": "Texas Teachers Ret. Sys.",
-                "agentClass": "Pension Fund",
+                "canonicalFields": {
+                  "Investor Type": "Public Pension",
+                  "LP Category": "Pension Fund"
+                },
                 "commit": "$10.0M",
                 "uncalled": "$4.0M"
               },
@@ -316,6 +384,7 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         assertThat(acceptedLp.getCapCommit()).isEqualTo("$10.0M");
         assertThat(acceptedLp.getUc()).isEqualTo("$4.0M");
         assertThat(acceptedLp.getAgentCls()).isEqualTo("Pension Fund");
+        assertThat(acceptedLp.getInvestorType()).isEqualTo("Public Pension");
 
         Lp rejectedNewLp = stored.get(1);
         assertThat(rejectedNewLp.getInvType()).isEqualTo("Institutional");

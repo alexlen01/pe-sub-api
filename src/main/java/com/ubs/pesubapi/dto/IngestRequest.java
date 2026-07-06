@@ -23,6 +23,7 @@ public record IngestRequest(
         DecimalField aum,
         DecimalField agentRate,
         DecimalField concentrationLimit,
+        StringField investorType,
         StringField sp,
         StringField mdy,
         StringField fitch,

@@ -9,4 +9,5 @@ FROM eclipse-temurin:25-jre
 WORKDIR /app
 COPY --from=build /app/target/pe-sub-api-1.0.0.jar app.jar
 EXPOSE 3001
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# Size the heap from the container memory limit (Temurin default is only 25%).
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]
