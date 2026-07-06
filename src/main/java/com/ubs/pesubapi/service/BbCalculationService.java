@@ -6,8 +6,8 @@ import tools.jackson.databind.JsonNode;
 import com.ubs.pesubapi.dto.BbBreach;
 import com.ubs.pesubapi.dto.BbResult;
 import com.ubs.pesubapi.dto.BbSummary;
-import com.ubs.pesubapi.dto.ComputedLp;
-import com.ubs.pesubapi.entity.Lp;
+import com.ubs.pesubapi.dto.ComputedLpRecord;
+import com.ubs.pesubapi.entity.LpRecord;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -27,7 +27,7 @@ public class BbCalculationService {
         this.configService = configService;
     }
 
-    /** Returns the BUSA advance rate for a given LP classification. */
+    /** Returns the BUSA advance rate for a given LP Classification. */
     public double getRateForCls(String cls) {
         if (cls == null || cls.isBlank()) return 0.0;
         JsonNode cfg = configService.get("classification_config").orElse(null);
@@ -44,15 +44,15 @@ public class BbCalculationService {
     // may appear at 0.90 / 0.75 / 0.65 / 0.00 across the population, so the stored per-LP rate
     // takes precedence over the classification default. Mirrors the frontend advanceRateFraction
     // (bbCalculationService.ts). "90%"/"90" → 0.90, "0.90" → 0.90; blank → classification default.
-    public double advanceRateFraction(Lp lp) {
-        String raw = lp.getUbsRate();
+    public double advanceRateFraction(LpRecord lpRecord) {
+        String raw = lpRecord.getUbsRate();
         if (raw != null && !raw.isBlank()) {
             try {
                 double n = Double.parseDouble(raw.replace("%", "").trim());
                 return n > 1 ? n / 100.0 : n;
             } catch (NumberFormatException ignored) { /* fall through to class default */ }
         }
-        return getRateForCls(lp.getCls());
+        return getRateForCls(lpRecord.getCls());
     }
 
     private static double parsePct(String raw) {
@@ -65,16 +65,16 @@ public class BbCalculationService {
         }
     }
 
-    public BbResult compute(List<Lp> lps, double concLimitM) {
-        List<ComputedLp> computed = lps.stream()
-            .map(lp -> computeOne(lp, concLimitM))
+    public BbResult compute(List<LpRecord> lps, double concLimitM) {
+        List<ComputedLpRecord> computed = lps.stream()
+            .map(lpRecord -> computeOne(lpRecord, concLimitM))
             .toList();
 
-        List<ComputedLp> included = computed.stream().filter(lp -> lp.inc()).toList();
+        List<ComputedLpRecord> included = computed.stream().filter(lpRecord -> lpRecord.inc()).toList();
 
-        double totalUBB = included.stream().mapToDouble(lp -> lp.ubbM()).sum();
-        double totalABB = computed.stream().mapToDouble(lp -> lp.abbM()).sum();
-        double totalUEC = included.stream().mapToDouble(lp -> lp.uecM()).sum();
+        double totalUBB = included.stream().mapToDouble(lpRecord -> lpRecord.ubbM()).sum();
+        double totalABB = computed.stream().mapToDouble(lpRecord -> lpRecord.abbM()).sum();
+        double totalUEC = included.stream().mapToDouble(lpRecord -> lpRecord.uecM()).sum();
 
         double ear      = totalUEC > 0 ? totalUBB / totalUEC : 0;
         double agentEar = totalUEC > 0 ? totalABB / totalUEC : 0;
@@ -88,19 +88,19 @@ public class BbCalculationService {
         return new BbResult(computed, summary, detectBreaches(computed, totalUBB));
     }
 
-    private ComputedLp computeOne(Lp lp, double facilityConc) {
-        double busaRate    = advanceRateFraction(lp);
-        boolean excluded   = !lp.isInc() || "Excluded".equals(lp.getCls());
-        double ucM         = moneyM(lp.getUcNum(),  lp.getUc());
-        double abbM        = moneyM(lp.getAbbNum(), lp.getAbb());
+    private ComputedLpRecord computeOne(LpRecord lpRecord, double facilityConc) {
+        double busaRate    = advanceRateFraction(lpRecord);
+        boolean excluded   = !lpRecord.isInc() || "Excluded".equals(lpRecord.getCls());
+        double ucM         = moneyM(lpRecord.getUcNum(),  lpRecord.getUc());
+        double abbM        = moneyM(lpRecord.getAbbNum(), lpRecord.getAbb());
         // Use per-LP dollar limit stored in ubsConc (e.g. "$25.0M") when present;
         // fall back to the facility-level concLimitM for LPs without a stored override.
-        double concLimitM  = perLpConc(lp.getUbsConc(), facilityConc);
+        double concLimitM  = perLpConc(lpRecord.getUbsConc(), facilityConc);
         double uecM        = excluded ? 0 : Math.min(ucM, concLimitM);
         double concExcessM = Math.max(0, ucM - uecM);
         double ubbM        = uecM * busaRate;
         double deltaM      = ubbM - abbM;
-        return ComputedLp.from(lp, busaRate, uecM, ubbM, abbM, deltaM, concExcessM);
+        return ComputedLpRecord.from(lpRecord, busaRate, uecM, ubbM, abbM, deltaM, concExcessM);
     }
 
     private static double perLpConc(String ubsConc, double facilityConc) {
@@ -139,28 +139,28 @@ public class BbCalculationService {
         return new ConcLimits(singleLp, top10, unrated, nonUs);
     }
 
-    private List<BbBreach> detectBreaches(List<ComputedLp> lps, double totalUBB) {
+    private List<BbBreach> detectBreaches(List<ComputedLpRecord> lps, double totalUBB) {
         List<BbBreach> breaches = new ArrayList<>();
         if (totalUBB <= 0) return breaches;
 
         ConcLimits limits = loadConcLimits();
-        List<ComputedLp> included = lps.stream().filter(lp -> lp.inc()).toList();
+        List<ComputedLpRecord> included = lps.stream().filter(lpRecord -> lpRecord.inc()).toList();
 
         // Single LP over configured limit
-        for (ComputedLp lp : included) {
-            double pct = lp.ubbM() / totalUBB;
+        for (ComputedLpRecord lpRecord : included) {
+            double pct = lpRecord.ubbM() / totalUBB;
             if (pct > limits.singleLp()) {
-                breaches.add(new BbBreach("single-lp", "breach",
-                    lp.name() + " exceeds " + pctLabel(limits.singleLp()) + " single-LP concentration",
+                breaches.add(new BbBreach("single-LP", "breach",
+                    lpRecord.name() + " exceeds " + pctLabel(limits.singleLp()) + " single-LP concentration",
                     pct, limits.singleLp()));
             }
         }
 
         // Top-10 over configured limit (warning inside the band below it)
         double top10UBB = included.stream()
-            .sorted(Comparator.comparingDouble((ComputedLp lp) -> lp.ubbM()).reversed())
+            .sorted(Comparator.comparingDouble((ComputedLpRecord lpRecord) -> lpRecord.ubbM()).reversed())
             .limit(10)
-            .mapToDouble(lp -> lp.ubbM()).sum();
+            .mapToDouble(lpRecord -> lpRecord.ubbM()).sum();
         double top10Pct  = top10UBB / totalUBB;
         double top10Warn = Math.max(0, limits.top10() - TOP10_WARNING_BAND);
         if (top10Pct > limits.top10()) {
@@ -174,18 +174,18 @@ public class BbCalculationService {
 
         // Unrated aggregate over configured limit
         double unratedUBB = included.stream()
-            .filter(lp -> !lp.highQuality())
-            .mapToDouble(lp -> lp.ubbM()).sum();
+            .filter(lpRecord -> !lpRecord.highQuality())
+            .mapToDouble(lpRecord -> lpRecord.ubbM()).sum();
         if (unratedUBB / totalUBB > limits.unrated()) {
             breaches.add(new BbBreach("unrated", "breach",
-                "Unrated LP aggregate exceeds " + pctLabel(limits.unrated()) + " of UBS BB",
+                "UnRated LP aggregate exceeds " + pctLabel(limits.unrated()) + " of UBS BB",
                 unratedUBB / totalUBB, limits.unrated()));
         }
 
         // Non-US aggregate over configured limit
         double nonUsUBB = included.stream()
-            .filter(lp -> !lp.hq())
-            .mapToDouble(lp -> lp.ubbM()).sum();
+            .filter(lpRecord -> !lpRecord.hq())
+            .mapToDouble(lpRecord -> lpRecord.ubbM()).sum();
         if (nonUsUBB / totalUBB > limits.nonUs()) {
             breaches.add(new BbBreach("non-us", "breach",
                 "Non-US LP aggregate exceeds " + pctLabel(limits.nonUs()) + " of UBS BB",

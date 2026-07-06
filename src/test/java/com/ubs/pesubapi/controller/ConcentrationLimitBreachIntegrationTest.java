@@ -22,7 +22,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * {@code conc_limits} config key — the rows edited on the Config screen's Concentration
  * Limits card — not hardcoded engine constants.
  */
-@SuppressWarnings("null")
 class ConcentrationLimitBreachIntegrationTest extends IntegrationTestBase {
 
     /** Mirrors the V1_2 seed so each test leaves the shared config cache as it found it. TEST ONLY */
@@ -93,7 +92,7 @@ class ConcentrationLimitBreachIntegrationTest extends IntegrationTestBase {
                 .content(twoEqualLpPayload()))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.result.breaches", hasSize(2)))
-            .andExpect(jsonPath("$.result.breaches[*].type", everyItem(is("single-lp"))))
+            .andExpect(jsonPath("$.result.breaches[*].type", everyItem(is("single-LP"))))
             .andExpect(jsonPath("$.result.breaches[0].severity").value("breach"))
             .andExpect(jsonPath("$.result.breaches[0].limit").value(closeTo(0.40, 0.001)))
             .andExpect(jsonPath("$.result.breaches[0].value").value(closeTo(0.50, 0.01)))
@@ -110,7 +109,7 @@ class ConcentrationLimitBreachIntegrationTest extends IntegrationTestBase {
     void run_missingConfigRowsFallBackToSeedDefaults() throws Exception {
         // Only the top-10 row is present at 90% → warning band 80–90%. Twelve equal Rated
         // US LPs put the top-10 share at 10/12 ≈ 83.3% (warning) while every omitted rule
-        // keeps its default: single-LP 15% (each LP is 8.3%), unrated 50% and non-US 30%
+        // keeps its default: single-LP 15% (each LpRecord is 8.3%), unrated 50% and non-US 30%
         // (both aggregates are zero). Exactly one warning must come back.
         putConcLimits("""
             [{"label":"Top-10 LP max", "value":90, "basis":"Total UBS BB"}]
@@ -135,7 +134,7 @@ class ConcentrationLimitBreachIntegrationTest extends IntegrationTestBase {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(twoEqualLpPayload()))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.result.breaches[?(@.type=='single-lp')].limit",
+            .andExpect(jsonPath("$.result.breaches[?(@.type=='single-LP')].limit",
                 everyItem(closeTo(0.15, 0.001))))
             .andExpect(jsonPath("$.result.breaches[?(@.type=='top10')].limit",
                 everyItem(closeTo(0.60, 0.001))))

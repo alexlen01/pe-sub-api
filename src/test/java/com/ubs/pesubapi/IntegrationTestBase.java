@@ -10,12 +10,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 // Zonky embedded PostgreSQL: a real Postgres binary started in-process — no Docker daemon
 // required — so JSONB columns and ::cast Flyway migrations behave exactly as in production.
 //
-// provider = ZONKY  -> spin up the bundled embedded-postgres binary for this platform.
+// provider = EMBEDDED -> spin up the bundled embedded-postgres binary for this platform.
 // refresh  = NEVER (default) -> the database is bound to the shared Spring test context and
 //            lives for the whole run, mirroring the previous singleton-container behaviour.
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
-@AutoConfigureEmbeddedDatabase(provider = AutoConfigureEmbeddedDatabase.DatabaseProvider.ZONKY)
+@AutoConfigureEmbeddedDatabase(provider = AutoConfigureEmbeddedDatabase.DatabaseProvider.EMBEDDED)
 public abstract class IntegrationTestBase {
 
     @Autowired private JdbcTemplate jdbc;

@@ -149,7 +149,7 @@ public class TemplateProfiler {
         return groups;
     }
 
-    /** Maps a banner's text to a canonical LP classification using generic category keywords. */
+    /** Maps a banner's text to a canonical LP Classification using generic category keywords. */
     private String[] classifyGroup(String norm, String verbatim) {
         if (norm.contains("exclud") || norm.contains("ineligible"))      return new String[]{"Ineligible Investors", "medium"};
         if (norm.contains("designated") && norm.contains("pwm"))         return new String[]{"Designated PWM", "medium"};

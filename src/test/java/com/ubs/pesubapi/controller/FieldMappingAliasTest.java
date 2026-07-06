@@ -17,7 +17,6 @@ import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SuppressWarnings("null")
 class FieldMappingAliasTest extends IntegrationTestBase {
 
     @Autowired MockMvc mvc;
@@ -39,7 +38,7 @@ class FieldMappingAliasTest extends IntegrationTestBase {
         FmAlias seed = new FmAlias();
         seed.setCanonicalFieldId(investorFieldId);
         seed.setAliasSort(1);
-        seed.setAliasText("LP Name");
+        seed.setAliasText("LP name");
         seed.setTier("Core");
         aliasRepo.save(seed);
     }
@@ -79,11 +78,11 @@ class FieldMappingAliasTest extends IntegrationTestBase {
 
     @Test
     void createAlias_textExistsOnAnotherField_returns409NamingConflict() throws Exception {
-        // "LP Name" is seeded on Investor Name; try to add it to LP Category
+        // "LP name" is seeded on Investor Name; try to add it to LP Category
         mvc.perform(post("/api/field-mapping/aliases")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"canonicalFieldId": %d, "text": "LP Name", "tier": "Bank"}
+                    {"canonicalFieldId": %d, "text": "LP name", "tier": "Bank"}
                     """.formatted(classFieldId)))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.detail").value(containsString("Investor Name")));
@@ -93,11 +92,11 @@ class FieldMappingAliasTest extends IntegrationTestBase {
 
     @Test
     void createAlias_textDiffersOnlyCaseFromExisting_returns409() throws Exception {
-        // "lp name" differs only in case from seeded "LP Name" on Investor Name
+        // "LP name" differs only in case from seeded "LP name" on Investor Name
         mvc.perform(post("/api/field-mapping/aliases")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"canonicalFieldId": %d, "text": "lp name", "tier": "Bank"}
+                    {"canonicalFieldId": %d, "text": "LP name", "tier": "Bank"}
                     """.formatted(classFieldId)))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.detail").value(containsString("Investor Name")));
@@ -117,11 +116,11 @@ class FieldMappingAliasTest extends IntegrationTestBase {
             .andReturn().getResponse().getContentAsString();
         int aliasId = (int) JsonPath.read(created, "$.id");
 
-        // Rename to "LP Name" which belongs to Investor Name → must be rejected
+        // Rename to "LP name" which belongs to Investor Name → must be rejected
         mvc.perform(patch("/api/field-mapping/aliases/" + aliasId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"text": "LP Name"}
+                    {"text": "LP name"}
                     """))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.detail").value(containsString("Investor Name")));

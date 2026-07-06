@@ -16,7 +16,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * the header-less UI and the existing suite work unchanged. Role boundaries are still enforced —
  * the service-only ingest endpoint rejects an operator role.
  */
-@SuppressWarnings("null")
 class SecurityDevModeIntegrationTest extends IntegrationTestBase {
 
     private static final String INGEST_BODY = """
@@ -38,14 +37,14 @@ class SecurityDevModeIntegrationTest extends IntegrationTestBase {
     @Test
     @WithMockUser(username = "analyst", roles = {"ANALYST"})
     void ingest_asAnalyst_isForbidden() throws Exception {
-        mvc.perform(post("/api/lps/ingest").contentType(MediaType.APPLICATION_JSON).content("{}"))
+        mvc.perform(post("/api/lpRecords/ingest").contentType(MediaType.APPLICATION_JSON).content("{}"))
             .andExpect(status().isForbidden());
     }
 
     @Test
     @WithMockUser(username = "extraction-svc", roles = {"SERVICE"})
     void ingest_asServiceRole_passesAuthorization() throws Exception {
-        mvc.perform(post("/api/lps/ingest").contentType(MediaType.APPLICATION_JSON).content(INGEST_BODY))
+        mvc.perform(post("/api/lpRecords/ingest").contentType(MediaType.APPLICATION_JSON).content(INGEST_BODY))
             .andExpect(status().isOk());
     }
 }

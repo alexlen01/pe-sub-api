@@ -3,12 +3,13 @@ package com.ubs.pesubapi.service;
 import tools.jackson.databind.JsonNode;
 import com.ubs.pesubapi.dto.IngestRequest;
 import com.ubs.pesubapi.dto.IngestResult;
-import com.ubs.pesubapi.entity.Lp;
+import com.ubs.pesubapi.entity.LpRecord;
 import com.ubs.pesubapi.entity.LpMaster;
 import com.ubs.pesubapi.entity.MatchQueueEntry;
 import com.ubs.pesubapi.repository.LpMasterRepository;
-import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.repository.LpRecordRepository;
 import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
+import com.ubs.pesubapi.util.AgentLpClassificationDeriver;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,7 +18,9 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -26,26 +29,26 @@ public class LpIngestService {
 
     private static final double MIN_FIELD_CONFIDENCE = 0.7;
 
-    private final LpRepository              lpRepo;
+    private final LpRecordRepository              lpRecordRepo;
     private final LpMasterRepository        lpMasterRepo;
     private final MatchingService           matchingService;
     private final MatchQueueEntryRepository matchQueueRepo;
 
-    public LpIngestService(LpRepository lpRepo,
+    public LpIngestService(LpRecordRepository lpRecordRepo,
                            LpMasterRepository lpMasterRepo,
                            MatchingService matchingService,
                            MatchQueueEntryRepository matchQueueRepo) {
-        this.lpRepo          = lpRepo;
+        this.lpRecordRepo          = lpRecordRepo;
         this.lpMasterRepo    = lpMasterRepo;
         this.matchingService = matchingService;
         this.matchQueueRepo  = matchQueueRepo;
     }
 
     public IngestResult ingest(int submissionId, IngestRequest request) {
-        List<Lp> facilityLps = lpRepo.findByFacilityIdOrderByInvestorNameAsc(request.facilityId());
-        List<String> names   = facilityLps.stream().map(lp -> lp.getInvestorName()).toList();
-        Map<String, Lp> byName = facilityLps.stream()
-            .collect(Collectors.toMap(lp -> lp.getInvestorName(), lp -> lp, (a, b) -> a));
+        List<LpRecord> facilityLps = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(request.facilityId());
+        List<String> names   = facilityLps.stream().map(lpRecord -> lpRecord.getInvestorName()).toList();
+        Map<String, LpRecord> byName = facilityLps.stream()
+            .collect(Collectors.toMap(lpRecord -> lpRecord.getInvestorName(), lpRecord -> lpRecord, (a, b) -> a));
         MatchingService.Prepared prepared = matchingService.prepare(names);
 
         List<IngestResult.RecordResult> results = new ArrayList<>();
@@ -68,8 +71,8 @@ public class LpIngestService {
                 queued++;
                 int score = best != null ? best.score() : 0;
                 List<String> reasons = best == null
-                    ? List.of("New LP — no matching record found in facility LP Master")
-                    : List.of("New LP — best match score " + score + " is below the no-match threshold");
+                    ? List.of("new LP — no matching record found in facility LP Master")
+                    : List.of("new LP — best match score " + score + " is below the no-match threshold");
                 results.add(result(row.rowIndex(), extractedName, null, null, score,
                     "Queued", List.of(), reasons));
                 if (submissionId > 0) {
@@ -80,11 +83,11 @@ public class LpIngestService {
                 continue;
             }
 
-            Lp lp = byName.get(best.name());
-            if (lp == null) {
+            LpRecord lpRecord = byName.get(best.name());
+            if (lpRecord == null) {
                 skipped++;
                 results.add(result(row.rowIndex(), extractedName, null, best.name(), best.score(),
-                    "Skipped", List.of(), List.of("Internal error: matched LP not found")));
+                    "Skipped", List.of(), List.of("Internal error: matched LpRecord not found")));
                 continue;
             }
 
@@ -93,24 +96,24 @@ public class LpIngestService {
             if (needsReview) {
                 queued++;
                 List<String> reasons = reviewReasons(row, best);
-                results.add(result(row.rowIndex(), extractedName, lp.getId(), lp.getInvestorName(),
+                results.add(result(row.rowIndex(), extractedName, lpRecord.getId(), lpRecord.getInvestorName(),
                     best.score(), "Queued", List.of(), reasons));
                 if (submissionId > 0) {
                     persistQueueEntry(submissionId, request.facilityId(), row.rowIndex(),
-                        extractedName, lp.getId(), lp.getInvestorName(), best.score(), reasons,
+                        extractedName, lpRecord.getId(), lpRecord.getInvestorName(), best.score(), reasons,
                         matchingService.analyzeTree(extractedName, prepared, 5));
                 }
             } else {
                 if (submissionId > 0) {
                     queued++;
-                    results.add(result(row.rowIndex(), extractedName, lp.getId(), lp.getInvestorName(),
+                    results.add(result(row.rowIndex(), extractedName, lpRecord.getId(), lpRecord.getInvestorName(),
                         best.score(), "Queued", List.of(),
                         List.of("Auto-match queued for Match Queue name confirmation")));
                 } else {
-                    List<String> updatedFields = applyFields(lp, row);
-                    lpRepo.save(lp);
+                    List<String> updatedFields = applyFields(lpRecord, row);
+                    lpRecordRepo.save(lpRecord);
                     updated++;
-                    results.add(result(row.rowIndex(), extractedName, lp.getId(), lp.getInvestorName(),
+                    results.add(result(row.rowIndex(), extractedName, lpRecord.getId(), lpRecord.getInvestorName(),
                         best.score(), "Updated", updatedFields, List.of()));
                 }
             }
@@ -147,9 +150,11 @@ public class LpIngestService {
                 .collect(Collectors.toMap(e -> e.getRowIndex(), e -> e, (a, b) -> a, HashMap::new));
 
         // Replace all existing facility LP records — this submission is authoritative.
-        Map<String, Lp> existingByName = lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).stream()
-            .collect(Collectors.toMap(lp -> lp.getInvestorName(), lp -> lp, (a, b) -> a, HashMap::new));
-        Map<String, Lp> toSave = new HashMap<>();
+        matchQueueRepo.clearMatchedLpIdsForFacility(facilityId);
+        lpRecordRepo.deleteByFacilityId(facilityId);
+        lpRecordRepo.flush();
+
+        Map<String, LpRecord> toSave = new LinkedHashMap<>();
 
         // Insert every extracted row; no row is discarded regardless of match queue status.
         byRow.keySet().stream().sorted().forEach(rowIndex -> {
@@ -164,29 +169,27 @@ public class LpIngestService {
             String name = isAccepted ? lpNameForCommit(entry, false) : extractedName;
             if (name == null || name.isBlank()) name = extractedName;
 
-            Lp lp = existingByName.getOrDefault(name, new Lp());
-            resetForCommit(lp, facilityId, name);
+            LpRecord lpRecord = new LpRecord();
+            lpRecord.setFacilityId(facilityId);
+            lpRecord.setInvestorName(name);
+            lpRecord.setInvestorType("");
+            lpRecord.setInstVsHnw("Institutional");
+            lpRecord.setRegion("US");
+            lpRecord.setCls("Eligible");
 
             // For accepted LP Master matches: pre-populate empty fields from LP Master
             // (stable identity, ratings, UBS credit profile) before extraction fields win.
             if (isAccepted) {
-                final Lp lpRef = lp;
+                final LpRecord lpRef = lpRecord;
                 lpMasterRepo.findByInvestorName(name).ifPresent(m -> applyLpMasterBaseline(lpRef, m));
             }
 
-            lp.setSourceSeq(rowIndex);
-            applyExtractedJsonRow(lp, row);
-            toSave.put(name, lp);
+            lpRecord.setSourceSeq(rowIndex);
+            applyExtractedJsonRow(lpRecord, row);
+            toSave.put(name, lpRecord);
         });
 
-        lpRepo.saveAll(toSave.values());
-
-        List<Lp> stale = existingByName.entrySet().stream()
-            .filter(e -> !toSave.containsKey(e.getKey()))
-            .map(Map.Entry::getValue)
-            .toList();
-        clearMatchReferences(stale);
-        lpRepo.deleteAll(stale);
+        lpRecordRepo.saveAll(toSave.values());
     }
 
     /**
@@ -204,70 +207,7 @@ public class LpIngestService {
         return entry.getExtractedName();
     }
 
-    private void resetForCommit(Lp lp, int facilityId, String investorName) {
-        lp.setFacilityId(facilityId);
-        lp.setInvestorName(investorName);
-        lp.setParent(null);
-        lp.setSpv(false);
-        lp.setHighQty(true);
-        lp.setInvestorType("");
-        lp.setInstVsHnw("Institutional");
-        lp.setRegion("US");
-        lp.setIg(false);
-        lp.setCls("Eligible");
-        lp.setClsTag(null);
-        lp.setAgentCls(null);
-        lp.setSp("");
-        lp.setMdy("");
-        lp.setFitch("");
-        lp.setAum(null);
-        lp.setAumNum(null);
-        lp.setNav(null);
-        lp.setPension(null);
-        lp.setPensionFunded(null);
-        lp.setCapCommit(null);
-        lp.setCapCommitNum(null);
-        lp.setPctCapCommit(null);
-        lp.setCalledCap(null);
-        lp.setUc(null);
-        lp.setUcNum(null);
-        lp.setPctUncalled(null);
-        lp.setPctCalled(null);
-        lp.setAgentConc(null);
-        lp.setUbsConc(null);
-        lp.setAgentRate(null);
-        lp.setUbsRate(null);
-        lp.setAbb(null);
-        lp.setAbbNum(null);
-        lp.setUbb(null);
-        lp.setAgentExcessConc(null);
-        lp.setUbsExcessConc(null);
-        lp.setInc(false);
-        lp.setRcl(false);
-        lp.setRecallableDist(null);
-        lp.setTf(false);
-        lp.setNotes(null);
-        lp.setLpMasterId(null);
-    }
-
-    private void clearMatchReferences(List<Lp> stale) {
-        if (stale.isEmpty()) return;
-        List<Integer> staleIds = stale.stream()
-            .map(Lp::getId)
-            .filter(id -> id != null)
-            .toList();
-        if (staleIds.isEmpty()) return;
-        Integer facilityId = stale.getFirst().getFacilityId();
-        List<MatchQueueEntry> entries = matchQueueRepo.findByFacilityIdOrderByRowIndexAsc(facilityId);
-        entries.forEach(entry -> {
-            if (entry.getMatchedLpId() != null && staleIds.contains(entry.getMatchedLpId())) {
-                entry.setMatchedLpId(null);
-            }
-        });
-        matchQueueRepo.saveAll(entries);
-    }
-
-    private void applyExtractedJsonRow(Lp lp, JsonNode row) {
+    private void applyExtractedJsonRow(LpRecord lpRecord, JsonNode row) {
         String aum     = textOrNull(row, "aum");
         String commit  = textOrNull(row, "commit");
         String uncalled = textOrNull(row, "uncalled");
@@ -279,36 +219,56 @@ public class LpIngestService {
         String mdy     = textOrNull(row, "moodys");
         String fitch   = textOrNull(row, "fitch");
         String investorType = extractedText(row, "investorType", "Investor Type");
+        String notes   = textOrNull(row, "notes");
         // Agent LP Category verbatim from the Agent BB (e.g. "Pension Fund", "Designated PWM",
         // "Rated Included"). Persisted here so it survives the Commit Decisions step — the bb.run and
         // classification-edit paths already set it; this path previously dropped it, leaving the agent
         // value blank in Shadow BB. It is distinct from Investor Type, a manual field.
         String agentCls  = extractedText(row, "agentClass", "LP Category");
+        String agentClsSource = agentCls != null
+            ? normalizeAgentClsSource(textOrNull(row, "agentClsSource"))
+            : null;
+        if (agentCls != null && agentClsSource == null) agentClsSource = "EXTRACTED";
+        if (agentCls == null) {
+            agentCls = AgentLpClassificationDeriver.derive(
+                investorType,
+                sp,
+                mdy,
+                fitch,
+                textOrNull(row, "lpSizeBil"),
+                textOrNull(row, "lpSizeCriteria"),
+                notes,
+                row.path("spv").asBoolean(false)
+            );
+            if (agentCls != null) agentClsSource = "DERIVED";
+        }
         String calledCap = textOrNull(row, "calledCap");
         String pctCalled = textOrNull(row, "pctCalled");
         String pctUncalled = textOrNull(row, "pctUncalled");
-        String notes   = textOrNull(row, "notes");
         // Prefer the raw extracted agent BB column; fall back to the uncalled×rate proxy.
         String agentBB   = textOrNull(row, "agentBB");
         if (agentBB == null) agentBB = textOrNull(row, "agentBBFmt");
 
-        if (aum      != null) lp.setAum(aum);
-        if (commit   != null) lp.setCapCommit(commit);
-        if (uncalled != null) lp.setUc(uncalled);
-        if (rate     != null) lp.setAgentRate(rate);
-        if (conc     != null) lp.setAgentConc(conc);
-        if (parent   != null) lp.setParent(parent);
-        if (nav      != null) lp.setNav(nav);
-        if (sp       != null) lp.setSp(sp);
-        if (mdy      != null) lp.setMdy(mdy);
-        if (fitch    != null) lp.setFitch(fitch);
-        if (investorType != null) lp.setInvestorType(investorType);
-        if (agentCls != null) lp.setAgentCls(agentCls);
-        if (agentBB  != null) lp.setAbb(agentBB);
-        if (calledCap  != null) lp.setCalledCap(calledCap);
-        if (pctCalled  != null) lp.setPctCalled(pctCalled);
-        if (pctUncalled != null) lp.setPctUncalled(pctUncalled);
-        if (notes     != null) lp.setNotes(notes);
+        if (aum      != null) lpRecord.setAum(aum);
+        if (commit   != null) lpRecord.setCapCommit(commit);
+        if (uncalled != null) lpRecord.setUc(uncalled);
+        if (rate     != null) lpRecord.setAgentRate(rate);
+        if (conc     != null) lpRecord.setAgentConc(conc);
+        if (parent   != null) lpRecord.setParent(parent);
+        if (nav      != null) lpRecord.setNav(nav);
+        if (sp       != null) lpRecord.setSp(sp);
+        if (mdy      != null) lpRecord.setMdy(mdy);
+        if (fitch    != null) lpRecord.setFitch(fitch);
+        if (investorType != null) lpRecord.setInvestorType(investorType);
+        if (agentCls != null) {
+            lpRecord.setAgentCls(agentCls);
+            lpRecord.setAgentClsSource(agentClsSource);
+        }
+        if (agentBB  != null) lpRecord.setAbb(agentBB);
+        if (calledCap  != null) lpRecord.setCalledCap(calledCap);
+        if (pctCalled  != null) lpRecord.setPctCalled(pctCalled);
+        if (pctUncalled != null) lpRecord.setPctUncalled(pctUncalled);
+        if (notes     != null) lpRecord.setNotes(notes);
 
         // Precise numeric money (C2): prefer the exact value carried in the stored JSON; fall back
         // to parsing the display string for extractions saved before the numeric fields existed.
@@ -316,12 +276,12 @@ public class LpIngestService {
         BigDecimal commNum  = moneyDollars(row, "commitNum",  "commit");
         BigDecimal aumNum  = moneyDollars(row, "aumNum",     "aum");
         BigDecimal abbNum  = moneyDollars(row, "agentBBNum", "agentBB");
-        if (ucNum   != null) lp.setUcNum(ucNum);
-        if (commNum != null) lp.setCapCommitNum(commNum);
-        if (aumNum  != null) lp.setAumNum(aumNum);
-        if (abbNum  != null) lp.setAbbNum(abbNum);
+        if (ucNum   != null) lpRecord.setUcNum(ucNum);
+        if (commNum != null) lpRecord.setCapCommitNum(commNum);
+        if (aumNum  != null) lpRecord.setAumNum(aumNum);
+        if (abbNum  != null) lpRecord.setAbbNum(abbNum);
 
-        lp.setUpdatedAt(LocalDateTime.now());
+        lpRecord.setUpdatedAt(LocalDateTime.now());
     }
 
     /**
@@ -341,6 +301,15 @@ public class LpIngestService {
         return millions == 0 ? null : BigDecimal.valueOf(millions * 1_000_000.0);
     }
 
+    private String normalizeAgentClsSource(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        String value = raw.trim().toUpperCase(Locale.ROOT);
+        return switch (value) {
+            case "EXTRACTED", "DERIVED", "USER_EDITED" -> value;
+            default -> null;
+        };
+    }
+
     /**
      * Applies LP Master stable attributes and UBS credit profile as a baseline onto a
      * facility LP record before Agent BB extraction fields are overlaid.
@@ -351,48 +320,48 @@ public class LpIngestService {
      * unconditionally — they are never set by extraction, so LP Master is the only source
      * of pre-populated credit decisions for this submission cycle.
      */
-    private void applyLpMasterBaseline(Lp lp, LpMaster master) {
+    private void applyLpMasterBaseline(LpRecord lpRecord, LpMaster master) {
         // Stable identity — override defaults set at new-record creation time
         if (master.getInvestorType() != null && !master.getInvestorType().isBlank()
-                && (lp.getInvestorType() == null || lp.getInvestorType().isBlank())) {
-            lp.setInvestorType(master.getInvestorType());
+                && (lpRecord.getInvestorType() == null || lpRecord.getInvestorType().isBlank())) {
+            lpRecord.setInvestorType(master.getInvestorType());
         }
         if (master.getInstVsHnw() != null && !master.getInstVsHnw().isBlank()
-                && (lp.getInstVsHnw() == null || lp.getInstVsHnw().isBlank())) {
-            lp.setInstVsHnw(master.getInstVsHnw());
+                && (lpRecord.getInstVsHnw() == null || lpRecord.getInstVsHnw().isBlank())) {
+            lpRecord.setInstVsHnw(master.getInstVsHnw());
         }
         if (master.getRegion() != null && !master.getRegion().isBlank()
-                && "US".equals(lp.getRegion())) {
-            lp.setRegion(master.getRegion());
+                && "US".equals(lpRecord.getRegion())) {
+            lpRecord.setRegion(master.getRegion());
         }
-        lp.setSpv(master.isSpv());
-        lp.setHighQty(master.isHighQty());
-        lp.setIg(master.isIg());
-        if (master.getParent() != null && !master.getParent().isBlank() && lp.getParent() == null) {
-            lp.setParent(master.getParent());
+        lpRecord.setSpv(master.isSpv());
+        lpRecord.setHighQty(master.isHighQty());
+        lpRecord.setIg(master.isIg());
+        if (master.getParent() != null && !master.getParent().isBlank() && lpRecord.getParent() == null) {
+            lpRecord.setParent(master.getParent());
         }
 
         // Ratings — apply when LP Master has a value and the facility record is still blank
-        if (!master.getSp().isBlank()    && lp.getSp().isBlank())    lp.setSp(master.getSp());
-        if (!master.getMdy().isBlank()   && lp.getMdy().isBlank())   lp.setMdy(master.getMdy());
-        if (!master.getFitch().isBlank() && lp.getFitch().isBlank()) lp.setFitch(master.getFitch());
+        if (!master.getSp().isBlank()    && lpRecord.getSp().isBlank())    lpRecord.setSp(master.getSp());
+        if (!master.getMdy().isBlank()   && lpRecord.getMdy().isBlank())   lpRecord.setMdy(master.getMdy());
+        if (!master.getFitch().isBlank() && lpRecord.getFitch().isBlank()) lpRecord.setFitch(master.getFitch());
 
         // Financial scale — fill nulls from LP Master
-        if (master.getAum()          != null && lp.getAum()          == null) lp.setAum(master.getAum());
-        if (master.getNav()          != null && lp.getNav()          == null) lp.setNav(master.getNav());
-        if (master.getPension()      != null && lp.getPension()      == null) lp.setPension(master.getPension());
-        if (master.getPensionFunded()!= null && lp.getPensionFunded()== null) lp.setPensionFunded(master.getPensionFunded());
+        if (master.getAum()          != null && lpRecord.getAum()          == null) lpRecord.setAum(master.getAum());
+        if (master.getNav()          != null && lpRecord.getNav()          == null) lpRecord.setNav(master.getNav());
+        if (master.getPension()      != null && lpRecord.getPension()      == null) lpRecord.setPension(master.getPension());
+        if (master.getPensionFunded()!= null && lpRecord.getPensionFunded()== null) lpRecord.setPensionFunded(master.getPensionFunded());
 
         // UBS credit profile — always apply; these fields are never set by extraction so
         // LP Master is the sole pre-populated source ahead of the credit officer's review
         if (master.getUbsClassification() != null && !master.getUbsClassification().isBlank()) {
-            lp.setCls(master.getUbsClassification());
+            lpRecord.setCls(master.getUbsClassification());
         }
         if (master.getUbsDefaultAdvRate() != null && !master.getUbsDefaultAdvRate().isBlank()) {
-            lp.setUbsRate(master.getUbsDefaultAdvRate());
+            lpRecord.setUbsRate(master.getUbsDefaultAdvRate());
         }
         if (master.getUbsDefaultConcLimit() != null && !master.getUbsDefaultConcLimit().isBlank()) {
-            lp.setUbsConc(master.getUbsDefaultConcLimit());
+            lpRecord.setUbsConc(master.getUbsDefaultConcLimit());
         }
     }
 
@@ -402,51 +371,51 @@ public class LpIngestService {
      *
      * For each LP record in the facility: if an LP Master row exists, update its UBS
      * classification / advance rate / concentration limit from the accepted facility record.
-     * If no LP Master row exists yet (LP was new in this submission), create one now so
+     * If no LP Master row exists yet (LpRecord was new in this submission), create one now so
      * future submissions across any facility benefit from this cycle's decisions.
      * The {@code lp_master_id} FK is stamped onto the facility record after upsert.
      */
     @Transactional
     public void writeBackToLpMaster(int facilityId) {
-        for (Lp lp : lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)) {
-            LpMaster master = lpMasterRepo.findByInvestorName(lp.getInvestorName())
+        for (LpRecord lpRecord : lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)) {
+            LpMaster master = lpMasterRepo.findByInvestorName(lpRecord.getInvestorName())
                 .orElseGet(() -> {
                     LpMaster m = new LpMaster();
-                    m.setInvestorName(lp.getInvestorName());
+                    m.setInvestorName(lpRecord.getInvestorName());
                     return m;
                 });
 
             // UBS credit profile — the definitive output of the accepted Shadow BB cycle
-            if (lp.getCls()     != null && !lp.getCls().isBlank())     master.setUbsClassification(lp.getCls());
-            if (lp.getUbsRate() != null && !lp.getUbsRate().isBlank()) master.setUbsDefaultAdvRate(lp.getUbsRate());
-            if (lp.getUbsConc() != null && !lp.getUbsConc().isBlank()) master.setUbsDefaultConcLimit(lp.getUbsConc());
+            if (lpRecord.getCls()     != null && !lpRecord.getCls().isBlank())     master.setUbsClassification(lpRecord.getCls());
+            if (lpRecord.getUbsRate() != null && !lpRecord.getUbsRate().isBlank()) master.setUbsDefaultAdvRate(lpRecord.getUbsRate());
+            if (lpRecord.getUbsConc() != null && !lpRecord.getUbsConc().isBlank()) master.setUbsDefaultConcLimit(lpRecord.getUbsConc());
 
             // Stable identity — refresh blanks with anything the facility record now carries
-            if (lp.getInvestorType() != null && !lp.getInvestorType().isBlank() && (master.getInvestorType() == null || master.getInvestorType().isBlank())) master.setInvestorType(lp.getInvestorType());
-            if (lp.getInstVsHnw()  != null && !lp.getInstVsHnw().isBlank()  && (master.getInstVsHnw()  == null || master.getInstVsHnw().isBlank()))  master.setInstVsHnw(lp.getInstVsHnw());
-            if (lp.getRegion()  != null && !lp.getRegion().isBlank()  && (master.getRegion()  == null || master.getRegion().isBlank()))  master.setRegion(lp.getRegion());
-            if (lp.getParent()  != null && !lp.getParent().isBlank()  && (master.getParent()  == null || master.getParent().isBlank()))  master.setParent(lp.getParent());
-            master.setSpv(lp.isSpv());
-            master.setHighQty(lp.isHighQty());
-            master.setIg(lp.isIg());
+            if (lpRecord.getInvestorType() != null && !lpRecord.getInvestorType().isBlank() && (master.getInvestorType() == null || master.getInvestorType().isBlank())) master.setInvestorType(lpRecord.getInvestorType());
+            if (lpRecord.getInstVsHnw()  != null && !lpRecord.getInstVsHnw().isBlank()  && (master.getInstVsHnw()  == null || master.getInstVsHnw().isBlank()))  master.setInstVsHnw(lpRecord.getInstVsHnw());
+            if (lpRecord.getRegion()  != null && !lpRecord.getRegion().isBlank()  && (master.getRegion()  == null || master.getRegion().isBlank()))  master.setRegion(lpRecord.getRegion());
+            if (lpRecord.getParent()  != null && !lpRecord.getParent().isBlank()  && (master.getParent()  == null || master.getParent().isBlank()))  master.setParent(lpRecord.getParent());
+            master.setSpv(lpRecord.isSpv());
+            master.setHighQty(lpRecord.isHighQty());
+            master.setIg(lpRecord.isIg());
 
             // Ratings — overwrite with latest cycle values when non-blank
-            if (!lp.getSp().isBlank())    master.setSp(lp.getSp());
-            if (!lp.getMdy().isBlank())   master.setMdy(lp.getMdy());
-            if (!lp.getFitch().isBlank()) master.setFitch(lp.getFitch());
+            if (!lpRecord.getSp().isBlank())    master.setSp(lpRecord.getSp());
+            if (!lpRecord.getMdy().isBlank())   master.setMdy(lpRecord.getMdy());
+            if (!lpRecord.getFitch().isBlank()) master.setFitch(lpRecord.getFitch());
 
             // Financial scale — overwrite with latest cycle values when non-null
-            if (lp.getAum()          != null) master.setAum(lp.getAum());
-            if (lp.getNav()          != null) master.setNav(lp.getNav());
-            if (lp.getPension()      != null) master.setPension(lp.getPension());
-            if (lp.getPensionFunded()!= null) master.setPensionFunded(lp.getPensionFunded());
+            if (lpRecord.getAum()          != null) master.setAum(lpRecord.getAum());
+            if (lpRecord.getNav()          != null) master.setNav(lpRecord.getNav());
+            if (lpRecord.getPension()      != null) master.setPension(lpRecord.getPension());
+            if (lpRecord.getPensionFunded()!= null) master.setPensionFunded(lpRecord.getPensionFunded());
 
             LpMaster saved = lpMasterRepo.save(master);
 
             // Stamp the FK so future lookups can join directly
-            if (!saved.getId().equals(lp.getLpMasterId())) {
-                lp.setLpMasterId(saved.getId());
-                lpRepo.save(lp);
+            if (!saved.getId().equals(lpRecord.getLpMasterId())) {
+                lpRecord.setLpMasterId(saved.getId());
+                lpRecordRepo.save(lpRecord);
             }
         }
     }
@@ -483,7 +452,7 @@ public class LpIngestService {
         matchQueueRepo.save(entry);
     }
 
-    private List<String> applyFields(Lp lp, IngestRequest.ExtractedLpRow row) {
+    private List<String> applyFields(LpRecord lpRecord, IngestRequest.ExtractedLpRow row) {
         List<String> changed = new ArrayList<>();
         BigDecimal aum  = valueIfValid(row.aum());
         BigDecimal comm = valueIfValid(row.commitment());
@@ -493,11 +462,11 @@ public class LpIngestService {
 
         // Dual-write: keep the formatted string for display and store the precise value (C2) so
         // the BB engine reads exact dollars instead of re-parsing a rounded "$12.3M".
-        if (aum  != null) { lp.setAum(formatMoney(aum));  lp.setAumNum(aum);       changed.add("aum"); }
-        if (comm != null) { lp.setCapCommit(formatMoney(comm)); lp.setCapCommitNum(comm); changed.add("capCommit"); }
-        if (uc   != null) { lp.setUc(formatMoney(uc));    lp.setUcNum(uc);         changed.add("uc"); }
-        if (rate != null) { lp.setAgentRate(formatRate(rate));   changed.add("agentRate"); }
-        if (conc != null) { lp.setAgentConc(formatRate(conc));   changed.add("agentConc"); }
+        if (aum  != null) { lpRecord.setAum(formatMoney(aum));  lpRecord.setAumNum(aum);       changed.add("aum"); }
+        if (comm != null) { lpRecord.setCapCommit(formatMoney(comm)); lpRecord.setCapCommitNum(comm); changed.add("capCommit"); }
+        if (uc   != null) { lpRecord.setUc(formatMoney(uc));    lpRecord.setUcNum(uc);         changed.add("uc"); }
+        if (rate != null) { lpRecord.setAgentRate(formatRate(rate));   changed.add("agentRate"); }
+        if (conc != null) { lpRecord.setAgentConc(formatRate(conc));   changed.add("agentConc"); }
 
         String sp       = strValueIfValid(row.sp());
         String mdy      = strValueIfValid(row.mdy());
@@ -505,19 +474,24 @@ public class LpIngestService {
         String nav      = strValueIfValid(row.nav());
         String investorType = strValueIfValid(row.investorType());
         String agentCls = strValueIfValid(row.agentCls());
+        String agentClsSource = normalizeAgentClsSource(strValueIfValid(row.agentClsSource()));
         String parent   = strValueIfValid(row.parent());
         String notes    = strValueIfValid(row.notes());
 
-        if (sp       != null) { lp.setSp(sp);               changed.add("sp"); }
-        if (mdy      != null) { lp.setMdy(mdy);             changed.add("mdy"); }
-        if (fitch    != null) { lp.setFitch(fitch);         changed.add("fitch"); }
-        if (nav      != null) { lp.setNav(nav);             changed.add("nav"); }
-        if (investorType != null) { lp.setInvestorType(investorType); changed.add("investorType"); }
-        if (agentCls != null) { lp.setAgentCls(agentCls);   changed.add("agentCls"); }
-        if (parent   != null) { lp.setParent(parent);       changed.add("parent"); }
-        if (notes    != null) { lp.setNotes(notes);         changed.add("notes"); }
+        if (sp       != null) { lpRecord.setSp(sp);               changed.add("sp"); }
+        if (mdy      != null) { lpRecord.setMdy(mdy);             changed.add("mdy"); }
+        if (fitch    != null) { lpRecord.setFitch(fitch);         changed.add("fitch"); }
+        if (nav      != null) { lpRecord.setNav(nav);             changed.add("nav"); }
+        if (investorType != null) { lpRecord.setInvestorType(investorType); changed.add("investorType"); }
+        if (agentCls != null) {
+            lpRecord.setAgentCls(agentCls);
+            lpRecord.setAgentClsSource(agentClsSource != null ? agentClsSource : "USER_EDITED");
+            changed.add("agentCls");
+        }
+        if (parent   != null) { lpRecord.setParent(parent);       changed.add("parent"); }
+        if (notes    != null) { lpRecord.setNotes(notes);         changed.add("notes"); }
 
-        lp.setUpdatedAt(LocalDateTime.now());
+        lpRecord.setUpdatedAt(LocalDateTime.now());
         return changed;
     }
 

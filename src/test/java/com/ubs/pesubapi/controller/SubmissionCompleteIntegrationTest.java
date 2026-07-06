@@ -6,7 +6,7 @@ import com.ubs.pesubapi.entity.Submission;
 import com.ubs.pesubapi.repository.AuditLogRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.LpRateRepository;
-import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.repository.LpRecordRepository;
 import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
 import com.ubs.pesubapi.repository.SubmissionExtractionRepository;
 import com.ubs.pesubapi.repository.SubmissionRepository;
@@ -27,7 +27,7 @@ class SubmissionCompleteIntegrationTest extends IntegrationTestBase {
     @Autowired MatchQueueEntryRepository      matchQueueRepo;
     @Autowired SubmissionExtractionRepository extractionRepo;
     @Autowired LpRateRepository               rateRepo;
-    @Autowired LpRepository                   lpRepo;
+    @Autowired LpRecordRepository             lpRecordRepo;
 
     private int facilityId;
     private int submissionId;
@@ -38,7 +38,7 @@ class SubmissionCompleteIntegrationTest extends IntegrationTestBase {
         extractionRepo.deleteAll();
         submissionRepo.deleteAll();
         rateRepo.deleteAll();
-        lpRepo.deleteAll();
+        lpRecordRepo.deleteAll();
         auditLogRepo.deleteAll();
         facilityRepo.deleteAll();
 

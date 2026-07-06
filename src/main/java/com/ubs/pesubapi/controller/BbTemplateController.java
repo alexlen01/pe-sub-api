@@ -90,10 +90,13 @@ public class BbTemplateController {
      */
     @PostMapping("/import")
     @ResponseStatus(HttpStatus.CREATED)
-    public BbTemplateDto importTemplate(@RequestParam("file") MultipartFile file) {
-        BbTemplateDto imported = importService.importFromExcel(file);
-        log.info("BB template imported file='{}' id={} slug='{}' class={} tabs={}",
-            file.getOriginalFilename(), imported.id(), imported.templateSlug(), imported.templateClass(),
+    public BbTemplateDto importTemplate(@RequestParam("file") MultipartFile file,
+                                        @RequestParam(value = "mode", defaultValue = "create") String mode) {
+        boolean upsert = "upsert".equalsIgnoreCase(mode);
+        BbTemplateDto imported = importService.importFromExcel(file, upsert);
+        log.info("BB template imported file='{}' mode={} id={} slug='{}' class={} tabs={}",
+            file.getOriginalFilename(), upsert ? "upsert" : "create",
+            imported.id(), imported.templateSlug(), imported.templateClass(),
             imported.tabs() != null ? imported.tabs().size() : 0);
         return imported;
     }

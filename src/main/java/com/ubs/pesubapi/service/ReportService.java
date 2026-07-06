@@ -48,18 +48,18 @@ public class ReportService {
                     "Snapshot " + snapshotId + " not found for facility " + facilityId))
             : requireLatestSnapshot(facilityId);
 
-        List<ComputedLp> lps = snap.getResult().lps() != null ? snap.getResult().lps() : List.of();
+        List<ComputedLpRecord> lps = snap.getResult().lps() != null ? snap.getResult().lps() : List.of();
 
         Map<String, double[]> agg = new LinkedHashMap<>();          // [count, uncalledM, ubbM]
         Map<String, String>   rates = new HashMap<>();
         for (String tier : TIER_ORDER) agg.put(tier, new double[3]);
-        for (ComputedLp lp : lps) {
-            String cls = lp.cls() != null && !lp.cls().isBlank() ? lp.cls() : "Unclassified";
+        for (ComputedLpRecord lpRecord : lps) {
+            String cls = lpRecord.cls() != null && !lpRecord.cls().isBlank() ? lpRecord.cls() : "Unclassified";
             double[] a = agg.computeIfAbsent(cls, k -> new double[3]);
             a[0]++;
-            a[1] += BbCalculationService.parseMoney(lp.uc());
-            a[2] += lp.ubbM();
-            rates.putIfAbsent(cls, lp.rate());
+            a[1] += BbCalculationService.parseMoney(lpRecord.uc());
+            a[2] += lpRecord.ubbM();
+            rates.putIfAbsent(cls, lpRecord.rate());
         }
 
         List<CollateralReportDto.ClassBreakdownRow> breakdown = agg.entrySet().stream()
@@ -69,7 +69,7 @@ public class ReportService {
                 rates.getOrDefault(e.getKey(), "0%")))
             .toList();
 
-        double totalEligibleUncalledM = lps.stream().mapToDouble(ComputedLp::uecM).sum();
+        double totalEligibleUncalledM = lps.stream().mapToDouble(ComputedLpRecord::uecM).sum();
 
         return new CollateralReportDto(
             facilityId, facility.getName(), facility.getAgentBank(),

@@ -75,6 +75,20 @@ public class BbTemplateService {
         return toDto(entity);
     }
 
+    @CacheEvict(value = "bb-templates", allEntries = true)
+    @SuppressWarnings("null")
+    @Transactional
+    public BbTemplateDto upsertBySlug(BbTemplateRequest req) {
+        String slug = req.templateSlug();
+        if (slug == null || slug.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "BB template import requires template_slug for upsert mode.");
+        }
+        return templateRepo.findByTemplateSlug(slug)
+            .map(existing -> update(existing.getId(), req))
+            .orElseGet(() -> create(req));
+    }
+
     /** Returns {@code base} if free, else the first available {@code base-1}, {@code base-2}, … */
     private String nextAvailableSlug(String base) {
         if (templateRepo.findByTemplateSlug(base).isEmpty()) return base;

@@ -29,6 +29,7 @@ public record IngestRequest(
         StringField fitch,
         StringField nav,
         StringField agentCls,
+        StringField agentClsSource,
         StringField parent,
         StringField notes,
         boolean requiresReview,

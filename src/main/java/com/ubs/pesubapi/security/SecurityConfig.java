@@ -45,7 +45,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/ping", "/health", "/api/notifications/**").permitAll()
                 .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                 // Service-to-service ingest — never a user-facing endpoint.
-                .requestMatchers(HttpMethod.POST, "/api/lps/ingest").hasRole("SERVICE")
+                .requestMatchers(HttpMethod.POST, "/api/lpRecords/ingest").hasRole("SERVICE")
                 // Configuration surfaces are ANALYST-only (RBAC matrix: ATM does not configure).
                 .requestMatchers(HttpMethod.PUT,    "/api/config/**").hasRole("ANALYST")
                 .requestMatchers(HttpMethod.POST,   "/api/field-mapping/**").hasRole("ANALYST")

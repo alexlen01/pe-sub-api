@@ -4,7 +4,7 @@ import com.ubs.pesubapi.dto.LpRateBatchRequest;
 import com.ubs.pesubapi.dto.LpRateDto;
 import com.ubs.pesubapi.entity.LpRate;
 import com.ubs.pesubapi.repository.LpRateRepository;
-import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.repository.LpRecordRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,19 +21,19 @@ import java.util.stream.Collectors;
 public class LpRateService {
 
     private final LpRateRepository rateRepo;
-    private final LpRepository     lpRepo;
+    private final LpRecordRepository     lpRecordRepo;
 
-    public LpRateService(LpRateRepository rateRepo, LpRepository lpRepo) {
+    public LpRateService(LpRateRepository rateRepo, LpRecordRepository lpRecordRepo) {
         this.rateRepo = rateRepo;
-        this.lpRepo   = lpRepo;
+        this.lpRecordRepo   = lpRecordRepo;
     }
 
     public List<LpRateDto> getRatesAsOf(LocalDate asOf) {
         List<LpRate> rates = rateRepo.findLatestAsOf(asOf);
         if (rates.isEmpty()) return List.of();
 
-        Map<Integer, String> nameById = lpRepo.findAllByOrderByInvestorNameAsc().stream()
-            .collect(Collectors.toMap(lp -> lp.getId(), lp -> lp.getInvestorName()));
+        Map<Integer, String> nameById = lpRecordRepo.findAllByOrderByInvestorNameAsc().stream()
+            .collect(Collectors.toMap(lpRecord -> lpRecord.getId(), lpRecord -> lpRecord.getInvestorName()));
 
         return rates.stream()
             .map(r -> LpRateDto.from(r, nameById.getOrDefault(r.getLpId(), "Unknown")))
@@ -45,10 +45,10 @@ public class LpRateService {
         YearMonth ym = YearMonth.parse(req.effectiveDate());
         LocalDate effectiveDate = ym.atDay(1);
 
-        Map<String, Integer> idByName = lpRepo.findAllByOrderByInvestorNameAsc().stream()
+        Map<String, Integer> idByName = lpRecordRepo.findAllByOrderByInvestorNameAsc().stream()
             .collect(Collectors.toMap(
-                lp -> lp.getInvestorName().toLowerCase(),
-                lp -> lp.getId(),
+                lpRecord -> lpRecord.getInvestorName().toLowerCase(),
+                lpRecord -> lpRecord.getId(),
                 (a, b) -> a  // keep first on duplicate name
             ));
 

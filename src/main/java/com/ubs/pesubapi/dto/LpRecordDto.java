@@ -1,11 +1,11 @@
 package com.ubs.pesubapi.dto;
 
-import com.ubs.pesubapi.entity.Lp;
+import com.ubs.pesubapi.entity.LpRecord;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.LocalDateTime;
 
-public record LpDto(
+public record LpRecordDto(
     Integer       id,
     Integer       facilityId,
     String        name,
@@ -20,6 +20,7 @@ public record LpDto(
     String        regionLocation,
     boolean       ig,
     String        agentCls,
+    String        agentClsSource,
     String        cls,
     String        clsTag,
     String        sp,
@@ -50,18 +51,18 @@ public record LpDto(
     LocalDateTime createdAt,
     LocalDateTime updatedAt
 ) {
-    public static LpDto from(Lp lp) {
-        return new LpDto(
-            lp.getId(), lp.getFacilityId(), lp.getInvestorName(), lp.getParent(),
-            lp.isSpv(), lp.isHighQty(), lp.getInvestorType(), lp.getInstVsHnw(), lp.getRegionLocation(), lp.isIg(),
-            lp.getAgentCls(), lp.getCls(), lp.getClsTag(), lp.getSp(), lp.getMdy(), lp.getFitch(),
-            lp.getAum(), lp.getNav(),
-            lp.getPension(), lp.getPensionFunded(),
-            lp.getCapCommit(), lp.getPctCapCommit(), lp.getCalledCap(),
-            lp.getUc(), lp.getPctUncalled(), lp.getPctCalled(),
-            lp.getAgentConc(), lp.getUbsConc(), lp.getUbsRate(), lp.getAgentRate(),
-            lp.getAgentExcessConc(), lp.getUbsExcessConc(), lp.getAbb(), lp.getUbb(),
-            lp.isInc(), lp.isRcl(), lp.isTf(), lp.getNotes(),
-            lp.getCreatedAt(), lp.getUpdatedAt());
+    public static LpRecordDto from(LpRecord lpRecord) {
+        return new LpRecordDto(
+            lpRecord.getId(), lpRecord.getFacilityId(), lpRecord.getInvestorName(), lpRecord.getParent(),
+            lpRecord.isSpv(), lpRecord.isHighQty(), lpRecord.getInvestorType(), lpRecord.getInstVsHnw(), lpRecord.getRegionLocation(), lpRecord.isIg(),
+            lpRecord.getAgentCls(), lpRecord.getAgentClsSource(), lpRecord.getCls(), lpRecord.getClsTag(), lpRecord.getSp(), lpRecord.getMdy(), lpRecord.getFitch(),
+            lpRecord.getAum(), lpRecord.getNav(),
+            lpRecord.getPension(), lpRecord.getPensionFunded(),
+            lpRecord.getCapCommit(), lpRecord.getPctCapCommit(), lpRecord.getCalledCap(),
+            lpRecord.getUc(), lpRecord.getPctUncalled(), lpRecord.getPctCalled(),
+            lpRecord.getAgentConc(), lpRecord.getUbsConc(), lpRecord.getUbsRate(), lpRecord.getAgentRate(),
+            lpRecord.getAgentExcessConc(), lpRecord.getUbsExcessConc(), lpRecord.getAbb(), lpRecord.getUbb(),
+            lpRecord.isInc(), lpRecord.isRcl(), lpRecord.isTf(), lpRecord.getNotes(),
+            lpRecord.getCreatedAt(), lpRecord.getUpdatedAt());
     }
 }

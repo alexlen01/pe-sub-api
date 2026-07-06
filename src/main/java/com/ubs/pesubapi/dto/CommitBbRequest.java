@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * Request body for POST /api/bb/run/{facilityId}.
- * Each row represents one LP as classified and valued in the Run Shadow BB wizard step.
+ * Each row represents one LpRecord as classified and valued in the Run Shadow BB wizard step.
  * The API upserts these rows into the LP Master table and then computes the snapshot.
  */
 public record CommitBbRequest(List<CommitLpRow> lps) {
@@ -28,6 +28,7 @@ public record CommitBbRequest(List<CommitLpRow> lps) {
         String  regionLocation,
         boolean ig,
         String  agentCls,       // Agent LP Category (verbatim from Agent BB)
+        String  agentClsSource, // EXTRACTED, DERIVED, or USER_EDITED
         String  cls,            // UBS LP Category (follows Agent LP Category)
         // Ratings
         String  sp,

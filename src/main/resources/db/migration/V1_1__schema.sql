@@ -98,6 +98,7 @@ CREATE TABLE lp_records (
     classification     VARCHAR(50)  NOT NULL,
     classification_tag VARCHAR(50),
     agent_cls          VARCHAR(80),
+    agent_cls_source   VARCHAR(20),
     sp                 VARCHAR(20)  NOT NULL DEFAULT '',
     mdy                VARCHAR(20)  NOT NULL DEFAULT '',
     fitch              VARCHAR(20)  NOT NULL DEFAULT '',
@@ -132,7 +133,9 @@ CREATE TABLE lp_records (
     notes              TEXT,
     created_at         TIMESTAMP    NOT NULL DEFAULT NOW(),
     updated_at         TIMESTAMP    NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_lp_records_facility_investor UNIQUE (facility_id, investor_name)
+    CONSTRAINT uq_lp_records_facility_investor UNIQUE (facility_id, investor_name),
+    CONSTRAINT ck_lp_records_agent_cls_source
+        CHECK (agent_cls_source IS NULL OR agent_cls_source IN ('EXTRACTED', 'DERIVED', 'USER_EDITED'))
 );
 
 CREATE INDEX idx_lp_records_lp_master ON lp_records(lp_master_id);

@@ -132,7 +132,7 @@ Money fields are in $millions; rate fields are decimal fractions (0.874 = 87.4%)
 ## LP Master ordering & commit
 
 `lp_records.source_seq` (`V1_3__lp_source_seq.sql`) stores each LP's position in its
-originating Agent BB — the extraction row index. The LP listing (`GET /api/lps?facilityId=`)
+originating Agent BB — the extraction row index. The LP listing (`GET /api/lpRecords?facilityId=`)
 and the Shadow BB run result (`POST /api/bb/run/{facilityId}`) return LPs in this **natural
 (source-file) order**, falling back to investor name; rows without a source position
 (manually-created or legacy) sort last. Commit (`commitAcceptedMatches`) and the direct
@@ -165,7 +165,7 @@ Roles mirror `pe-sub-docs/RBAC_ROLES.md`: **ANALYST** (day-to-day operator + con
 **ATM** (Account/Transaction Manager). Authorization highlights:
 
 - Configuration surfaces (`PUT /api/config/**`, `/api/field-mapping/**` mutations, `/api/bb-templates/**`) require `ANALYST`.
-- `POST /api/lps/ingest` is service-to-service only and requires the `SERVICE` role — it is never reachable by an operator.
+- `POST /api/lpRecords/ingest` is service-to-service only and requires the `SERVICE` role — it is never reachable by an operator.
 - Public (no auth): `GET /api/ping`, `GET /health`, `GET /api/notifications/**`, and CORS preflight.
 
 Audit entries now record the **authenticated principal** (previously a hardcoded operator name);

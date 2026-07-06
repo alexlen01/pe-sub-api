@@ -11,7 +11,7 @@ import com.ubs.pesubapi.dto.BbResult;
 @Converter
 public class BbResultConverter implements AttributeConverter<BbResult, String> {
 
-    // Ignore unknown properties so snapshots persisted under an older BbResult/ComputedLp shape
+    // Ignore unknown properties so snapshots persisted under an older BbResult/ComputedLpRecord shape
     // (e.g. the removed `rank` field) still deserialize cleanly, and keep Jackson 2's
     // null -> false/0 coercion so historical rows with explicit nulls for today's primitive
     // fields still load (Jackson 3 fails on null-for-primitive by default).

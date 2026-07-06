@@ -2,12 +2,12 @@ package com.ubs.pesubapi.controller;
 
 import com.ubs.pesubapi.IntegrationTestBase;
 import com.ubs.pesubapi.entity.Facility;
-import com.ubs.pesubapi.entity.Lp;
+import com.ubs.pesubapi.entity.LpRecord;
 import com.ubs.pesubapi.repository.AuditLogRepository;
 import com.ubs.pesubapi.repository.BbSnapshotRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.LpRateRepository;
-import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.repository.LpRecordRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,11 +21,10 @@ import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SuppressWarnings("null")
-class LpControllerIntegrationTest extends IntegrationTestBase {
+class LpRecordControllerIntegrationTest extends IntegrationTestBase {
 
     @Autowired MockMvc mvc;
-    @Autowired LpRepository lpRepo;
+    @Autowired LpRecordRepository lpRecordRepo;
     @Autowired LpRateRepository rateRepo;
     @Autowired FacilityRepository facilityRepo;
     @Autowired AuditLogRepository auditLogRepo;
@@ -37,7 +36,7 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
     void setup() {
         snapshotRepo.deleteAll();
         rateRepo.deleteAll();
-        lpRepo.deleteAll();
+        lpRecordRepo.deleteAll();
         auditLogRepo.deleteAll();
         facilityRepo.deleteAll();
 
@@ -47,22 +46,22 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
         facilityId = facilityRepo.save(f).getId();
     }
 
-    private Lp buildLp(String investorName, String cls) {
-        Lp lp = new Lp();
-        lp.setFacilityId(facilityId);
-        lp.setInvestorName(investorName);
-        lp.setInvType("Pension");
-        lp.setRegion("US");
-        lp.setCls(cls);
-        return lp;
+    private LpRecord buildLp(String investorName, String cls) {
+        LpRecord lpRecord = new LpRecord();
+        lpRecord.setFacilityId(facilityId);
+        lpRecord.setInvestorName(investorName);
+        lpRecord.setInvType("Pension");
+        lpRecord.setRegion("US");
+        lpRecord.setCls(cls);
+        return lpRecord;
     }
 
     @Test
     void listByFacility_returnsRealFieldValues() throws Exception {
-        lpRepo.save(buildLp("Acme Pension Fund", "Rated"));
-        lpRepo.save(buildLp("Beta Capital LLC", "Unrated AUM >$2bn"));
+        lpRecordRepo.save(buildLp("Acme Pension Fund", "Rated"));
+        lpRecordRepo.save(buildLp("Beta Capital LLC", "Unrated AUM >$2bn"));
 
-        mvc.perform(get("/api/lps").param("facilityId", String.valueOf(facilityId)))
+        mvc.perform(get("/api/lpRecords").param("facilityId", String.valueOf(facilityId)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(2)))
             .andExpect(jsonPath("$[0].name").value("Acme Pension Fund"))
@@ -73,9 +72,9 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
 
     @Test
     void getById_returnsRealFieldValues() throws Exception {
-        Lp saved = lpRepo.save(buildLp("Delta Fund", "Rated"));
+        LpRecord saved = lpRecordRepo.save(buildLp("Delta Fund", "Rated"));
 
-        mvc.perform(get("/api/lps/{id}", saved.getId()))
+        mvc.perform(get("/api/lpRecords/{id}", saved.getId()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(saved.getId()))
             .andExpect(jsonPath("$.name").value("Delta Fund"))
@@ -85,15 +84,15 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
 
     @Test
     void getById_notFound_returns404() throws Exception {
-        mvc.perform(get("/api/lps/99999"))
+        mvc.perform(get("/api/lpRecords/99999"))
             .andExpect(status().isNotFound());
     }
 
     @Test
     void patchLp_updatesClsAndReturnsDto() throws Exception {
-        Lp saved = lpRepo.save(buildLp("Gamma Pension", "Rated"));
+        LpRecord saved = lpRecordRepo.save(buildLp("Gamma Pension", "Rated"));
 
-        mvc.perform(patch("/api/lps/{id}", saved.getId())
+        mvc.perform(patch("/api/lpRecords/{id}", saved.getId())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"cls": "Excluded", "notes": "Manually excluded"}
@@ -106,10 +105,10 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
 
     @Test
     void listByFacilityAndCls_filtersCorrectly() throws Exception {
-        lpRepo.save(buildLp("Included LP", "Rated"));
-        lpRepo.save(buildLp("Excluded LP", "Excluded"));
+        lpRecordRepo.save(buildLp("Included LP", "Rated"));
+        lpRecordRepo.save(buildLp("Excluded LP", "Excluded"));
 
-        mvc.perform(get("/api/lps")
+        mvc.perform(get("/api/lpRecords")
                 .param("facilityId", String.valueOf(facilityId))
                 .param("cls", "Rated"))
             .andExpect(status().isOk())
@@ -119,10 +118,10 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
 
     @Test
     void listByFacilityAndSearch_filtersCorrectly() throws Exception {
-        lpRepo.save(buildLp("Apollo Capital", "Rated"));
-        lpRepo.save(buildLp("Beta Partners", "Rated"));
+        lpRecordRepo.save(buildLp("Apollo Capital", "Rated"));
+        lpRecordRepo.save(buildLp("Beta Partners", "Rated"));
 
-        mvc.perform(get("/api/lps")
+        mvc.perform(get("/api/lpRecords")
                 .param("facilityId", String.valueOf(facilityId))
                 .param("search", "Apollo"))
             .andExpect(status().isOk())
@@ -132,10 +131,10 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
 
     @Test
     void listLps_nullDataFields_notHardcodedStrings() throws Exception {
-        Lp lp = buildLp("Sparse LP", "Rated");
-        lpRepo.save(lp);
+        LpRecord lpRecord = buildLp("Sparse LP", "Rated");
+        lpRecordRepo.save(lpRecord);
 
-        mvc.perform(get("/api/lps").param("facilityId", String.valueOf(facilityId)))
+        mvc.perform(get("/api/lpRecords").param("facilityId", String.valueOf(facilityId)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].aum").doesNotExist())
             .andExpect(jsonPath("$[0].uc").doesNotExist())
@@ -146,9 +145,9 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
 
     @Test
     void patchClassification_updatesLpRecordAndUpsertsRate() throws Exception {
-        Lp saved = lpRepo.save(buildLp("Monarch Capital LP", "Eligible"));
+        LpRecord saved = lpRecordRepo.save(buildLp("Monarch Capital LP", "Eligible"));
 
-        mvc.perform(patch("/api/lps/classification")
+        mvc.perform(patch("/api/lpRecords/classification")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -167,7 +166,7 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.updated").value(1));
 
         // LP entity fields updated in place — including the Financial Scale columns
-        mvc.perform(get("/api/lps/{id}", saved.getId()))
+        mvc.perform(get("/api/lpRecords/{id}", saved.getId()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.cls").value("Rated"))
             .andExpect(jsonPath("$.sp").value("AA"))
@@ -179,7 +178,7 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.inc").value(true));
 
         // Advance rate + conc limit upserted into lp_rates as decimal fractions
-        mvc.perform(get("/api/lps/rates").param("effective_date", "2026-06"))
+        mvc.perform(get("/api/lpRecords/rates").param("effective_date", "2026-06"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].lpName").value("Monarch Capital LP"))
             .andExpect(jsonPath("$[0].ubsAdvRatePct").value(closeTo(0.9, 0.0001)))
@@ -191,9 +190,9 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
         // The Upload screen's date picker stores periodMonth as YYYY-MM-DD, which the Save
         // action forwards verbatim as effectiveDate. It must normalise to the first of the month
         // (not 500 on YearMonth.parse) and key the upserted rate by that month.
-        lpRepo.save(buildLp("Solstice Capital LP", "Eligible"));
+        lpRecordRepo.save(buildLp("Solstice Capital LP", "Eligible"));
 
-        mvc.perform(patch("/api/lps/classification")
+        mvc.perform(patch("/api/lpRecords/classification")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -209,7 +208,7 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.updated").value(1));
 
         // Rate upserted against the month (2026-06-01), retrievable as-of that month
-        mvc.perform(get("/api/lps/rates").param("effective_date", "2026-06"))
+        mvc.perform(get("/api/lpRecords/rates").param("effective_date", "2026-06"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].lpName").value("Solstice Capital LP"))
             .andExpect(jsonPath("$[0].effectiveDate").value("2026-06-01"));
@@ -217,9 +216,9 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
 
     @Test
     void patchClassification_unmatchedNameIgnored_returnsZero() throws Exception {
-        lpRepo.save(buildLp("Real LP", "Eligible"));
+        lpRecordRepo.save(buildLp("Real LP", "Eligible"));
 
-        mvc.perform(patch("/api/lps/classification")
+        mvc.perform(patch("/api/lpRecords/classification")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -235,9 +234,9 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
     void patchClassification_withoutAuditFlag_writesNoAuditEntry() throws Exception {
         // Per-row auto-save (audit omitted/false) persists data but must NOT log — otherwise the
         // audit trail gets one entry per keystroke.
-        lpRepo.save(buildLp("Monarch Capital LP", "Eligible"));
+        lpRecordRepo.save(buildLp("Monarch Capital LP", "Eligible"));
 
-        mvc.perform(patch("/api/lps/classification")
+        mvc.perform(patch("/api/lpRecords/classification")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -255,10 +254,10 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
     void patchClassification_withAuditFlag_writesOneAggregatedEntry() throws Exception {
         // The flush sent when the user leaves the screen carries audit:true and the full set of
         // edited rows, producing exactly one entry recording the aggregate count.
-        lpRepo.save(buildLp("Monarch Capital LP", "Eligible"));
-        lpRepo.save(buildLp("Solstice Capital LP", "Eligible"));
+        lpRecordRepo.save(buildLp("Monarch Capital LP", "Eligible"));
+        lpRecordRepo.save(buildLp("Solstice Capital LP", "Eligible"));
 
-        mvc.perform(patch("/api/lps/classification")
+        mvc.perform(patch("/api/lpRecords/classification")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -282,12 +281,12 @@ class LpControllerIntegrationTest extends IntegrationTestBase {
 
     @Test
     void duplicateInvestorNameInFacility_violatesUniqueConstraint() {
-        lpRepo.saveAndFlush(buildLp("Acme Pension Fund", "Rated"));
+        lpRecordRepo.saveAndFlush(buildLp("Acme Pension Fund", "Rated"));
 
         assertThatThrownBy(() ->
-            lpRepo.saveAndFlush(buildLp("Acme Pension Fund", "Eligible")))
+            lpRecordRepo.saveAndFlush(buildLp("Acme Pension Fund", "Eligible")))
             .isInstanceOf(DataIntegrityViolationException.class);
 
-        assertThat(lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)).hasSize(1);
+        assertThat(lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)).hasSize(1);
     }
 }

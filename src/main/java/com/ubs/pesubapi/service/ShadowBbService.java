@@ -4,11 +4,11 @@ import com.ubs.pesubapi.dto.BbResult;
 import com.ubs.pesubapi.dto.CommitBbRequest;
 import com.ubs.pesubapi.entity.BbSnapshot;
 import com.ubs.pesubapi.entity.Facility;
-import com.ubs.pesubapi.entity.Lp;
+import com.ubs.pesubapi.entity.LpRecord;
 import com.ubs.pesubapi.exception.ResourceNotFoundException;
 import com.ubs.pesubapi.repository.BbSnapshotRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
-import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.repository.LpRecordRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,11 +16,11 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Owns the single write transaction behind a Shadow BB run: upsert the submitted LP dataset,
+ * Owns the single write transaction behind a Shadow BB run: upsert the submitted LP Dataset,
  * compute the borrowing base, persist the snapshot, and stamp the facility's last-run time.
  *
  * <p>Previously this ran inline in {@code BbController} with no transaction boundary, so a failure
- * after the LP upsert but before the snapshot save left LP Master mutated with no snapshot. Here
+ * after the LpRecord upsert but before the snapshot save left LP Master mutated with no snapshot. Here
  * the whole sequence commits or rolls back atomically. Audit and SSE notification stay in the
  * controller so they fire only after this transaction commits.
  */
@@ -28,16 +28,16 @@ import java.util.List;
 public class ShadowBbService {
 
     private final FacilityRepository   facilityRepo;
-    private final LpRepository         lpRepo;
+    private final LpRecordRepository         lpRecordRepo;
     private final BbSnapshotRepository snapshotRepo;
     private final BbCalculationService calculator;
     private final LpMasterService      lpMasterService;
 
-    public ShadowBbService(FacilityRepository facilityRepo, LpRepository lpRepo,
+    public ShadowBbService(FacilityRepository facilityRepo, LpRecordRepository lpRecordRepo,
                            BbSnapshotRepository snapshotRepo, BbCalculationService calculator,
                            LpMasterService lpMasterService) {
         this.facilityRepo    = facilityRepo;
-        this.lpRepo          = lpRepo;
+        this.lpRecordRepo          = lpRecordRepo;
         this.snapshotRepo    = snapshotRepo;
         this.calculator      = calculator;
         this.lpMasterService = lpMasterService;
@@ -55,7 +55,7 @@ public class ShadowBbService {
             lpMasterService.upsertAll(facilityId, request.lps());
         }
 
-        List<Lp> lps = lpRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
+        List<LpRecord> lps = lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
         BbResult result = calculator.compute(lps, facility.getConcLimitM().doubleValue());
 
         BbSnapshot snapshot = new BbSnapshot();

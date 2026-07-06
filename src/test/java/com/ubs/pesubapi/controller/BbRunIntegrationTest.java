@@ -5,7 +5,7 @@ import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.repository.AuditLogRepository;
 import com.ubs.pesubapi.repository.BbSnapshotRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
-import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.repository.LpRecordRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,12 +17,11 @@ import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SuppressWarnings("null")
 class BbRunIntegrationTest extends IntegrationTestBase {
 
     @Autowired MockMvc              mvc;
     @Autowired FacilityRepository   facilityRepo;
-    @Autowired LpRepository         lpRepo;
+    @Autowired LpRecordRepository   lpRecordRepo;
     @Autowired BbSnapshotRepository snapshotRepo;
     @Autowired AuditLogRepository   auditLogRepo;
 
@@ -32,7 +31,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
     void setup() {
         auditLogRepo.deleteAll();
         snapshotRepo.deleteAll();
-        lpRepo.deleteAll();
+        lpRecordRepo.deleteAll();
         facilityRepo.deleteAll();
 
         Facility f = new Facility();
@@ -41,7 +40,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
         facilityId = facilityRepo.save(f).getId();
     }
 
-    // ── 3a–3d: Full BB run — LP population, classification, rates, calculation ──
+    // ── 3a–3d: Full BB run — LpRecord population, classification, rates, calculation ──
 
     @Test
     void run_upsertsLpMasterAndSavesSnapshot() throws Exception {
@@ -57,7 +56,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.result.lps", hasSize(3)));
 
         // LP Master must contain exactly the 3 submitted records
-        assertThat(lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)).hasSize(3);
+        assertThat(lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)).hasSize(3);
 
         // Snapshot must be retrievable from the /latest endpoint
         mvc.perform(get("/api/bb/snapshots/{id}/latest", facilityId))
@@ -105,7 +104,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                 .content(body))
             .andExpect(status().isCreated());
 
-        assertThat(lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)).hasSize(3);
+        assertThat(lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)).hasSize(3);
 
         // Second run with the same payload — must update, not duplicate
         mvc.perform(post("/api/bb/run/{id}", facilityId)
@@ -113,7 +112,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                 .content(body))
             .andExpect(status().isCreated());
 
-        assertThat(lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)).hasSize(3);
+        assertThat(lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)).hasSize(3);
     }
 
     @Test
@@ -159,14 +158,14 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                 .content(body))
             .andExpect(status().isCreated());
 
-        var lps = lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId);
+        var lps = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId);
         assertThat(lps).hasSize(1);
         assertThat(lps.getFirst().getCls()).isEqualTo("Excluded");   // last value wins
     }
 
     @Test
     void run_withoutBodyStillComputesFromExistingLpMaster() throws Exception {
-        // Seed one LP manually to simulate pre-existing LP Master data
+        // Seed one LpRecord manually to simulate pre-existing LP Master data
         mvc.perform(post("/api/bb/run/{id}", facilityId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(lpPayload(facilityId)))
@@ -226,7 +225,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.clsBreakdown", empty()));
     }
 
-    // ── Per-LP concentration limit stored in ubsConc is used by re-computation ──
+    // ── per-LP concentration limit stored in ubsConc is used by re-computation ──
 
     @Test
     void run_perLpConcLimitRoundTrips() throws Exception {
@@ -288,7 +287,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
 
     @Test
     void run_computesUbbForUbsTaxonomyClass() throws Exception {
-        // LP classified under the UBS taxonomy ("FoF & Other > $10Bn AUM" → 75%), with no stored
+        // LpRecord classified under the UBS taxonomy ("FoF & Other > $10Bn AUM" → 75%), with no stored
         // per-LP ubsRate. Previously the engine keyed only on the legacy taxonomy and returned 0%,
         // so UBS BB was $0. Now: uec = min(10, 25) = 10; 75% → ubbM = 7.5.
         String body = """

@@ -6,7 +6,7 @@ import com.ubs.pesubapi.entity.BbSnapshot;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.repository.BbSnapshotRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
-import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.repository.LpRecordRepository;
 import com.ubs.pesubapi.security.CurrentUserService;
 import com.ubs.pesubapi.service.AuditLogService;
 import com.ubs.pesubapi.service.BbCalculationService;
@@ -28,7 +28,7 @@ public class BbController {
     private static final Logger log = LoggerFactory.getLogger(BbController.class);
 
     private final FacilityRepository    facilityRepo;
-    private final LpRepository          lpRepo;
+    private final LpRecordRepository          lpRecordRepo;
     private final BbSnapshotRepository  snapshotRepo;
     private final BbCalculationService  calculator;
     private final ShadowBbService       shadowBbService;
@@ -36,12 +36,12 @@ public class BbController {
     private final AuditLogService       auditService;
     private final CurrentUserService    currentUser;
 
-    public BbController(FacilityRepository facilityRepo, LpRepository lpRepo,
+    public BbController(FacilityRepository facilityRepo, LpRecordRepository lpRecordRepo,
                         BbSnapshotRepository snapshotRepo, BbCalculationService calculator,
                         ShadowBbService shadowBbService, NotificationService notifier,
                         AuditLogService auditService, CurrentUserService currentUser) {
         this.facilityRepo    = facilityRepo;
-        this.lpRepo          = lpRepo;
+        this.lpRecordRepo          = lpRecordRepo;
         this.snapshotRepo    = snapshotRepo;
         this.calculator      = calculator;
         this.shadowBbService = shadowBbService;
@@ -51,7 +51,7 @@ public class BbController {
     }
 
     /**
-     * Accepts a full LP dataset from the Run Shadow BB wizard, upserts all LP records into
+     * Accepts a full LP Dataset from the Run Shadow BB wizard, upserts all LP records into
      * LP Master, computes the Shadow BB, and saves a snapshot. This is the single write
      * operation that materialises Steps 3a–3d from BB_PROCESS_FLOW.md in one transaction.
      */
@@ -97,36 +97,36 @@ public class BbController {
 
     @GetMapping("/summary-ext/{facilityId}")
     public ResponseEntity<Map<String, Object>> summaryExt(@PathVariable int facilityId) {
-        List<com.ubs.pesubapi.entity.Lp> lps = lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId);
+        List<com.ubs.pesubapi.entity.LpRecord> lps = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId);
         if (lps.isEmpty()) return ResponseEntity.ok(emptySummaryExt());
 
         int    totalLPs       = lps.size();
-        double totalCapCommit = lps.stream().mapToDouble(lp -> capCommitM(lp)).sum();
+        double totalCapCommit = lps.stream().mapToDouble(lpRecord -> capCommitM(lpRecord)).sum();
         // Called Capital is a calculated column (SHADOW_BB_ANALYSIS): Capital Commitments − Uncalled
         // Capital. Most LPs carry no stored called_cap, so derive it per-LP rather than summing a
         // column of blanks (which previously yielded $0).
         double totalCalledCap = lps.stream().mapToDouble(BbController::calledCapM).sum();
-        double totalUncalled  = lps.stream().mapToDouble(lp -> ucM(lp)).sum();
+        double totalUncalled  = lps.stream().mapToDouble(lpRecord -> ucM(lpRecord)).sum();
         double pctCalled      = totalCapCommit > 0 ? totalCalledCap / totalCapCommit : 0;
 
         // Uncalled-weighted population shares (SHADOW_BB_ANALYSIS Table 1):
         // each metric = Σ(uncalled of matching LPs) ÷ Σ(total uncalled), not a headcount ratio.
-        double instUncalled   = lps.stream().filter(lp -> "Institutional".equals(lp.getInstVsHnw())).mapToDouble(lp -> ucM(lp)).sum();
-        double hnwUncalled    = lps.stream().filter(lp -> "HNW".equals(lp.getInstVsHnw())).mapToDouble(lp -> ucM(lp)).sum();
-        double igUncalled     = lps.stream().filter(lp -> lp.isIg()).mapToDouble(lp -> ucM(lp)).sum();
+        double instUncalled   = lps.stream().filter(lpRecord -> "Institutional".equals(lpRecord.getInstVsHnw())).mapToDouble(lpRecord -> ucM(lpRecord)).sum();
+        double hnwUncalled    = lps.stream().filter(lpRecord -> "HNW".equals(lpRecord.getInstVsHnw())).mapToDouble(lpRecord -> ucM(lpRecord)).sum();
+        double igUncalled     = lps.stream().filter(lpRecord -> lpRecord.isIg()).mapToDouble(lpRecord -> ucM(lpRecord)).sum();
         double pctInstitutional = totalUncalled > 0 ? instUncalled / totalUncalled : 0;
         double pctHNW           = totalUncalled > 0 ? hnwUncalled  / totalUncalled : 0;
         double igRatio          = totalUncalled > 0 ? igUncalled   / totalUncalled : 0;
 
         List<Double> sortedUc = lps.stream()
-            .mapToDouble(lp -> ucM(lp))
+            .mapToDouble(lpRecord -> ucM(lpRecord))
             .boxed().sorted(Comparator.reverseOrder()).toList();
         double top10Uc        = sortedUc.stream().limit(10).mapToDouble(d -> d).sum();
         double top20Uc        = sortedUc.stream().limit(20).mapToDouble(d -> d).sum();
         double pctTop10       = totalUncalled > 0 ? top10Uc / totalUncalled : 0;
         double pctTop20       = totalUncalled > 0 ? top20Uc / totalUncalled : 0;
         // % of Uncalled Capital from LPs with AUM > $25bn (parseMoney returns $millions, so $25bn = 25_000).
-        double gt25bnUncalled       = lps.stream().filter(lp -> aumM(lp) > 25_000).mapToDouble(lp -> ucM(lp)).sum();
+        double gt25bnUncalled       = lps.stream().filter(lpRecord -> aumM(lpRecord) > 25_000).mapToDouble(lpRecord -> ucM(lpRecord)).sum();
         double pctUncalledGt25bnAum = totalUncalled > 0 ? gt25bnUncalled / totalUncalled : 0;
 
         double agentBBRaw = 0, ubsBBRaw = 0;
@@ -159,12 +159,12 @@ public class BbController {
         Map<String, double[]> busaMap = new LinkedHashMap<>();
         for (String key : List.of("90%", "75%", "65%", "50%", "0%"))
             busaMap.put(key, new double[]{0, 0});   // [count, dollars]
-        for (var lp : lps) {
-            double rate = calculator.advanceRateFraction(lp);
+        for (var lpRecord : lps) {
+            double rate = calculator.advanceRateFraction(lpRecord);
             String rateKey = String.format("%.0f%%", rate * 100);
             busaMap.computeIfAbsent(rateKey, k -> new double[]{0, 0});
             busaMap.get(rateKey)[0]++;
-            busaMap.get(rateKey)[1] += ucM(lp);
+            busaMap.get(rateKey)[1] += ucM(lpRecord);
         }
         List<Map<String, Object>> busaBreakdown = busaMap.entrySet().stream()
             .filter(e -> e.getValue()[0] > 0)
@@ -179,12 +179,12 @@ public class BbController {
 
         // ── Table 4: Agent breakdown — group by agent rate ────────────────────────
         Map<String, double[]> agentMap = new LinkedHashMap<>();
-        for (var lp : lps) {
-            String rateKey = lp.getAgentRate() != null && !lp.getAgentRate().isBlank()
-                ? lp.getAgentRate() : "0%";
+        for (var lpRecord : lps) {
+            String rateKey = lpRecord.getAgentRate() != null && !lpRecord.getAgentRate().isBlank()
+                ? lpRecord.getAgentRate() : "0%";
             agentMap.computeIfAbsent(rateKey, k -> new double[]{0, 0});
             agentMap.get(rateKey)[0]++;
-            agentMap.get(rateKey)[1] += ucM(lp);
+            agentMap.get(rateKey)[1] += ucM(lpRecord);
         }
         List<Map<String, Object>> agentBreakdown = agentMap.entrySet().stream()
             .sorted((a, b) -> {
@@ -206,10 +206,10 @@ public class BbController {
         Map<String, double[]> clsMap = new LinkedHashMap<>();
         for (String key : List.of("Rated Investors", "Unrated Investors", "Eligible Investors", "Excluded Investors"))
             clsMap.put(key, new double[]{0, 0});
-        for (var lp : lps) {
-            String bucket = canonicalClassBucket(lp.getCls());
+        for (var lpRecord : lps) {
+            String bucket = canonicalClassBucket(lpRecord.getCls());
             clsMap.get(bucket)[0]++;
-            clsMap.get(bucket)[1] += ucM(lp);
+            clsMap.get(bucket)[1] += ucM(lpRecord);
         }
         List<Map<String, Object>> clsBreakdown = clsMap.entrySet().stream()
             .filter(e -> e.getValue()[0] > 0)
@@ -249,11 +249,11 @@ public class BbController {
         return ResponseEntity.ok(out);
     }
 
-    /** Called Capital for one LP ($millions): the stored value when present, else the calculated
+    /** Called Capital for one LpRecord ($millions): the stored value when present, else the calculated
      *  Capital Commitments − Uncalled Capital (never negative). */
-    private static double calledCapM(com.ubs.pesubapi.entity.Lp lp) {
-        if (lp.getCalledCap() != null && !lp.getCalledCap().isBlank()) return parseMoney(lp.getCalledCap());
-        return Math.max(0, capCommitM(lp) - ucM(lp));
+    private static double calledCapM(com.ubs.pesubapi.entity.LpRecord lpRecord) {
+        if (lpRecord.getCalledCap() != null && !lpRecord.getCalledCap().isBlank()) return parseMoney(lpRecord.getCalledCap());
+        return Math.max(0, capCommitM(lpRecord) - ucM(lpRecord));
     }
 
     // Single source of truth for money parsing — a private near-copy previously lived here
@@ -264,11 +264,11 @@ public class BbController {
 
     // Numeric-first money reads ($millions) — the precise C2 numeric column when present, else the
     // legacy display string. Keeps summaryExt aligned with the engine's computeOne.
-    private static double ucM(com.ubs.pesubapi.entity.Lp lp)        { return BbCalculationService.moneyM(lp.getUcNum(), lp.getUc()); }
-    private static double capCommitM(com.ubs.pesubapi.entity.Lp lp) { return BbCalculationService.moneyM(lp.getCapCommitNum(), lp.getCapCommit()); }
-    private static double aumM(com.ubs.pesubapi.entity.Lp lp)       { return BbCalculationService.moneyM(lp.getAumNum(), lp.getAum()); }
+    private static double ucM(com.ubs.pesubapi.entity.LpRecord lpRecord)        { return BbCalculationService.moneyM(lpRecord.getUcNum(), lpRecord.getUc()); }
+    private static double capCommitM(com.ubs.pesubapi.entity.LpRecord lpRecord) { return BbCalculationService.moneyM(lpRecord.getCapCommitNum(), lpRecord.getCapCommit()); }
+    private static double aumM(com.ubs.pesubapi.entity.LpRecord lpRecord)       { return BbCalculationService.moneyM(lpRecord.getAumNum(), lpRecord.getAum()); }
 
-    /** Rolls a granular LP classification (UBS or legacy taxonomy) up into one of the four
+    /** Rolls a granular LP Classification (UBS or legacy taxonomy) up into one of the four
      *  canonical eligibility buckets used by SHADOW_BB_ANALYSIS Table 5. */
     private static String canonicalClassBucket(String cls) {
         if (cls == null || cls.isBlank()) return "Excluded Investors";

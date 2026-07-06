@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/lps/rates")
+@RequestMapping("/api/lpRecords/rates")
 public class LpRateController {
 
     private static final Logger log = LoggerFactory.getLogger(LpRateController.class);
@@ -28,7 +28,7 @@ public class LpRateController {
     }
 
     /**
-     * Returns the most recent rates for every LP on or before the given period.
+     * Returns the most recent rates for every LpRecord on or before the given period.
      * effective_date: YYYY-MM (e.g. 2026-05). Defaults to the current month.
      */
     @GetMapping
@@ -42,7 +42,7 @@ public class LpRateController {
     /**
      * Bulk-upserts LP rates from an ingested feed file.
      * Matches LPs by name (case-insensitive). Idempotent — re-posting the same
-     * effective_date overwrites existing rows for those LP IDs.
+     * effective_date overwrites existing rows for those LpRecord IDs.
      */
     @PostMapping("/batch")
     @ResponseStatus(HttpStatus.CREATED)

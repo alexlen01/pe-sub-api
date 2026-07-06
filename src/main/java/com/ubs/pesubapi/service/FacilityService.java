@@ -5,7 +5,7 @@ import com.ubs.pesubapi.exception.ResourceNotFoundException;
 import com.ubs.pesubapi.repository.AuditLogRepository;
 import com.ubs.pesubapi.repository.BbSnapshotRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
-import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.repository.LpRecordRepository;
 import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
 import com.ubs.pesubapi.repository.SubmissionExtractionRepository;
 import com.ubs.pesubapi.repository.SubmissionRepository;
@@ -18,7 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class FacilityService {
 
     private final FacilityRepository facilityRepo;
-    private final LpRepository lpRepo;
+    private final LpRecordRepository lpRecordRepo;
     private final SubmissionRepository submissionRepo;
     private final SubmissionExtractionRepository extractionRepo;
     private final MatchQueueEntryRepository matchQueueRepo;
@@ -26,14 +26,14 @@ public class FacilityService {
     private final AuditLogRepository auditLogRepo;
 
     public FacilityService(FacilityRepository facilityRepo,
-                           LpRepository lpRepo,
+                           LpRecordRepository lpRecordRepo,
                            SubmissionRepository submissionRepo,
                            SubmissionExtractionRepository extractionRepo,
                            MatchQueueEntryRepository matchQueueRepo,
                            BbSnapshotRepository snapshotRepo,
                            AuditLogRepository auditLogRepo) {
         this.facilityRepo   = facilityRepo;
-        this.lpRepo         = lpRepo;
+        this.lpRecordRepo         = lpRecordRepo;
         this.submissionRepo = submissionRepo;
         this.extractionRepo = extractionRepo;
         this.matchQueueRepo = matchQueueRepo;
@@ -42,9 +42,9 @@ public class FacilityService {
     }
 
     /**
-     * Hard-delete a facility along with its non-LP dependents (submissions and their extractions,
-     * match-queue entries, Shadow BB snapshots). Permitted only when the facility carries no LP
-     * records — committed LP data must never be silently destroyed. audit_log rows are preserved
+     * Hard-delete a facility along with its non-LpRecord dependents (submissions and their extractions,
+     * match-queue entries, Shadow BB snapshots). Permitted only when the facility carries no LpRecord
+     * records — committed LP Data must never be silently destroyed. audit_log rows are preserved
      * (their facility_id is nulled) so the history survives the deletion.
      *
      * @throws ResourceNotFoundException if no facility with the given id exists (→ 404)
@@ -56,7 +56,7 @@ public class FacilityService {
             throw new ResourceNotFoundException("Facility " + id + " not found");
         }
 
-        long lpCount = lpRepo.countByFacilityId(id);
+        long lpCount = lpRecordRepo.countByFacilityId(id);
         if (lpCount > 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "Cannot delete a facility that has LP records (" + lpCount + "). Remove its LP records first.");

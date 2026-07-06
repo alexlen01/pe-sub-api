@@ -62,6 +62,10 @@ public class BbTemplateImportService {
     }
 
     public BbTemplateDto importFromExcel(MultipartFile file) {
+        return importFromExcel(file, false);
+    }
+
+    public BbTemplateDto importFromExcel(MultipartFile file, boolean upsert) {
         try (Workbook wb = WorkbookFactory.create(file.getInputStream())) {
             BbTemplateRequest req = parseWorkbook(wb);
             log.info("BB template import parsed file='{}' slug='{}' agent='{}' class={} sheet='{}' headerRow={} autoDiscover={} tabs={} notes={}",
@@ -69,7 +73,7 @@ public class BbTemplateImportService {
                 req.sheetName(), req.headerRowIndex(), req.autoDiscoverTabs(),
                 req.tabs() != null ? req.tabs().size() : 0,
                 req.notes() != null ? req.notes().size() : 0);
-            return templateService.create(req);
+            return upsert ? templateService.upsertBySlug(req) : templateService.create(req);
         } catch (ResponseStatusException e) {
             log.warn("BB template import rejected file='{}': {}", fileName(file), e.getReason());
             throw e;

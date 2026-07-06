@@ -3,9 +3,9 @@ package com.ubs.pesubapi.controller;
 import com.ubs.pesubapi.dto.IngestRequest;
 import com.ubs.pesubapi.dto.IngestResult;
 import com.ubs.pesubapi.dto.LpClassificationRequest;
-import com.ubs.pesubapi.dto.LpDto;
-import com.ubs.pesubapi.entity.Lp;
-import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.dto.LpRecordDto;
+import com.ubs.pesubapi.entity.LpRecord;
+import com.ubs.pesubapi.repository.LpRecordRepository;
 import com.ubs.pesubapi.security.CurrentUserService;
 import com.ubs.pesubapi.service.AuditLogService;
 import com.ubs.pesubapi.service.LpClassificationService;
@@ -23,19 +23,19 @@ import java.util.Map;
 import java.util.Objects;
 
 @RestController
-@RequestMapping("/api/lps")
-public class LpController {
+@RequestMapping("/api/lpRecords")
+public class LpRecordController {
 
-    private static final Logger log = LoggerFactory.getLogger(LpController.class);
+    private static final Logger log = LoggerFactory.getLogger(LpRecordController.class);
 
-    private final LpRepository           repo;
+    private final LpRecordRepository           repo;
     private final NotificationService    notifier;
     private final AuditLogService        auditService;
     private final LpIngestService        ingestService;
     private final LpClassificationService classificationService;
     private final CurrentUserService     currentUser;
 
-    public LpController(LpRepository repo, NotificationService notifier,
+    public LpRecordController(LpRecordRepository repo, NotificationService notifier,
                         AuditLogService auditService, LpIngestService ingestService,
                         LpClassificationService classificationService,
                         CurrentUserService currentUser) {
@@ -50,7 +50,7 @@ public class LpController {
     @PostMapping("/ingest")
     public IngestResult ingest(@RequestBody IngestRequest request, HttpServletRequest httpRequest) {
         IngestResult result = ingestService.ingest(0, request);
-        log.info("LP ingest completed facilityId={} template='{}' updated={} queued={} skipped={}",
+        log.info("LpRecord ingest completed facilityId={} template='{}' updated={} queued={} skipped={}",
             request.facilityId(), result.templateFormat(), result.updated(), result.queued(), result.skipped());
         if (result.updated() > 0) {
             auditService.log("LP Data Updated",
@@ -61,10 +61,10 @@ public class LpController {
     }
 
     @GetMapping
-    public List<LpDto> list(@RequestParam(required = false) Integer facilityId,
+    public List<LpRecordDto> list(@RequestParam(required = false) Integer facilityId,
                              @RequestParam(required = false) String cls,
                              @RequestParam(required = false) String search) {
-        List<Lp> lps;
+        List<LpRecord> lps;
         if (facilityId != null && cls != null) {
             lps = repo.findByFacilityIdAndClsOrderByInvestorNameAsc(facilityId, cls);
         } else if (facilityId != null && search != null) {
@@ -74,7 +74,7 @@ public class LpController {
         } else {
             lps = repo.findAllByOrderByInvestorNameAsc();
         }
-        return lps.stream().map(LpDto::from).toList();
+        return lps.stream().map(LpRecordDto::from).toList();
     }
 
     /**
@@ -90,7 +90,7 @@ public class LpController {
     public Map<String, Integer> patchClassification(@RequestBody LpClassificationRequest req,
                                                      HttpServletRequest request) {
         int updated = classificationService.applyClassifications(req);
-        log.info("LP classification batch applied facilityId={} rows={} updated={} audit={}",
+        log.info("LP Classification batch applied facilityId={} rows={} updated={} audit={}",
             req.facilityId(), req.rows() != null ? req.rows().size() : 0, updated, req.audit());
         if (updated > 0 && req.facilityId() != null && Boolean.TRUE.equals(req.audit())) {
             auditService.log("LP Category Saved",
@@ -102,44 +102,48 @@ public class LpController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<LpDto> get(@PathVariable int id) {
+    public ResponseEntity<LpRecordDto> get(@PathVariable int id) {
         return repo.findById(id)
-            .map(LpDto::from)
+            .map(LpRecordDto::from)
             .map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());
     }
 
     @PatchMapping("/{id}")
-    public ResponseEntity<LpDto> patch(@PathVariable int id,
+    public ResponseEntity<LpRecordDto> patch(@PathVariable int id,
                                         @RequestBody Map<String, Object> body,
                                         HttpServletRequest request) {
-        return repo.findById(id).map(lp -> {
-            String prevCls = lp.getCls();
-            if (body.containsKey("investor_type")) lp.setInvestorType((String) body.get("investor_type"));
-            if (body.containsKey("investorType"))  lp.setInvestorType((String) body.get("investorType"));
-            if (body.containsKey("inst_vs_hnw"))   lp.setInstVsHnw((String) body.get("inst_vs_hnw"));
-            if (body.containsKey("instVsHnw"))     lp.setInstVsHnw((String) body.get("instVsHnw"));
-            if (body.containsKey("region_location")) lp.setRegionLocation((String) body.get("region_location"));
-            if (body.containsKey("regionLocation"))  lp.setRegionLocation((String) body.get("regionLocation"));
-            if (body.containsKey("region"))          lp.setRegionLocation((String) body.get("region"));
-            if (body.containsKey("cls"))    lp.setCls((String) body.get("cls"));
-            if (body.containsKey("clsTag")) lp.setClsTag((String) body.get("clsTag"));
-            if (body.containsKey("abb"))    lp.setAbb((String) body.get("abb"));
-            if (body.containsKey("inc"))    lp.setInc((Boolean) body.get("inc"));
-            if (body.containsKey("rcl"))    lp.setRcl((Boolean) body.get("rcl"));
-            if (body.containsKey("notes"))  lp.setNotes((String) body.get("notes"));
-            lp.setUpdatedAt(LocalDateTime.now());
-            Lp saved = repo.save(lp);
-            log.info("LP patched id={} facilityId={} investor='{}' fields={}",
+        return repo.findById(id).map(lpRecord -> {
+            String prevCls = lpRecord.getCls();
+            if (body.containsKey("investor_type")) lpRecord.setInvestorType((String) body.get("investor_type"));
+            if (body.containsKey("investorType"))  lpRecord.setInvestorType((String) body.get("investorType"));
+            if (body.containsKey("inst_vs_hnw"))   lpRecord.setInstVsHnw((String) body.get("inst_vs_hnw"));
+            if (body.containsKey("instVsHnw"))     lpRecord.setInstVsHnw((String) body.get("instVsHnw"));
+            if (body.containsKey("region_location")) lpRecord.setRegionLocation((String) body.get("region_location"));
+            if (body.containsKey("regionLocation"))  lpRecord.setRegionLocation((String) body.get("regionLocation"));
+            if (body.containsKey("region"))          lpRecord.setRegionLocation((String) body.get("region"));
+            if (body.containsKey("agentCls")) {
+                lpRecord.setAgentCls((String) body.get("agentCls"));
+                lpRecord.setAgentClsSource("USER_EDITED");
+            }
+            if (body.containsKey("cls"))    lpRecord.setCls((String) body.get("cls"));
+            if (body.containsKey("clsTag")) lpRecord.setClsTag((String) body.get("clsTag"));
+            if (body.containsKey("abb"))    lpRecord.setAbb((String) body.get("abb"));
+            if (body.containsKey("inc"))    lpRecord.setInc((Boolean) body.get("inc"));
+            if (body.containsKey("rcl"))    lpRecord.setRcl((Boolean) body.get("rcl"));
+            if (body.containsKey("notes"))  lpRecord.setNotes((String) body.get("notes"));
+            lpRecord.setUpdatedAt(LocalDateTime.now());
+            LpRecord saved = repo.save(lpRecord);
+            log.info("LpRecord patched id={} facilityId={} investor='{}' fields={}",
                 id, saved.getFacilityId(), saved.getInvestorName(), body.keySet());
-            if (body.containsKey("cls") && !Objects.equals(lp.getCls(), prevCls)) {
-                notifier.broadcast(lp.getInvestorName() + " reclassified to " + lp.getCls());
-                String detail = lp.getInvestorName() + " → " + lp.getCls()
+            if (body.containsKey("cls") && !Objects.equals(lpRecord.getCls(), prevCls)) {
+                notifier.broadcast(lpRecord.getInvestorName() + " reclassified to " + lpRecord.getCls());
+                String detail = lpRecord.getInvestorName() + " → " + lpRecord.getCls()
                     + (prevCls != null ? " (was " + prevCls + ")" : "");
-                auditService.log("LP Reclassified", detail, lp.getFacilityId(),
+                auditService.log("LpRecord Reclassified", detail, lpRecord.getFacilityId(),
                     currentUser.displayName(), auditService.extractIp(request));
             }
-            return ResponseEntity.ok(LpDto.from(saved));
+            return ResponseEntity.ok(LpRecordDto.from(saved));
         }).orElse(ResponseEntity.notFound().build());
     }
 }

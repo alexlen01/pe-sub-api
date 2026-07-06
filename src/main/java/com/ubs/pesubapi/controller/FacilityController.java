@@ -6,7 +6,7 @@ import com.ubs.pesubapi.entity.BbSnapshot;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.repository.BbSnapshotRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
-import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.repository.LpRecordRepository;
 import com.ubs.pesubapi.service.FacilityService;
 import com.ubs.pesubapi.service.NotificationService;
 import jakarta.validation.Valid;
@@ -42,15 +42,15 @@ public class FacilityController {
                                  BigDecimal facilitySize, BigDecimal ubsParticipation) {}
 
     private final FacilityRepository repo;
-    private final LpRepository lpRepo;
+    private final LpRecordRepository lpRecordRepo;
     private final BbSnapshotRepository snapshotRepo;
     private final NotificationService notifier;
     private final FacilityService facilityService;
 
-    public FacilityController(FacilityRepository repo, LpRepository lpRepo, BbSnapshotRepository snapshotRepo,
+    public FacilityController(FacilityRepository repo, LpRecordRepository lpRecordRepo, BbSnapshotRepository snapshotRepo,
                               NotificationService notifier, FacilityService facilityService) {
         this.repo            = repo;
-        this.lpRepo          = lpRepo;
+        this.lpRecordRepo          = lpRecordRepo;
         this.snapshotRepo    = snapshotRepo;
         this.notifier        = notifier;
         this.facilityService = facilityService;
@@ -68,7 +68,7 @@ public class FacilityController {
     @GetMapping
     public List<FacilityDto> list() {
         Map<Integer, Integer> lpCounts = new HashMap<>();
-        for (Object[] row : lpRepo.countGroupedByFacilityId()) {
+        for (Object[] row : lpRecordRepo.countGroupedByFacilityId()) {
             lpCounts.put((Integer) row[0], ((Long) row[1]).intValue());
         }
         Map<Integer, BbSummary> summaries = latestSummariesByFacility();
@@ -85,7 +85,7 @@ public class FacilityController {
             .map(s -> s.getResult() != null ? s.getResult().summary() : null)
             .orElse(null);
         return repo.findById(id)
-            .map(f -> FacilityDto.from(f, (int) lpRepo.countByFacilityId(id), summary))
+            .map(f -> FacilityDto.from(f, (int) lpRecordRepo.countByFacilityId(id), summary))
             .map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());
     }
@@ -110,7 +110,7 @@ public class FacilityController {
         return repo.findById(id).map(f -> {
             String newStatus = body.get("status");
             // A facility may only be deactivated while it carries no LP records.
-            if ("Inactive".equals(newStatus) && lpRepo.countByFacilityId(id) > 0) {
+            if ("Inactive".equals(newStatus) && lpRecordRepo.countByFacilityId(id) > 0) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Cannot deactivate a facility that has LP records.");
             }
@@ -119,7 +119,7 @@ public class FacilityController {
             Facility saved = repo.save(f);
             notifier.broadcast(f.getName() + " status updated to " + newStatus);
             log.info("Facility status updated id={} name='{}' status='{}'", id, saved.getName(), newStatus);
-            return ResponseEntity.ok(FacilityDto.from(saved, (int) lpRepo.countByFacilityId(id)));
+            return ResponseEntity.ok(FacilityDto.from(saved, (int) lpRecordRepo.countByFacilityId(id)));
         }).orElse(ResponseEntity.notFound().build());
     }
 
@@ -147,12 +147,12 @@ public class FacilityController {
             f.setUpdatedAt(LocalDateTime.now());
             Facility saved = repo.save(f);
             log.info("Facility updated id={} name='{}' agentBank='{}'", id, saved.getName(), saved.getAgentBank());
-            return ResponseEntity.ok(FacilityDto.from(saved, (int) lpRepo.countByFacilityId(id)));
+            return ResponseEntity.ok(FacilityDto.from(saved, (int) lpRecordRepo.countByFacilityId(id)));
         }).orElse(ResponseEntity.notFound().build());
     }
 
     // Hard-delete a facility. Permitted only when it carries no LP records — the
-    // service performs the guard and cascades to non-LP dependents. 404 if absent,
+    // service performs the guard and cascades to non-LpRecord dependents. 404 if absent,
     // 409 if it still has LP records.
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable int id) {

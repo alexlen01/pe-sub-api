@@ -2,11 +2,11 @@ package com.ubs.pesubapi.controller;
 
 import com.ubs.pesubapi.IntegrationTestBase;
 import com.ubs.pesubapi.entity.Facility;
-import com.ubs.pesubapi.entity.Lp;
+import com.ubs.pesubapi.entity.LpRecord;
 import com.ubs.pesubapi.repository.AuditLogRepository;
 import com.ubs.pesubapi.repository.BbSnapshotRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
-import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.repository.LpRecordRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,12 +30,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * paths (service ingest, Shadow BB commit) must persist exact dollars alongside the rounded
  * display strings, and the engine must compute from the exact value, not the "$12.3M" re-parse.
  */
-@SuppressWarnings("null")
 class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
 
     @Autowired MockMvc              mvc;
     @Autowired FacilityRepository   facilityRepo;
-    @Autowired LpRepository         lpRepo;
+    @Autowired LpRecordRepository         lpRecordRepo;
     @Autowired BbSnapshotRepository snapshotRepo;
     @Autowired AuditLogRepository   auditLogRepo;
 
@@ -45,7 +44,7 @@ class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
     void setup() {
         auditLogRepo.deleteAll();
         snapshotRepo.deleteAll();
-        lpRepo.deleteAll();
+        lpRecordRepo.deleteAll();
         facilityRepo.deleteAll();
 
         Facility f = new Facility();
@@ -54,14 +53,14 @@ class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
         facilityId = facilityRepo.save(f).getId();
     }
 
-    private Lp seedLp(String investorName, String cls) {
-        Lp lp = new Lp();
-        lp.setFacilityId(facilityId);
-        lp.setInvestorName(investorName);
-        lp.setInvType("Pension");
-        lp.setRegion("US");
-        lp.setCls(cls);
-        return lpRepo.save(lp);
+    private LpRecord seedLp(String investorName, String cls) {
+        LpRecord lpRecord = new LpRecord();
+        lpRecord.setFacilityId(facilityId);
+        lpRecord.setInvestorName(investorName);
+        lpRecord.setInvType("Pension");
+        lpRecord.setRegion("US");
+        lpRecord.setCls(cls);
+        return lpRecordRepo.save(lpRecord);
     }
 
     // ── Extraction ingest: exact decimals persist; display strings stay rounded ─────
@@ -90,21 +89,21 @@ class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
             }
             """.formatted(facilityId);
 
-        mvc.perform(post("/api/lps/ingest").contentType(MediaType.APPLICATION_JSON).content(body))
+        mvc.perform(post("/api/lpRecords/ingest").contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.updated").value(1));
 
         // Numeric columns carry the exact extracted dollars; strings are the rounded display form.
-        Lp lp = lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).getFirst();
-        assertThat(lp.getUcNum()).isEqualByComparingTo(new BigDecimal("12345678.90"));
-        assertThat(lp.getCapCommitNum()).isEqualByComparingTo(new BigDecimal("20000000.55"));
-        assertThat(lp.getAumNum()).isEqualByComparingTo(new BigDecimal("4250000000"));
-        assertThat(lp.getUc()).isEqualTo("$12.3M");
-        assertThat(lp.getCapCommit()).isEqualTo("$20.0M");
-        assertThat(lp.getAum()).isEqualTo("$4.3B");
+        LpRecord lpRecord = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).getFirst();
+        assertThat(lpRecord.getUcNum()).isEqualByComparingTo(new BigDecimal("12345678.90"));
+        assertThat(lpRecord.getCapCommitNum()).isEqualByComparingTo(new BigDecimal("20000000.55"));
+        assertThat(lpRecord.getAumNum()).isEqualByComparingTo(new BigDecimal("4250000000"));
+        assertThat(lpRecord.getUc()).isEqualTo("$12.3M");
+        assertThat(lpRecord.getCapCommit()).isEqualTo("$20.0M");
+        assertThat(lpRecord.getAum()).isEqualTo("$4.3B");
 
         // GET still serves the display strings the UI renders.
-        mvc.perform(get("/api/lps").param("facilityId", String.valueOf(facilityId)))
+        mvc.perform(get("/api/lpRecords").param("facilityId", String.valueOf(facilityId)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].uc").value("$12.3M"))
             .andExpect(jsonPath("$[0].capCommit").value("$20.0M"))
@@ -115,11 +114,11 @@ class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
 
     @Test
     void run_rederivesNumericFromCommittedStrings_andClearsStale() throws Exception {
-        Lp stale = seedLp("CalPERS", "Rated");
+        LpRecord stale = seedLp("CalPERS", "Rated");
         stale.setUc("$99.9M");
         stale.setUcNum(new BigDecimal("99999999.99"));   // TEST ONLY — stale prior-cycle value
         stale.setAbbNum(new BigDecimal("55555555.00"));  // TEST ONLY — must be cleared, abb blank
-        lpRepo.save(stale);
+        lpRecordRepo.save(stale);
 
         String body = """
             {
@@ -147,11 +146,11 @@ class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.result.summary.totalUBB").value(closeTo(10.8, 0.0001)));
 
-        Lp lp = lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).getFirst();
-        assertThat(lp.getUc()).isEqualTo("$12.0M");
-        assertThat(lp.getUcNum()).isEqualByComparingTo(new BigDecimal("12000000"));
-        assertThat(lp.getCapCommitNum()).isEqualByComparingTo(new BigDecimal("15000000"));
-        assertThat(lp.getAumNum()).isEqualByComparingTo(new BigDecimal("500000000000"));
-        assertThat(lp.getAbbNum()).isNull();
+        LpRecord lpRecord = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).getFirst();
+        assertThat(lpRecord.getUc()).isEqualTo("$12.0M");
+        assertThat(lpRecord.getUcNum()).isEqualByComparingTo(new BigDecimal("12000000"));
+        assertThat(lpRecord.getCapCommitNum()).isEqualByComparingTo(new BigDecimal("15000000"));
+        assertThat(lpRecord.getAumNum()).isEqualByComparingTo(new BigDecimal("500000000000"));
+        assertThat(lpRecord.getAbbNum()).isNull();
     }
 }

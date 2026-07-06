@@ -27,6 +27,7 @@ import com.ubs.pesubapi.service.ExtractionClientService;
 import com.ubs.pesubapi.service.LpIngestService;
 import com.ubs.pesubapi.service.MatchingService;
 import com.ubs.pesubapi.service.TemplateRecognitionService;
+import com.ubs.pesubapi.util.AgentLpClassificationDeriver;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.transaction.annotation.Transactional;
 import org.slf4j.Logger;
@@ -293,7 +294,24 @@ public class SubmissionController {
                 if (rec.fundSleeve() != null) row.put("fundSleeve", rec.fundSleeve());
                 row.put("name",         fieldStr(rec.fields(), "INVESTOR_NAME"));
                 row.put("investorType", fieldStr(rec.fields(), "INVESTOR_TYPE"));
-                row.put("agentClass",   fieldStr(rec.fields(), "AGENT_LP_CLASSIFICATION"));
+                String investorType = fieldStr(rec.fields(), "INVESTOR_TYPE");
+                String agentClass = fieldStr(rec.fields(), "AGENT_LP_CLASSIFICATION");
+                String agentClsSource = !agentClass.isBlank() ? "EXTRACTED" : "";
+                if (agentClass.isBlank()) {
+                    agentClass = AgentLpClassificationDeriver.derive(
+                        investorType,
+                        fieldStr(rec.fields(), "S&P Rating"),
+                        fieldStr(rec.fields(), "Moody's Rating"),
+                        fieldStr(rec.fields(), "Fitch Rating"),
+                        fieldStr(rec.fields(), "LP Size ($ Bil)"),
+                        fieldStr(rec.fields(), "LP Size Criteria"),
+                        fieldStr(rec.fields(), "NOTES"),
+                        false
+                    );
+                    if (agentClass != null && !agentClass.isBlank()) agentClsSource = "DERIVED";
+                }
+                row.put("agentClass",   agentClass != null ? agentClass : "");
+                row.put("agentClsSource", agentClsSource);
                 row.put("commit",       fmtMoney(fieldDec(rec.fields(), "COMMITMENT")));
                 row.put("uncalled",     fmtMoney(fieldDec(rec.fields(), "UNCALLED")));
                 row.put("aum",          fmtMoneyOrRaw(rec.fields(), "AUM"));
@@ -713,7 +731,7 @@ public class SubmissionController {
     }
 
     // ── PATCH /api/submissions/:id/shadow-bb-state ───────────────────────────
-    // Advances the submission to wizard step 5 and optionally persists the LP
+    // Advances the submission to wizard step 5 and optionally persists the LpRecord
     // classification/rate overrides set by the credit officer on the Run Shadow BB screen.
     // Called on "Commit Decisions" (no overrides yet) and on "Save" (with overrides).
 
@@ -870,6 +888,7 @@ public class SubmissionController {
             toStringField(fields.get("Fitch Rating")),
             toStringField(fields.get("NAV")),
             toStringField(fields.get("AGENT_LP_CLASSIFICATION")),
+            agentClsSourceField(fields.get("AGENT_LP_CLASSIFICATION")),
             toStringField(fields.get("Parent / Sponsor")),
             toStringField(fields.get("NOTES")),
             rec.requiresReview(),
@@ -883,6 +902,10 @@ public class SubmissionController {
 
     private IngestRequest.StringField toStringField(ExtractionResponse.FieldValue f) {
         return f != null ? new IngestRequest.StringField(f.value(), f.confidence(), f.sourceHeader()) : null;
+    }
+
+    private IngestRequest.StringField agentClsSourceField(ExtractionResponse.FieldValue f) {
+        return f != null ? new IngestRequest.StringField("EXTRACTED", 1.0, f.sourceHeader()) : null;
     }
 
     private IngestRequest.DecimalField toDecimalFieldFromStr(ExtractionResponse.FieldValue f) {

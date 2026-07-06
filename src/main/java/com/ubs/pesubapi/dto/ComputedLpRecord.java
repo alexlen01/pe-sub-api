@@ -1,9 +1,9 @@
 package com.ubs.pesubapi.dto;
 
-import com.ubs.pesubapi.entity.Lp;
+import com.ubs.pesubapi.entity.LpRecord;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-public record ComputedLp(
+public record ComputedLpRecord(
     Integer id,
     Integer facilityId,
     String  name,
@@ -40,18 +40,18 @@ public record ComputedLp(
     double  concExcessM,
     boolean highQuality
 ) {
-    public static ComputedLp from(Lp lp, double busaRate, double uecM, double ubbM,
+    public static ComputedLpRecord from(LpRecord lpRecord, double busaRate, double uecM, double ubbM,
                                    double abbM, double deltaM, double concExcessM) {
-        String cls = lp.getCls();
+        String cls = lpRecord.getCls();
         boolean highQuality = "Rated".equals(cls)
             || "Unrated >2bn".equals(cls)
             || "Unrated 1–2bn".equals(cls);
-        return new ComputedLp(
-            lp.getId(), lp.getFacilityId(), lp.getInvestorName(), lp.getParent(),
-            lp.isSpv(), lp.isHighQty(), lp.getInvestorType(), lp.getInstVsHnw(), lp.getRegionLocation(), lp.isIg(),
-            lp.getCls(), lp.getSp(), lp.getMdy(), lp.getFitch(),
-            lp.getAum(), lp.getUc(), lp.getAbb(), lp.isInc(), lp.isRcl(), lp.isTf(),
-            fmt(busaRate), lp.getAgentRate() != null ? lp.getAgentRate() : "",
+        return new ComputedLpRecord(
+            lpRecord.getId(), lpRecord.getFacilityId(), lpRecord.getInvestorName(), lpRecord.getParent(),
+            lpRecord.isSpv(), lpRecord.isHighQty(), lpRecord.getInvestorType(), lpRecord.getInstVsHnw(), lpRecord.getRegionLocation(), lpRecord.isIg(),
+            lpRecord.getCls(), lpRecord.getSp(), lpRecord.getMdy(), lpRecord.getFitch(),
+            lpRecord.getAum(), lpRecord.getUc(), lpRecord.getAbb(), lpRecord.isInc(), lpRecord.isRcl(), lpRecord.isTf(),
+            fmt(busaRate), lpRecord.getAgentRate() != null ? lpRecord.getAgentRate() : "",
             fmtM(uecM), fmtM(ubbM), fmtM(deltaM),
             uecM, ubbM, abbM, deltaM, concExcessM, highQuality
         );

@@ -4,7 +4,7 @@ import com.ubs.pesubapi.IntegrationTestBase;
 import com.ubs.pesubapi.repository.AuditLogRepository;
 import com.ubs.pesubapi.repository.BbSnapshotRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
-import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.repository.LpRecordRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,12 +15,11 @@ import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SuppressWarnings("null")
 class FacilityControllerIntegrationTest extends IntegrationTestBase {
 
     @Autowired MockMvc             mvc;
     @Autowired FacilityRepository  facilityRepo;
-    @Autowired LpRepository        lpRepo;
+    @Autowired LpRecordRepository        lpRecordRepo;
     @Autowired BbSnapshotRepository snapshotRepo;
     @Autowired AuditLogRepository  auditLogRepo;
 
@@ -30,7 +29,7 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
         // Order: audit_log → bb_snapshots → lps → facilities
         auditLogRepo.deleteAll();
         snapshotRepo.deleteAll();
-        lpRepo.deleteAll();
+        lpRecordRepo.deleteAll();
         facilityRepo.deleteAll();
     }
 
@@ -132,8 +131,8 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
         f.setAgentBank("Wells Fargo");
         int id = facilityRepo.save(f).getId();
 
-        lpRepo.save(buildLp(id, "Acme Pension Fund"));
-        lpRepo.save(buildLp(id, "Beta Capital LLC"));
+        lpRecordRepo.save(buildLp(id, "Acme Pension Fund"));
+        lpRecordRepo.save(buildLp(id, "Beta Capital LLC"));
 
         // Empty facility — lpCount must be 0, never null/absent
         com.ubs.pesubapi.entity.Facility empty = new com.ubs.pesubapi.entity.Facility();
@@ -151,14 +150,14 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.lpCount").value(2));
     }
 
-    private com.ubs.pesubapi.entity.Lp buildLp(int facilityId, String investorName) {
-        com.ubs.pesubapi.entity.Lp lp = new com.ubs.pesubapi.entity.Lp();
-        lp.setFacilityId(facilityId);
-        lp.setInvestorName(investorName);
-        lp.setInvType("Institutional");
-        lp.setRegion("US");
-        lp.setCls("Eligible");
-        return lp;
+    private com.ubs.pesubapi.entity.LpRecord buildLp(int facilityId, String investorName) {
+        com.ubs.pesubapi.entity.LpRecord lpRecord = new com.ubs.pesubapi.entity.LpRecord();
+        lpRecord.setFacilityId(facilityId);
+        lpRecord.setInvestorName(investorName);
+        lpRecord.setInvType("Institutional");
+        lpRecord.setRegion("US");
+        lpRecord.setCls("Eligible");
+        return lpRecord;
     }
 
     @Test
@@ -381,7 +380,7 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
         f.setName("Populated Fund");        // TEST ONLY
         f.setAgentBank("Citibank");
         int id = facilityRepo.save(f).getId();
-        lpRepo.save(buildLp(id, "Acme Pension Fund"));
+        lpRecordRepo.save(buildLp(id, "Acme Pension Fund"));
 
         mvc.perform(patch("/api/facilities/{id}/status", id)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -432,7 +431,7 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
         f.setName("Undeletable Fund");      // TEST ONLY
         f.setAgentBank("Citibank");
         int id = facilityRepo.save(f).getId();
-        lpRepo.save(buildLp(id, "Acme Pension Fund"));
+        lpRecordRepo.save(buildLp(id, "Acme Pension Fund"));
 
         mvc.perform(delete("/api/facilities/{id}", id))
             .andExpect(status().isConflict());

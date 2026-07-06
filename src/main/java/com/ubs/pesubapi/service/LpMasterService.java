@@ -1,8 +1,8 @@
 package com.ubs.pesubapi.service;
 
 import com.ubs.pesubapi.dto.CommitBbRequest.CommitLpRow;
-import com.ubs.pesubapi.entity.Lp;
-import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.entity.LpRecord;
+import com.ubs.pesubapi.repository.LpRecordRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,10 +16,10 @@ import java.util.stream.Collectors;
 @Service
 public class LpMasterService {
 
-    private final LpRepository lpRepo;
+    private final LpRecordRepository lpRecordRepo;
 
-    public LpMasterService(LpRepository lpRepo) {
-        this.lpRepo = lpRepo;
+    public LpMasterService(LpRecordRepository lpRecordRepo) {
+        this.lpRecordRepo = lpRecordRepo;
     }
 
     /**
@@ -31,65 +31,66 @@ public class LpMasterService {
      * never violating the uq_lp_records_facility_investor constraint.
      */
     @Transactional
-    public List<Lp> upsertAll(int facilityId, List<CommitLpRow> rows) {
-        Map<String, Lp> byName = lpRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).stream()
-            .collect(Collectors.toMap(lp -> lp.getInvestorName(), lp -> lp, (a, b) -> a, LinkedHashMap::new));
+    public List<LpRecord> upsertAll(int facilityId, List<CommitLpRow> rows) {
+        Map<String, LpRecord> byName = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).stream()
+            .collect(Collectors.toMap(lpRecord -> lpRecord.getInvestorName(), lpRecord -> lpRecord, (a, b) -> a, LinkedHashMap::new));
 
-        Map<String, Lp> toSave = new LinkedHashMap<>();
+        Map<String, LpRecord> toSave = new LinkedHashMap<>();
         int seq = 0;
         for (CommitLpRow row : rows) {
             String name = row.name() != null ? row.name() : "";
-            Lp lp = byName.computeIfAbsent(name, n -> new Lp());
-            apply(lp, facilityId, row);
-            lp.setSourceSeq(seq++);   // preserve the submitted (source-file) order
-            toSave.put(name, lp);
+            LpRecord lpRecord = byName.computeIfAbsent(name, n -> new LpRecord());
+            apply(lpRecord, facilityId, row);
+            lpRecord.setSourceSeq(seq++);   // preserve the submitted (source-file) order
+            toSave.put(name, lpRecord);
         }
-        return lpRepo.saveAll(new ArrayList<>(toSave.values()));
+        return lpRecordRepo.saveAll(new ArrayList<>(toSave.values()));
     }
 
-    private void apply(Lp lp, int facilityId, CommitLpRow row) {
-        lp.setFacilityId(facilityId);
-        lp.setInvestorName(row.name() != null ? row.name() : "");
-        lp.setParent(row.parent());
-        lp.setSpv(row.spv());
-        lp.setHighQty(row.hq());
-        lp.setInvestorType(row.investorType() != null ? row.investorType() : "");
-        lp.setInstVsHnw(row.instVsHnw() != null ? row.instVsHnw() : "Institutional");
-        lp.setRegionLocation(row.regionLocation() != null ? row.regionLocation() : "");
-        lp.setIg(row.ig());
-        lp.setCls(row.cls() != null ? row.cls() : "Eligible");
-        lp.setAgentCls(row.agentCls());
-        lp.setSp(row.sp()    != null ? row.sp()    : "");
-        lp.setMdy(row.mdy()  != null ? row.mdy()   : "");
-        lp.setFitch(row.fitch() != null ? row.fitch() : "");
-        lp.setAum(row.aum());
-        lp.setNav(row.nav());
-        lp.setPension(row.pension());
-        lp.setPensionFunded(row.pensionFunded());
-        lp.setCapCommit(row.capCommit());
-        lp.setPctCapCommit(row.pctCapCommit());
-        lp.setCalledCap(row.calledCap());
-        lp.setUc(row.uc());
-        lp.setPctUncalled(row.pctUncalled());
-        lp.setPctCalled(row.pctCalled());
-        lp.setAgentConc(row.agentConc());
-        lp.setUbsConc(row.ubsConc());
-        lp.setAgentRate(row.agentRate());
-        lp.setAbb(row.abb());
+    private void apply(LpRecord lpRecord, int facilityId, CommitLpRow row) {
+        lpRecord.setFacilityId(facilityId);
+        lpRecord.setInvestorName(row.name() != null ? row.name() : "");
+        lpRecord.setParent(row.parent());
+        lpRecord.setSpv(row.spv());
+        lpRecord.setHighQty(row.hq());
+        lpRecord.setInvestorType(row.investorType() != null ? row.investorType() : "");
+        lpRecord.setInstVsHnw(row.instVsHnw() != null ? row.instVsHnw() : "Institutional");
+        lpRecord.setRegionLocation(row.regionLocation() != null ? row.regionLocation() : "");
+        lpRecord.setIg(row.ig());
+        lpRecord.setCls(row.cls() != null ? row.cls() : "Eligible");
+        lpRecord.setAgentCls(row.agentCls());
+        lpRecord.setAgentClsSource(normalizeAgentClsSource(row.agentClsSource()));
+        lpRecord.setSp(row.sp()    != null ? row.sp()    : "");
+        lpRecord.setMdy(row.mdy()  != null ? row.mdy()   : "");
+        lpRecord.setFitch(row.fitch() != null ? row.fitch() : "");
+        lpRecord.setAum(row.aum());
+        lpRecord.setNav(row.nav());
+        lpRecord.setPension(row.pension());
+        lpRecord.setPensionFunded(row.pensionFunded());
+        lpRecord.setCapCommit(row.capCommit());
+        lpRecord.setPctCapCommit(row.pctCapCommit());
+        lpRecord.setCalledCap(row.calledCap());
+        lpRecord.setUc(row.uc());
+        lpRecord.setPctUncalled(row.pctUncalled());
+        lpRecord.setPctCalled(row.pctCalled());
+        lpRecord.setAgentConc(row.agentConc());
+        lpRecord.setUbsConc(row.ubsConc());
+        lpRecord.setAgentRate(row.agentRate());
+        lpRecord.setAbb(row.abb());
         // C2: keep the precise numeric columns in lockstep with the display strings written here.
         // This run's payload carries only formatted strings, so numeric is derived from them —
         // critically clearing any stale numeric left by a prior extraction-commit cycle, which
         // would otherwise be read in preference to the string just written.
-        lp.setUcNum(numDollars(row.uc()));
-        lp.setCapCommitNum(numDollars(row.capCommit()));
-        lp.setAumNum(numDollars(row.aum()));
-        lp.setAbbNum(numDollars(row.abb()));
-        lp.setUbb(row.ubb());
-        lp.setAgentExcessConc(row.agentExcessConc());
-        lp.setUbsExcessConc(row.ubsExcessConc());
-        lp.setInc(row.inc());
-        lp.setRcl(row.rcl());
-        lp.setNotes(row.notes());
+        lpRecord.setUcNum(numDollars(row.uc()));
+        lpRecord.setCapCommitNum(numDollars(row.capCommit()));
+        lpRecord.setAumNum(numDollars(row.aum()));
+        lpRecord.setAbbNum(numDollars(row.abb()));
+        lpRecord.setUbb(row.ubb());
+        lpRecord.setAgentExcessConc(row.agentExcessConc());
+        lpRecord.setUbsExcessConc(row.ubsExcessConc());
+        lpRecord.setInc(row.inc());
+        lpRecord.setRcl(row.rcl());
+        lpRecord.setNotes(row.notes());
     }
 
     /** Formatted money string → absolute dollars, or null when blank/unparseable so the numeric
@@ -97,5 +98,14 @@ public class LpMasterService {
     private static BigDecimal numDollars(String display) {
         double millions = BbCalculationService.parseMoney(display);
         return millions == 0 ? null : BigDecimal.valueOf(millions * 1_000_000.0);
+    }
+
+    private static String normalizeAgentClsSource(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        String value = raw.trim().toUpperCase();
+        return switch (value) {
+            case "EXTRACTED", "DERIVED", "USER_EDITED" -> value;
+            default -> null;
+        };
     }
 }

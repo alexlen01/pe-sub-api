@@ -3,12 +3,12 @@ package com.ubs.pesubapi.controller;
 import tools.jackson.databind.ObjectMapper;
 import com.ubs.pesubapi.IntegrationTestBase;
 import com.ubs.pesubapi.entity.Facility;
-import com.ubs.pesubapi.entity.Lp;
+import com.ubs.pesubapi.entity.LpRecord;
 import com.ubs.pesubapi.entity.MatchQueueEntry;
 import com.ubs.pesubapi.entity.Submission;
 import com.ubs.pesubapi.entity.SubmissionExtraction;
 import com.ubs.pesubapi.repository.FacilityRepository;
-import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.repository.LpRecordRepository;
 import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
 import com.ubs.pesubapi.repository.SubmissionExtractionRepository;
 import com.ubs.pesubapi.repository.SubmissionRepository;
@@ -18,8 +18,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
@@ -51,7 +53,7 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
     @Autowired SubmissionRepository           submissionRepo;
     @Autowired SubmissionExtractionRepository extractionRepo;
     @Autowired MatchQueueEntryRepository      matchQueueRepo;
-    @Autowired LpRepository                   lpRepo;
+    @Autowired LpRecordRepository                   lpRecordRepo;
 
     private static final int HEADER_OFFSET = 7;   // header at sheet row 6 → data rowIndex starts at 7
     private static final int N_ROWS        = 12;
@@ -59,11 +61,11 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
     // Names deliberately in reverse-alphabetical order so source order ≠ alphabetical order.
     private static final List<String> NAMES = IntStream.range(0, N_ROWS)
         .mapToObj(i -> String.format("Investor %02d", N_ROWS - 1 - i))
-        .collect(Collectors.toList());
+        .toList();
 
     // Agent LP Category values (verbatim from the Agent BB) — distinct from Investor Type.
-    // Cycled per row so each stored LP must carry its own value; proves the commit path persists
-    // the agent LP category rather than dropping it or replacing it with the invType default.
+    // Cycled per row so each stored LpRecord must carry its own value; proves the commit path persists
+    // the agent LP Category rather than dropping it or replacing it with the invType default.
     private static final List<String> AGENT_CLASSES = List.of(
         "Pension Fund", "Designated PWM", "Rated Included",
         "Non-Rated Included", "Designated Institutional", "Investment Consultant");
@@ -92,30 +94,14 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         s.setWizardStep(3);
         submissionId = submissionRepo.save(s).getId();
 
-        // Extracted LPs as stored by the pipeline: rowIndex = source-sheet row (header-offset).
-        StringBuilder json = new StringBuilder("[");
-        for (int i = 0; i < N_ROWS; i++) {
-            if (i > 0) json.append(',');
-            json.append("{\"rowIndex\":").append(HEADER_OFFSET + i)
-                .append(",\"name\":\"").append(NAMES.get(i)).append("\"")
-                .append(",\"agentClass\":\"").append(agentClassFor(i)).append("\"")
-                .append(",\"investorType\":\"").append(investorTypeFor(i)).append("\"}");
-        }
-        json.append(']');
-
         SubmissionExtraction ext = new SubmissionExtraction();
         ext.setSubmissionId(submissionId);
         ext.setTotalRows(N_ROWS);
         ext.setFlaggedCount(0);
-        try {
-            ext.setExtractedLps(mapper.readTree(json.toString()));
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        ext.setExtractedLps(extractedRows(N_ROWS));
         extractionRepo.save(ext);
     }
 
-    @SuppressWarnings("null")
     @Test
     void commit_insertsEveryAcceptedRow_inNaturalOrder() throws Exception {
         // Build the match queue (all rows are new → NO_MATCH on an empty LP Master).
@@ -135,23 +121,23 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isOk());
 
         // 1) Every row inserted — none dropped by the header-offset rowIndex mismatch.
-        List<Lp> stored = lpRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
+        List<LpRecord> stored = lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
         assertThat(stored).hasSize(N_ROWS);
 
         // 2) Natural (source-file) order retained, not alphabetical.
-        List<String> storedOrder = stored.stream().map(lp -> lp.getInvestorName()).toList();
+        List<String> storedOrder = stored.stream().map(lpRecord -> lpRecord.getInvestorName()).toList();
         assertThat(storedOrder).containsExactlyElementsOf(NAMES);
         assertThat(storedOrder).isNotEqualTo(NAMES.stream().sorted().toList());
 
         // 3) Agent LP Category preserved verbatim through commit — not dropped, and not
         //    overridden by the invType (Investor Type) default.
-        for (int i = 0; i < N_ROWS; i++) {
+        IntStream.range(0, N_ROWS).forEach(i -> {
             assertThat(stored.get(i).getAgentCls()).isEqualTo(agentClassFor(i));
             assertThat(stored.get(i).getInvestorType()).isEqualTo(investorTypeFor(i));
-        }
+        });
 
         // And the listing endpoint returns the same natural order plus mapped classification fields.
-        mvc.perform(get("/api/lps").param("facilityId", String.valueOf(facilityId)))
+        mvc.perform(get("/api/lpRecords").param("facilityId", String.valueOf(facilityId)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(N_ROWS)))
             .andExpect(jsonPath("$[0].name").value(NAMES.get(0)))
@@ -160,7 +146,6 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$[" + (N_ROWS - 1) + "].name").value(NAMES.get(N_ROWS - 1)));
     }
 
-    @SuppressWarnings("null")
     @Test
     void commit_insertsPendingRows_asNew() throws Exception {
         // Build the match queue — all rows are NO_MATCH (LP Master is empty) so all start Pending.
@@ -179,26 +164,24 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isOk());
 
         // All rows must be inserted — none dropped because decision is Pending.
-        List<Lp> stored = lpRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
+        List<LpRecord> stored = lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
         assertThat(stored).hasSize(N_ROWS);
-        List<String> storedNames = stored.stream().map(lp -> lp.getInvestorName()).toList();
+        List<String> storedNames = stored.stream().map(lpRecord -> lpRecord.getInvestorName()).toList();
         assertThat(storedNames).containsExactlyElementsOf(NAMES);
     }
 
-    @SuppressWarnings("null")
     @Test
-    void commit_sameUploadTwice_updatesExistingRowsWithoutDuplicateKey() throws Exception {
+    void commit_sameUploadTwice_replacesShadowRowsWithoutDuplicateKey() throws Exception {
         mvc.perform(post("/api/submissions/{id}/confirm", submissionId))
             .andExpect(status().isOk());
-        matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(submissionId)
-            .forEach(e -> { e.setDecision("Accepted"); matchQueueRepo.save(e); });
+        acceptAllQueuedRows(submissionId);
         mvc.perform(patch("/api/submissions/{id}/shadow-bb-state", submissionId)
                 .contentType("application/json")
                 .content("{}"))
             .andExpect(status().isOk());
 
-        List<Integer> firstIds = lpRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId).stream()
-            .map(Lp::getId)
+        List<Integer> firstIds = lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId).stream()
+            .map(LpRecord::getId)
             .toList();
         assertThat(firstIds).hasSize(N_ROWS);
 
@@ -215,48 +198,36 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         ext2.setSubmissionId(sub2Id);
         ext2.setTotalRows(N_ROWS);
         ext2.setFlaggedCount(0);
-        StringBuilder json = new StringBuilder("[");
-        for (int i = 0; i < N_ROWS; i++) {
-            if (i > 0) json.append(',');
-            json.append("{\"rowIndex\":").append(HEADER_OFFSET + i)
-                .append(",\"name\":\"").append(NAMES.get(i)).append("\"")
-                .append(",\"agentClass\":\"").append(agentClassFor(i)).append("\"")
-                .append(",\"investorType\":\"").append(investorTypeFor(i)).append("\"}");
-        }
-        json.append(']');
-        ext2.setExtractedLps(mapper.readTree(json.toString()));
+        ext2.setExtractedLps(extractedRows(N_ROWS));
         extractionRepo.save(ext2);
 
         mvc.perform(post("/api/submissions/{id}/confirm", sub2Id))
             .andExpect(status().isOk());
-        matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(sub2Id)
-            .forEach(e -> { e.setDecision("Accepted"); matchQueueRepo.save(e); });
+        acceptAllQueuedRows(sub2Id);
         mvc.perform(patch("/api/submissions/{id}/shadow-bb-state", sub2Id)
                 .contentType("application/json")
                 .content("{}"))
             .andExpect(status().isOk());
 
-        List<Lp> stored = lpRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
+        List<LpRecord> stored = lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
         assertThat(stored).hasSize(N_ROWS);
-        assertThat(stored.stream().map(Lp::getId).toList()).containsExactlyElementsOf(firstIds);
-        assertThat(stored.stream().map(Lp::getInvestorName).toList()).containsExactlyElementsOf(NAMES);
+        assertThat(stored.stream().map(LpRecord::getId).toList()).doesNotContainAnyElementsOf(firstIds);
+        assertThat(stored.stream().map(LpRecord::getInvestorName).toList()).containsExactlyElementsOf(NAMES);
         assertThat(stored.get(0).getInvestorType()).isEqualTo(investorTypeFor(0));
         assertThat(stored.get(0).getAgentCls()).isEqualTo(agentClassFor(0));
     }
 
-    @SuppressWarnings("null")
     @Test
     void commit_replacesExistingFacilityLps_onRerun() throws Exception {
         // First commit: all rows accepted → inserts N_ROWS LPs.
         mvc.perform(post("/api/submissions/{id}/confirm", submissionId))
             .andExpect(status().isOk());
-        matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(submissionId)
-            .forEach(e -> { e.setDecision("Accepted"); matchQueueRepo.save(e); });
+        acceptAllQueuedRows(submissionId);
         mvc.perform(patch("/api/submissions/{id}/shadow-bb-state", submissionId)
                 .contentType("application/json")
                 .content("{}"))
             .andExpect(status().isOk());
-        assertThat(lpRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId)).hasSize(N_ROWS);
+        assertThat(lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId)).hasSize(N_ROWS);
 
         // Second submission for the same facility with a different 3-row extraction.
         Submission s2 = new Submission();
@@ -272,31 +243,24 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         ext2.setSubmissionId(sub2Id);
         ext2.setTotalRows(3);
         ext2.setFlaggedCount(0);
-        ext2.setExtractedLps(mapper.readTree("""
-            [
-              {"rowIndex":7,"name":"New Fund Alpha"},
-              {"rowIndex":8,"name":"New Fund Beta"},
-              {"rowIndex":9,"name":"New Fund Gamma"}
-            ]"""));
+        ext2.setExtractedLps(extractedRows(List.of("New Fund Alpha", "New Fund Beta", "New Fund Gamma")));
         extractionRepo.save(ext2);
 
         mvc.perform(post("/api/submissions/{id}/confirm", sub2Id))
             .andExpect(status().isOk());
-        matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(sub2Id)
-            .forEach(e -> { e.setDecision("Accepted"); matchQueueRepo.save(e); });
+        acceptAllQueuedRows(sub2Id);
         mvc.perform(patch("/api/submissions/{id}/shadow-bb-state", sub2Id)
                 .contentType("application/json")
                 .content("{}"))
             .andExpect(status().isOk());
 
         // Facility must now have exactly 3 LPs from the second submission — old 12 are gone.
-        List<Lp> stored = lpRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
+        List<LpRecord> stored = lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
         assertThat(stored).hasSize(3);
-        assertThat(stored.stream().map(lp -> lp.getInvestorName()).toList())
+        assertThat(stored.stream().map(lpRecord -> lpRecord.getInvestorName()).toList())
             .containsExactly("New Fund Alpha", "New Fund Beta", "New Fund Gamma");
     }
 
-    @SuppressWarnings("null")
     @Test
     void commit_usesMatchedLpMasterName_andEnrichesEmptyFieldsFromLpMaster() throws Exception {
         Facility otherFacility = new Facility();
@@ -304,7 +268,7 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         otherFacility.setAgentBank("Goldman Sachs Bank USA");
         int otherFacilityId = facilityRepo.save(otherFacility).getId();
 
-        Lp matchedElsewhere = new Lp();
+        LpRecord matchedElsewhere = new LpRecord();
         matchedElsewhere.setFacilityId(otherFacilityId);
         matchedElsewhere.setInvestorName("Texas Teachers Retirement System");
         matchedElsewhere.setParent("Do Not Copy Parent");
@@ -312,7 +276,7 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         matchedElsewhere.setRegion("US");
         matchedElsewhere.setCls("Rated");
         matchedElsewhere.setCapCommit("$99.0M");
-        int matchedElsewhereId = lpRepo.save(matchedElsewhere).getId();
+        int matchedElsewhereId = lpRecordRepo.save(matchedElsewhere).getId();
 
         SubmissionExtraction ext = extractionRepo.findBySubmissionId(submissionId).orElseThrow();
         ext.setExtractedLps(mapper.readTree("""
@@ -330,7 +294,7 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
               {
                 "rowIndex": 8,
                 "name": "Texas Teachers Ret. Sys. Sidecar",
-                "agentClass": "Designated Institutional",
+                "investorType": "Public Pension",
                 "commit": "$5.0M",
                 "uncalled": "$2.0M"
               }
@@ -339,7 +303,7 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         extractionRepo.save(ext);
 
         // Accepted entries use the LP Master name; empty fields are enriched from LP Master when
-        // a record is found there. In this test the matched LP is in lpRepo (not lpMasterRepo),
+        // a record is found there. In this test the matched LpRecord is in lpRecordRepo (not lpMasterRepo),
         // so lpMasterRepo returns empty and no baseline is applied — extraction fields only.
         // Rejected entries use the extracted Agent BB name and receive no LP Master enrichment.
         MatchQueueEntry accepted = new MatchQueueEntry();
@@ -370,33 +334,71 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
                 .content("{}"))
             .andExpect(status().isOk());
 
-        List<Lp> stored = lpRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
+        List<LpRecord> stored = lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
         assertThat(stored).hasSize(2);
-        assertThat(stored.stream().map(lp -> lp.getInvestorName()).toList()).containsExactly(
+        assertThat(stored.stream().map(lpRecord -> lpRecord.getInvestorName()).toList()).containsExactly(
             "Texas Teachers Retirement System",
             "Texas Teachers Ret. Sys. Sidecar"
         );
 
-        Lp acceptedLp = stored.get(0);
+        LpRecord acceptedLp = stored.get(0);
         assertThat(acceptedLp.getParent()).isNull();
         assertThat(acceptedLp.getInvType()).isEqualTo("Institutional");
         assertThat(acceptedLp.getCls()).isEqualTo("Eligible");
         assertThat(acceptedLp.getCapCommit()).isEqualTo("$10.0M");
         assertThat(acceptedLp.getUc()).isEqualTo("$4.0M");
         assertThat(acceptedLp.getAgentCls()).isEqualTo("Pension Fund");
+        assertThat(acceptedLp.getAgentClsSource()).isEqualTo("EXTRACTED");
         assertThat(acceptedLp.getInvestorType()).isEqualTo("Public Pension");
 
-        Lp rejectedNewLp = stored.get(1);
+        LpRecord rejectedNewLp = stored.get(1);
         assertThat(rejectedNewLp.getInvType()).isEqualTo("Institutional");
         assertThat(rejectedNewLp.getCls()).isEqualTo("Eligible");
         assertThat(rejectedNewLp.getCapCommit()).isEqualTo("$5.0M");
         assertThat(rejectedNewLp.getUc()).isEqualTo("$2.0M");
-        assertThat(rejectedNewLp.getAgentCls()).isEqualTo("Designated Institutional");
+        assertThat(rejectedNewLp.getAgentCls()).isEqualTo("Non-Rated Included");
+        assertThat(rejectedNewLp.getAgentClsSource()).isEqualTo("DERIVED");
+        assertThat(rejectedNewLp.getInvestorType()).isEqualTo("Public Pension");
 
-        Lp untouchedMatchedRecord = lpRepo.findById(matchedElsewhereId).orElseThrow();
+        LpRecord untouchedMatchedRecord = lpRecordRepo.findById(matchedElsewhereId).orElseThrow();
         assertThat(untouchedMatchedRecord.getFacilityId()).isEqualTo(otherFacilityId);
         assertThat(untouchedMatchedRecord.getParent()).isEqualTo("Do Not Copy Parent");
         assertThat(untouchedMatchedRecord.getCapCommit()).isEqualTo("$99.0M");
         assertThat(untouchedMatchedRecord.getAgentCls()).isNull();
+    }
+
+    private ArrayNode extractedRows(int rowCount) {
+        ArrayNode rows = mapper.createArrayNode();
+        IntStream.range(0, rowCount)
+            .mapToObj(i -> extractedRow(
+                HEADER_OFFSET + i,
+                NAMES.get(i),
+                agentClassFor(i),
+                investorTypeFor(i)))
+            .forEach(rows::add);
+        return rows;
+    }
+
+    private ArrayNode extractedRows(List<String> names) {
+        ArrayNode rows = mapper.createArrayNode();
+        IntStream.range(0, names.size())
+            .mapToObj(i -> extractedRow(HEADER_OFFSET + i, names.get(i), null, null))
+            .forEach(rows::add);
+        return rows;
+    }
+
+    private ObjectNode extractedRow(int rowIndex, String name, String agentClass, String investorType) {
+        ObjectNode row = mapper.createObjectNode();
+        row.put("rowIndex", rowIndex);
+        row.put("name", name);
+        if (agentClass != null) row.put("agentClass", agentClass);
+        if (investorType != null) row.put("investorType", investorType);
+        return row;
+    }
+
+    private void acceptAllQueuedRows(int targetSubmissionId) {
+        List<MatchQueueEntry> entries = matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(targetSubmissionId);
+        entries.forEach(e -> e.setDecision("Accepted"));
+        matchQueueRepo.saveAll(entries);
     }
 }

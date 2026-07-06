@@ -3,7 +3,7 @@ package com.ubs.pesubapi.controller;
 import tools.jackson.databind.ObjectMapper;
 import com.ubs.pesubapi.IntegrationTestBase;
 import com.ubs.pesubapi.entity.Facility;
-import com.ubs.pesubapi.entity.Lp;
+import com.ubs.pesubapi.entity.LpRecord;
 import com.ubs.pesubapi.entity.LpMaster;
 import com.ubs.pesubapi.entity.Submission;
 import com.ubs.pesubapi.entity.SubmissionExtraction;
@@ -11,7 +11,7 @@ import com.ubs.pesubapi.repository.AuditLogRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.LpMasterRepository;
 import com.ubs.pesubapi.repository.LpRateRepository;
-import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.repository.LpRecordRepository;
 import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
 import com.ubs.pesubapi.repository.SubmissionExtractionRepository;
 import com.ubs.pesubapi.repository.SubmissionRepository;
@@ -19,6 +19,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
+
+import java.util.Arrays;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -38,7 +42,7 @@ class MatchQueueIntegrationTest extends IntegrationTestBase {
     @Autowired SubmissionRepository           submissionRepo;
     @Autowired SubmissionExtractionRepository extractionRepo;
     @Autowired MatchQueueEntryRepository      matchQueueRepo;
-    @Autowired LpRepository                   lpRepo;
+    @Autowired LpRecordRepository             lpRecordRepo;
     @Autowired LpRateRepository               rateRepo;
     @Autowired AuditLogRepository             auditLogRepo;
 
@@ -51,7 +55,7 @@ class MatchQueueIntegrationTest extends IntegrationTestBase {
         extractionRepo.deleteAll();
         submissionRepo.deleteAll();
         rateRepo.deleteAll();
-        lpRepo.deleteAll();
+        lpRecordRepo.deleteAll();
         auditLogRepo.deleteAll();
         facilityRepo.deleteAll();
 
@@ -60,13 +64,13 @@ class MatchQueueIntegrationTest extends IntegrationTestBase {
         f.setAgentBank("Goldman Sachs");
         facilityId = facilityRepo.save(f).getId();
 
-        Lp lp = new Lp();
-        lp.setFacilityId(facilityId);
-        lp.setInvestorName("Texas Teachers Retirement System");
-        lp.setInvType("Pension");
-        lp.setRegion("US");
-        lp.setCls("Rated");
-        lpRepo.save(lp);
+        LpRecord lpRecord = new LpRecord();
+        lpRecord.setFacilityId(facilityId);
+        lpRecord.setInvestorName("Texas Teachers Retirement System");
+        lpRecord.setInvType("Pension");
+        lpRecord.setRegion("US");
+        lpRecord.setCls("Rated");
+        lpRecordRepo.save(lpRecord);
 
         LpMaster master = new LpMaster();
         master.setInvestorName("Texas Teachers Retirement System");   // TEST ONLY
@@ -82,25 +86,34 @@ class MatchQueueIntegrationTest extends IntegrationTestBase {
         submissionId = submissionRepo.save(s).getId();
     }
 
-    private void seedExtraction(String json) throws Exception {
+    private void seedExtraction(String... names) {
         SubmissionExtraction ext = new SubmissionExtraction();
         ext.setSubmissionId(submissionId);
-        ext.setTotalRows(2);
+        ext.setTotalRows(names.length);
         ext.setFlaggedCount(0);
-        ext.setExtractedLps(mapper.readTree(json));
+        ext.setExtractedLps(extractedRows(names));
         extractionRepo.save(ext);
+    }
+
+    private ArrayNode extractedRows(String... names) {
+        ArrayNode rows = mapper.createArrayNode();
+        Arrays.stream(names)
+            .map(this::extractedRow)
+            .forEach(rows::add);
+        return rows;
+    }
+
+    private ObjectNode extractedRow(String name) {
+        ObjectNode row = mapper.createObjectNode();
+        row.put("name", name);
+        return row;
     }
 
     @Test
     void confirmBuildsQueueWithBandedDecisionsAndMatchDetails() throws Exception {
         // Row 0: agent abbreviation that must normalise to the canonical LP Master name (auto-accept).
         // Row 1: an unrelated name with no candidate (no-match → potential new LP).
-        seedExtraction("""
-            [
-              { "name": "Texas Teachers Ret. Sys." },
-              { "name": "Brand New Investor XYZ" }
-            ]
-            """);
+        seedExtraction("Texas Teachers Ret. Sys.", "Brand New Investor XYZ");
 
         mvc.perform(post("/api/submissions/{id}/confirm", submissionId))
             .andExpect(status().isOk());

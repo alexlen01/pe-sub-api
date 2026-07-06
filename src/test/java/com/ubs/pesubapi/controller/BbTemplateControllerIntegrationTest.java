@@ -12,6 +12,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.nio.file.Files;
+import java.io.InputStream;
 import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,7 +23,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SuppressWarnings("null")
 class BbTemplateControllerIntegrationTest extends IntegrationTestBase {
 
     @Autowired MockMvc mvc;
@@ -32,11 +32,13 @@ class BbTemplateControllerIntegrationTest extends IntegrationTestBase {
 
     private MockMultipartFile templateWorkbook(String fileName) throws Exception {
         Path path = Path.of("src/test/resources/templates", fileName);
-        return new MockMultipartFile(
-            "file",
-            fileName,
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            Files.readAllBytes(path));
+        try (InputStream input = Files.newInputStream(path)) {
+            return new MockMultipartFile(
+                "file",
+                fileName,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                input);
+        }
     }
 
     @Test
@@ -58,6 +60,29 @@ class BbTemplateControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.templateSlug").value("petershill-iv-1"))
             .andExpect(jsonPath("$.templateName").value("petershill-iv-1"));
+    }
+
+    @Test
+    void importTemplate_upsertModeReplacesExistingSlugWithoutVersioning() throws Exception {
+        String created = mvc.perform(multipart("/api/bb-templates/import")
+                .file(templateWorkbook("BB-Template-Import-kkr-ascendant.xlsx"))
+                .param("mode", "upsert"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.templateSlug").value("kkr-ascendant"))
+            .andReturn().getResponse().getContentAsString();
+
+        int templateId = JsonPath.read(created, "$.id");
+
+        mvc.perform(multipart("/api/bb-templates/import")
+                .file(templateWorkbook("BB-Template-Import-kkr-ascendant.xlsx"))
+                .param("mode", "upsert"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.id").value(templateId))
+            .andExpect(jsonPath("$.templateSlug").value("kkr-ascendant"))
+            .andExpect(jsonPath("$.templateName").value("kkr-ascendant"));
+
+        assertThat(templateRepo.findByTemplateSlug("kkr-ascendant")).isPresent();
+        assertThat(templateRepo.findByTemplateSlug("kkr-ascendant-1")).isEmpty();
     }
 
     @Test

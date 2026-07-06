@@ -38,6 +38,7 @@ public record LpClassificationRequest(
         String  regionLocation,
         Boolean ig,               // Investment Grade?
         String  agentCls,         // Agent LP Category (verbatim from Agent BB)
+        String  agentClsSource,   // EXTRACTED, DERIVED, or USER_EDITED
         String  cls,              // UBS LP Category (follows Agent LP Category)
         String  sp,
         String  mdy,

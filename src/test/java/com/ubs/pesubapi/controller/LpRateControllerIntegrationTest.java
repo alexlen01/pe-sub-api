@@ -2,12 +2,12 @@ package com.ubs.pesubapi.controller;
 
 import com.ubs.pesubapi.IntegrationTestBase;
 import com.ubs.pesubapi.entity.Facility;
-import com.ubs.pesubapi.entity.Lp;
+import com.ubs.pesubapi.entity.LpRecord;
 import com.ubs.pesubapi.entity.LpRate;
 import com.ubs.pesubapi.repository.AuditLogRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.LpRateRepository;
-import com.ubs.pesubapi.repository.LpRepository;
+import com.ubs.pesubapi.repository.LpRecordRepository;
 import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
 import com.ubs.pesubapi.repository.SubmissionExtractionRepository;
 import com.ubs.pesubapi.repository.SubmissionRepository;
@@ -24,17 +24,16 @@ import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SuppressWarnings("null")
 class LpRateControllerIntegrationTest extends IntegrationTestBase {
 
-    @Autowired MockMvc             mvc;
-    @Autowired LpRateRepository              rateRepo;
-    @Autowired LpRepository                  lpRepo;
-    @Autowired AuditLogRepository            auditLogRepo;
-    @Autowired FacilityRepository            facilityRepo;
-    @Autowired SubmissionRepository          submissionRepo;
+    @Autowired MockMvc                        mvc;
+    @Autowired LpRateRepository               rateRepo;
+    @Autowired LpRecordRepository             lpRecordRepo;
+    @Autowired AuditLogRepository             auditLogRepo;
+    @Autowired FacilityRepository             facilityRepo;
+    @Autowired SubmissionRepository           submissionRepo;
     @Autowired SubmissionExtractionRepository extractionRepo;
-    @Autowired MatchQueueEntryRepository     matchQueueRepo;
+    @Autowired MatchQueueEntryRepository      matchQueueRepo;
 
     private int facilityId;
     private int lpId;
@@ -49,7 +48,7 @@ class LpRateControllerIntegrationTest extends IntegrationTestBase {
         extractionRepo.deleteAll();
         submissionRepo.deleteAll();
         rateRepo.deleteAll();
-        lpRepo.deleteAll();
+        lpRecordRepo.deleteAll();
         auditLogRepo.deleteAll();
         facilityRepo.deleteAll();
 
@@ -58,18 +57,18 @@ class LpRateControllerIntegrationTest extends IntegrationTestBase {
         f.setAgentBank("Citibank");
         facilityId = facilityRepo.save(f).getId();
 
-        Lp lp = new Lp();
-        lp.setFacilityId(facilityId);
-        lp.setInvestorName("Monarch Alternative Capital LP");
-        lp.setInvType("Institutional");
-        lp.setRegion("North America");
-        lp.setCls("Rated");
-        lpId = lpRepo.save(lp).getId();
+        LpRecord lpRecord = new LpRecord();
+        lpRecord.setFacilityId(facilityId);
+        lpRecord.setInvestorName("Monarch Alternative Capital LP");
+        lpRecord.setInvType("Institutional");
+        lpRecord.setRegion("North America");
+        lpRecord.setCls("Rated");
+        lpId = lpRecordRepo.save(lpRecord).getId();
     }
 
     @Test
     void getRate_returnsEmptyWhenNoRates() throws Exception {
-        mvc.perform(get("/api/lps/rates").param("effective_date", "2026-05"))
+        mvc.perform(get("/api/lpRecords/rates").param("effective_date", "2026-05"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(0)));
     }
@@ -81,7 +80,7 @@ class LpRateControllerIntegrationTest extends IntegrationTestBase {
         rateRepo.save(old);
         rateRepo.save(cur);
 
-        mvc.perform(get("/api/lps/rates").param("effective_date", "2026-05"))
+        mvc.perform(get("/api/lpRecords/rates").param("effective_date", "2026-05"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(1)))
             .andExpect(jsonPath("$[0].lpName").value("Monarch Alternative Capital LP"))
@@ -97,7 +96,7 @@ class LpRateControllerIntegrationTest extends IntegrationTestBase {
         // it must resolve to the month, not 400 on YearMonth.parse.
         rateRepo.save(buildRate(lpId, "2026-05-01", "Rated", 0.90, 0.075));
 
-        mvc.perform(get("/api/lps/rates").param("effective_date", "2026-05-20"))
+        mvc.perform(get("/api/lpRecords/rates").param("effective_date", "2026-05-20"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(1)))
             .andExpect(jsonPath("$[0].lpName").value("Monarch Alternative Capital LP"))
@@ -109,7 +108,7 @@ class LpRateControllerIntegrationTest extends IntegrationTestBase {
         LpRate future = buildRate(lpId, "2026-07-01", "Rated", 0.90, 0.075);
         rateRepo.save(future);
 
-        mvc.perform(get("/api/lps/rates").param("effective_date", "2026-05"))
+        mvc.perform(get("/api/lpRecords/rates").param("effective_date", "2026-05"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(0)));
     }
@@ -131,13 +130,13 @@ class LpRateControllerIntegrationTest extends IntegrationTestBase {
             }
             """;
 
-        mvc.perform(post("/api/lps/rates/batch")
+        mvc.perform(post("/api/lpRecords/rates/batch")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.saved").value(1));
 
-        mvc.perform(get("/api/lps/rates").param("effective_date", "2026-05"))
+        mvc.perform(get("/api/lpRecords/rates").param("effective_date", "2026-05"))
             .andExpect(jsonPath("$[0].ubsAdvRatePct").value(0.9))
             .andExpect(jsonPath("$[0].ubsConcLimitPct").value(0.075));
     }
@@ -159,16 +158,16 @@ class LpRateControllerIntegrationTest extends IntegrationTestBase {
             }
             """;
 
-        mvc.perform(post("/api/lps/rates/batch")
+        mvc.perform(post("/api/lpRecords/rates/batch")
                 .contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isCreated());
 
-        mvc.perform(post("/api/lps/rates/batch")
+        mvc.perform(post("/api/lpRecords/rates/batch")
                 .contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.saved").value(1));
 
-        mvc.perform(get("/api/lps/rates").param("effective_date", "2026-05"))
+        mvc.perform(get("/api/lpRecords/rates").param("effective_date", "2026-05"))
             .andExpect(jsonPath("$", hasSize(1)))
             .andExpect(jsonPath("$[0].ubsAdvRatePct").value(0.75));
     }
@@ -189,14 +188,14 @@ class LpRateControllerIntegrationTest extends IntegrationTestBase {
             }
             """;
 
-        mvc.perform(post("/api/lps/rates/batch")
+        mvc.perform(post("/api/lpRecords/rates/batch")
                 .contentType(MediaType.APPLICATION_JSON).content(body))
-            .andExpect(status().isUnprocessableEntity());
+            .andExpect(status().is(422));
     }
 
     @Test
     void getRate_returns400ForBadDateFormat() throws Exception {
-        mvc.perform(get("/api/lps/rates").param("effective_date", "not-a-date"))
+        mvc.perform(get("/api/lpRecords/rates").param("effective_date", "not-a-date"))
             .andExpect(status().isBadRequest());
     }
 

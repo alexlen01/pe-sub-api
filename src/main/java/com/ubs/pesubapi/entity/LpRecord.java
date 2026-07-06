@@ -6,7 +6,7 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "lp_records")
-public class Lp {
+public class LpRecord {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -15,7 +15,7 @@ public class Lp {
     @Column(name = "facility_id", nullable = false)
     private Integer facilityId;
 
-    // Position of this LP in its originating Agent BB (the extraction row index). Drives the
+    // Position of this LpRecord in its originating Agent BB (the extraction row index). Drives the
     // natural, source-file ordering of the LP Master. Null for manually-created/legacy records.
     @Column(name = "source_seq")
     private Integer sourceSeq;
@@ -46,6 +46,9 @@ public class Lp {
     // Agent LP Category (verbatim from Agent BB) — precedes the UBS LP Category model-wide.
     @Column(name = "agent_cls")
     private String agentCls;
+
+    @Column(name = "agent_cls_source")
+    private String agentClsSource;
 
     @Column(name = "classification", nullable = false)
     private String cls;                 // UBS LP Category (follows Agent LP Category)
@@ -174,6 +177,7 @@ public class Lp {
     public String getCls()              { return cls; }
     public String getClsTag()           { return clsTag; }
     public String getAgentCls()         { return agentCls; }
+    public String getAgentClsSource()   { return agentClsSource; }
     public String getUbsRate()          { return ubsRate; }
     public String getAgentExcessConc()  { return agentExcessConc; }
     public String getUbsExcessConc()    { return ubsExcessConc; }
@@ -270,6 +274,7 @@ public class Lp {
 
     // Setters for Shadow BB 28-column alignment
     public void setAgentCls(String v)                  { this.agentCls = v; }
+    public void setAgentClsSource(String v)            { this.agentClsSource = v; }
     public void setUbsRate(String v)                   { this.ubsRate = v; }
     public void setAgentExcessConc(String v)           { this.agentExcessConc = v; }
     public void setUbsExcessConc(String v)             { this.ubsExcessConc = v; }
