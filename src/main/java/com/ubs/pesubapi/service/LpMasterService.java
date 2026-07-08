@@ -53,6 +53,7 @@ public class LpMasterService {
         lpRecord.setParent(row.parent());
         lpRecord.setSpv(row.spv());
         lpRecord.setHighQty(row.hq());
+        lpRecord.setFundSleeve(row.fundSleeve());
         lpRecord.setInvestorType(row.investorType() != null ? row.investorType() : "");
         lpRecord.setInstVsHnw(row.instVsHnw() != null ? row.instVsHnw() : "Institutional");
         lpRecord.setRegionLocation(row.regionLocation() != null ? row.regionLocation() : "");
@@ -90,6 +91,8 @@ public class LpMasterService {
         lpRecord.setUbsExcessConc(row.ubsExcessConc());
         lpRecord.setInc(row.inc());
         lpRecord.setRcl(row.rcl());
+        lpRecord.setTf(row.tf());
+        lpRecord.setRank(row.rank());
         lpRecord.setNotes(row.notes());
     }
 

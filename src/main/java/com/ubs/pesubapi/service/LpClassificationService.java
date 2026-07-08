@@ -53,6 +53,7 @@ public class LpClassificationService {
             if (row.name() != null && !row.name().isBlank()) lpRecord.setInvestorName(row.name());
             if (row.parent()         != null) lpRecord.setParent(row.parent());
             if (row.spv()            != null) lpRecord.setSpv(row.spv());
+            if (row.fundSleeve()     != null) lpRecord.setFundSleeve(row.fundSleeve());
             if (row.investorType()  != null) lpRecord.setInvestorType(row.investorType());
             if (row.instVsHnw()     != null) lpRecord.setInstVsHnw(row.instVsHnw());
             if (row.regionLocation() != null) lpRecord.setRegionLocation(row.regionLocation());
@@ -71,6 +72,7 @@ public class LpClassificationService {
             if (row.pensionFunded()  != null) lpRecord.setPensionFunded(row.pensionFunded());
             if (row.capCommit()      != null) lpRecord.setCapCommit(row.capCommit());
             if (row.inc()            != null) lpRecord.setInc(row.inc());
+            if (row.tf()             != null) lpRecord.setTf(row.tf());
             if (row.uc()             != null) lpRecord.setUc(row.uc());
             if (row.notes()          != null) lpRecord.setNotes(row.notes());
             // Rates: persist the display strings on the lpRecord, and upsert the decimal fractions

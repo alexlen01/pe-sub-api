@@ -4,7 +4,7 @@ import com.ubs.pesubapi.IntegrationTestBase;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.entity.Submission;
 import com.ubs.pesubapi.entity.SubmissionExtraction;
-import com.ubs.pesubapi.repository.AuditLogRepository;
+
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.SubmissionExtractionRepository;
 import com.ubs.pesubapi.repository.SubmissionRepository;
@@ -26,17 +26,11 @@ class DocRecognitionFormatTest extends IntegrationTestBase {
     @Autowired FacilityRepository             facilityRepo;
     @Autowired SubmissionRepository           submissionRepo;
     @Autowired SubmissionExtractionRepository extractionRepo;
-    @Autowired AuditLogRepository             auditLogRepo;
 
     private int facilityId;
 
     @BeforeEach
     void setup() {
-        extractionRepo.deleteAll();
-        submissionRepo.deleteAll();
-        auditLogRepo.deleteAll();
-        facilityRepo.deleteAll();
-
         Facility f = new Facility();
         f.setName("KKR Ascendant Fund");
         f.setAgentBank("Wells Fargo");

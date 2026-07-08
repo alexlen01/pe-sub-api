@@ -2,25 +2,26 @@
 -- ║  Consolidated seed — all reference data in final form.                 ║
 -- ║  39 canonical fields across 9 groups; all aliases, blocklist, and      ║
 -- ║  suggestions reflect the accumulated state of V1_14 through V1_26.    ║
--- ║  BB template rows live in V1_6–V1_13 (kept separate per template).     ║
+-- ║  BB template rows live in the bb_template_* seed blocks below.          ║
 -- ╚══════════════════════════════════════════════════════════════════════════╝
 
 -- ── Config ────────────────────────────────────────────────────────────────────
 
 INSERT INTO config (key, value) VALUES ('busa_tiers', '[
-  {"cls":"Rated",              "rate":90},
-  {"cls":"Unrated AUM >$2bn",  "rate":75},
-  {"cls":"Unrated AUM $1-2bn", "rate":65},
-  {"cls":"Eligible <$1bn",     "rate":50},
-  {"cls":"Excluded",           "rate":0}
+  {"cls":"Rated Investor",             "rate":90},
+  {"cls":"Unrated NAV > $1Bn",         "rate":75},
+  {"cls":"FoF & Other > $10Bn AUM",    "rate":75},
+  {"cls":"Corp Pension > $5Bn Assets", "rate":65},
+  {"cls":"Other Institutional",        "rate":50},
+  {"cls":"Excluded",                   "rate":0}
 ]');
 
 INSERT INTO config (key, value) VALUES ('agent_tiers', '[
-  {"cls":"Rated",              "rate":90},
-  {"cls":"Unrated AUM >$2bn",  "rate":75},
-  {"cls":"Unrated AUM $1-2bn", "rate":65},
-  {"cls":"Eligible <$1bn",     "rate":50},
-  {"cls":"Excluded",           "rate":0}
+  {"cls":"Rated Included",           "rate":90},
+  {"cls":"Non-Rated Included",       "rate":75},
+  {"cls":"Designated Institutional", "rate":60},
+  {"cls":"Designated PWM",           "rate":50},
+  {"cls":"Ineligible Investor",      "rate":0}
 ]');
 
 INSERT INTO config (key, value) VALUES ('agent_rate_params', '[

@@ -3,12 +3,9 @@ package com.ubs.pesubapi.controller;
 import com.ubs.pesubapi.IntegrationTestBase;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.entity.Submission;
-import com.ubs.pesubapi.repository.AuditLogRepository;
+
 import com.ubs.pesubapi.repository.FacilityRepository;
-import com.ubs.pesubapi.repository.LpRateRepository;
-import com.ubs.pesubapi.repository.LpRecordRepository;
-import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
-import com.ubs.pesubapi.repository.SubmissionExtractionRepository;
+
 import com.ubs.pesubapi.repository.SubmissionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,25 +20,12 @@ class SubmissionCompleteIntegrationTest extends IntegrationTestBase {
     @Autowired MockMvc                        mvc;
     @Autowired SubmissionRepository           submissionRepo;
     @Autowired FacilityRepository             facilityRepo;
-    @Autowired AuditLogRepository             auditLogRepo;
-    @Autowired MatchQueueEntryRepository      matchQueueRepo;
-    @Autowired SubmissionExtractionRepository extractionRepo;
-    @Autowired LpRateRepository               rateRepo;
-    @Autowired LpRecordRepository             lpRecordRepo;
 
     private int facilityId;
     private int submissionId;
 
     @BeforeEach
     void setup() {
-        matchQueueRepo.deleteAll();
-        extractionRepo.deleteAll();
-        submissionRepo.deleteAll();
-        rateRepo.deleteAll();
-        lpRecordRepo.deleteAll();
-        auditLogRepo.deleteAll();
-        facilityRepo.deleteAll();
-
         Facility f = new Facility();
         f.setName("Apex Growth Fund III");
         f.setAgentBank("Goldman Sachs");

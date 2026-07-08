@@ -14,4 +14,8 @@ public interface LpMasterRepository extends JpaRepository<LpMaster, Integer> {
     /** All canonical LP names ordered alphabetically — used as the fuzzy-match candidate pool. */
     @Query("SELECT m.investorName FROM LpMaster m ORDER BY m.investorName")
     List<String> findAllInvestorNames();
+
+    /** Distinct investor types currently present in LP Master, used to keep UI picklists data-driven. */
+    @Query("SELECT DISTINCT m.investorType FROM LpMaster m WHERE m.investorType IS NOT NULL AND m.investorType <> '' ORDER BY m.investorType")
+    List<String> findDistinctInvestorTypes();
 }

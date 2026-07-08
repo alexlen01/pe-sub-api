@@ -13,7 +13,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 /**
  * Owns the single write transaction behind a Shadow BB run: upsert the submitted LP Dataset,
@@ -56,6 +60,8 @@ public class ShadowBbService {
         }
 
         List<LpRecord> lps = lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
+        refreshRanks(lps);
+        lps = lpRecordRepo.saveAll(lps);
         BbResult result = calculator.compute(lps, facility.getConcLimitM().doubleValue());
 
         BbSnapshot snapshot = new BbSnapshot();
@@ -67,5 +73,48 @@ public class ShadowBbService {
         facilityRepo.save(facility);
 
         return new RunResult(saved, facility.getName(), lps.size());
+    }
+
+    private void refreshRanks(List<LpRecord> lps) {
+        List<LpRecord> rankable = lps.stream()
+            .filter(ShadowBbService::isRankable)
+            .sorted(Comparator
+                .comparingDouble((LpRecord lpRecord) -> BbCalculationService.moneyM(lpRecord.getUcNum(), lpRecord.getUc())).reversed()
+                .thenComparing(lpRecord -> lpRecord.getInvestorName() == null ? "" : lpRecord.getInvestorName()))
+            .toList();
+
+        Map<Integer, Integer> ranksById = competitionRanks(rankable);
+        for (LpRecord lpRecord : lps) {
+            lpRecord.setRank(lpRecord.getId() == null ? null : ranksById.get(lpRecord.getId()));
+        }
+    }
+
+    private static boolean isRankable(LpRecord lpRecord) {
+        String cls = lpRecord.getCls();
+        String agentCls = lpRecord.getAgentCls() == null ? "" : lpRecord.getAgentCls().trim();
+        return lpRecord.isInc()
+            && !"Excluded".equals(cls)
+            && !agentCls.toLowerCase().startsWith("ineligible investor");
+    }
+
+    private static Map<Integer, Integer> competitionRanks(List<LpRecord> rankable) {
+        AtomicInteger position = new AtomicInteger(0);
+        class RankedValue {
+            private double previousValue = Double.NaN;
+            private int currentRank = 0;
+        }
+        RankedValue state = new RankedValue();
+        return rankable.stream().collect(Collectors.toMap(
+            LpRecord::getId,
+            lpRecord -> {
+                int index = position.incrementAndGet();
+                double value = BbCalculationService.moneyM(lpRecord.getUcNum(), lpRecord.getUc());
+                if (index == 1 || Double.compare(value, state.previousValue) != 0) {
+                    state.currentRank = index;
+                    state.previousValue = value;
+                }
+                return state.currentRank;
+            }
+        ));
     }
 }

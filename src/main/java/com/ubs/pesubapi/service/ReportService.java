@@ -21,10 +21,16 @@ import java.util.stream.Collectors;
 @Service
 public class ReportService {
 
-    /** Fixed certificate ordering for the legacy classification tiers; any other labels
-     *  (e.g. the UBS LP Category taxonomy) follow in order of appearance. */
+    /** Fixed certificate ordering for the current UBS LP Classification tiers. */
     private static final List<String> TIER_ORDER =
-        List.of("Rated", "Unrated >2bn", "Unrated 1–2bn", "Eligible", "Excluded");
+        List.of(
+            "Rated Investor",
+            "Unrated NAV > $1Bn",
+            "FoF & Other > $10Bn AUM",
+            "Corp Pension > $5Bn Assets",
+            "Other Institutional",
+            "Excluded"
+        );
 
     private final BbSnapshotRepository    snapshotRepo;
     private final FacilityRepository      facilityRepo;
@@ -164,3 +170,4 @@ public class ReportService {
                 "No BB snapshot exists for facility " + facilityId));
     }
 }
+

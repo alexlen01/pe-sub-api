@@ -2,7 +2,7 @@ package com.ubs.pesubapi.controller;
 
 import com.ubs.pesubapi.IntegrationTestBase;
 import com.ubs.pesubapi.repository.AuditLogRepository;
-import com.ubs.pesubapi.repository.BbSnapshotRepository;
+
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.LpRecordRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,18 +20,7 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
     @Autowired MockMvc             mvc;
     @Autowired FacilityRepository  facilityRepo;
     @Autowired LpRecordRepository        lpRecordRepo;
-    @Autowired BbSnapshotRepository snapshotRepo;
     @Autowired AuditLogRepository  auditLogRepo;
-
-    @BeforeEach
-    void clean() {
-        // Delete dependents before facilities to satisfy FK constraints.
-        // Order: audit_log → bb_snapshots → lps → facilities
-        auditLogRepo.deleteAll();
-        snapshotRepo.deleteAll();
-        lpRecordRepo.deleteAll();
-        facilityRepo.deleteAll();
-    }
 
     @Test
     void createAndListFacility() throws Exception {
@@ -161,27 +150,11 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void listFacilities_returnsNoDatabaseEntityFields() throws Exception {
-        mvc.perform(post("/api/facilities")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""
-                    {"name": "No Entity Fund", "agentBank": "Barclays"}
-                    """))
-            .andExpect(status().isCreated());
-
-        // Verify response is DTO shape (has concLimitM, not a JPA proxy)
-        mvc.perform(get("/api/facilities"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$[0].concLimitM").value(25))
-            .andExpect(jsonPath("$[0].createdAt").isNotEmpty())
-            .andExpect(jsonPath("$[0].updatedAt").isNotEmpty());
-    }
-
-    @Test
-    void createFacility_accountMetadataFieldsPresentAsNullInResponse() throws Exception {
+    void createFacility_dtoShapeHasNullMetadataAndNoEntityLeak() throws Exception {
         // account_number, loan_amount, maturity_date, collateral_date, bank_status, bank_status_date are
         // schema columns (V1_1) the create endpoint does not set. Verify they are present
-        // in the DTO response as JSON null values (proving the fields round-trip the API).
+        // in the DTO response as JSON null values (proving the fields round-trip the API),
+        // and that the list endpoint returns the DTO shape (concLimitM etc., not a JPA proxy).
         mvc.perform(post("/api/facilities")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -205,10 +178,16 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.collateralDate").value((Object) null))
             .andExpect(jsonPath("$.bankStatus").value((Object) null))
             .andExpect(jsonPath("$.bankStatusDate").value((Object) null));
+
+        mvc.perform(get("/api/facilities"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].concLimitM").value(25))
+            .andExpect(jsonPath("$[0].createdAt").isNotEmpty())
+            .andExpect(jsonPath("$[0].updatedAt").isNotEmpty());
     }
 
     @Test
-    void patchFacility_updatesAgentBankSummaryFields_andRoundTrips() throws Exception {
+    void patchFacility_updatesSummaryFields_andRoundTrips() throws Exception {
         mvc.perform(post("/api/facilities")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -218,17 +197,21 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
 
         int id = facilityRepo.findByName("Editable Fund").orElseThrow().getId();
 
-        // PATCH the Agent Bank Summary inputs and assert the response reflects them.
+        // PATCH the Agent Bank Summary inputs plus facility_size / ubs_participation
+        // (the Shadow BB Borrowing Base summary inputs) and assert the response reflects them.
         mvc.perform(patch("/api/facilities/{id}", id)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"accountNumber": "5VX1796", "loanAmount": 2500000000.00, "maturityDate": "2029-03-15", "collateralDate": "2026-06-01"}
+                    {"accountNumber": "5VX1796", "loanAmount": 2500000000.00, "maturityDate": "2029-03-15", "collateralDate": "2026-06-01",
+                     "facilitySize": 2000000000.00, "ubsParticipation": 500000000.00}
                     """))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.accountNumber").value("5VX1796"))
             .andExpect(jsonPath("$.loanAmount").value(2500000000.00))
             .andExpect(jsonPath("$.maturityDate").value("2029-03-15"))
-            .andExpect(jsonPath("$.collateralDate").value("2026-06-01"));
+            .andExpect(jsonPath("$.collateralDate").value("2026-06-01"))
+            .andExpect(jsonPath("$.facilitySize").value(2000000000.00))
+            .andExpect(jsonPath("$.ubsParticipation").value(500000000.00));
 
         // GET confirms the values persisted (POST → PATCH → GET round-trip).
         mvc.perform(get("/api/facilities/{id}", id))
@@ -236,32 +219,7 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.accountNumber").value("5VX1796"))
             .andExpect(jsonPath("$.loanAmount").value(2500000000.00))
             .andExpect(jsonPath("$.maturityDate").value("2029-03-15"))
-            .andExpect(jsonPath("$.collateralDate").value("2026-06-01"));
-    }
-
-    @Test
-    void patchFacility_updatesSizeAndParticipation_andRoundTrips() throws Exception {
-        mvc.perform(post("/api/facilities")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""
-                    {"name": "Sizeable Fund", "agentBank": "Wells Fargo"}
-                    """))
-            .andExpect(status().isCreated());
-
-        int id = facilityRepo.findByName("Sizeable Fund").orElseThrow().getId();
-
-        // facility_size / ubs_participation are inputs to the Shadow BB Borrowing Base summary.
-        mvc.perform(patch("/api/facilities/{id}", id)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""
-                    {"facilitySize": 2000000000.00, "ubsParticipation": 500000000.00}
-                    """))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.facilitySize").value(2000000000.00))
-            .andExpect(jsonPath("$.ubsParticipation").value(500000000.00));
-
-        mvc.perform(get("/api/facilities/{id}", id))
-            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.collateralDate").value("2026-06-01"))
             .andExpect(jsonPath("$.facilitySize").value(2000000000.00))
             .andExpect(jsonPath("$.ubsParticipation").value(500000000.00));
     }

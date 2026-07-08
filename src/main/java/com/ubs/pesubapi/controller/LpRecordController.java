@@ -66,13 +66,13 @@ public class LpRecordController {
                              @RequestParam(required = false) String search) {
         List<LpRecord> lps;
         if (facilityId != null && cls != null) {
-            lps = repo.findByFacilityIdAndClsOrderByInvestorNameAsc(facilityId, cls);
+            lps = repo.findByFacilityIdAndClsOrderByClsAscInvestorNameAsc(facilityId, cls);
         } else if (facilityId != null && search != null) {
-            lps = repo.findByFacilityIdAndInvestorNameContainingIgnoreCaseOrderByInvestorNameAsc(facilityId, search);
+            lps = repo.findByFacilityIdAndInvestorNameContainingIgnoreCaseOrderByClsAscInvestorNameAsc(facilityId, search);
         } else if (facilityId != null) {
             lps = repo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
         } else {
-            lps = repo.findAllByOrderByInvestorNameAsc();
+            lps = repo.findAllByOrderByClsAscInvestorNameAsc();
         }
         return lps.stream().map(LpRecordDto::from).toList();
     }
@@ -117,6 +117,8 @@ public class LpRecordController {
             String prevCls = lpRecord.getCls();
             if (body.containsKey("investor_type")) lpRecord.setInvestorType((String) body.get("investor_type"));
             if (body.containsKey("investorType"))  lpRecord.setInvestorType((String) body.get("investorType"));
+            if (body.containsKey("fund_sleeve"))   lpRecord.setFundSleeve((String) body.get("fund_sleeve"));
+            if (body.containsKey("fundSleeve"))    lpRecord.setFundSleeve((String) body.get("fundSleeve"));
             if (body.containsKey("inst_vs_hnw"))   lpRecord.setInstVsHnw((String) body.get("inst_vs_hnw"));
             if (body.containsKey("instVsHnw"))     lpRecord.setInstVsHnw((String) body.get("instVsHnw"));
             if (body.containsKey("region_location")) lpRecord.setRegionLocation((String) body.get("region_location"));

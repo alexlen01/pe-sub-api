@@ -129,6 +129,37 @@ Money fields are in $millions; rate fields are decimal fractions (0.874 = 87.4%)
   History lives in `report_history` (`V1_4__report_history.sql`); `facility_name` is denormalised
   so entries survive facility deletion.
 
+## Per-LP concentration limit defaults
+
+The BB engine resolves each LP's concentration limit through a fallback chain
+(`BbCalculationService.perLpConc`). **The `Excluded` bucket is evaluated first**: an
+excluded LP is forced to a hard 0 ahead of any explicit override or class default, so a
+stale/misconfigured Excluded default can never leak into the borrowing base. Otherwise:
+
+1. **Explicit per-LP limit** stored in `lp_records.ubs_conc` — a dollar amount (`"$25.0M"`)
+   or a percent of total uncalled capital (`"7.5%"`).
+2. **Classification default** from the `cls_conc_limit_defaults` config key
+   (`V1_3__config.sql`) — a map of LP classification label (both taxonomies,
+   dash-insensitive) to percent of total uncalled capital. Seeded to the **upper bound**
+   of each class's accepted range from `pe-sub-docs/Concentration_Limits.xls` (Rated 20.0,
+   Unrated 15.0, FoF 10.0, Corp Pension 12.5, Other Institutional 7.5, Excluded 0.0).
+   Exposed as `CLS_CONC_LIMIT_DEFAULTS` in `GET /api/config/eligibility` and edited via
+   `PUT /api/config/eligibility?section=cls_conc_limit_defaults` (Config screen → Per-LP
+   Concentration Limit Defaults, next to the BUSA Advance Rate Schedule).
+3. **Facility-level dollar limit** (`facilities.conc_limit_m`, default $25M).
+
+A companion `cls_conc_limit_bounds` config key (`V1_3__config.sql`, also from the source
+workbook) holds the accepted `{ min, max }` percent range per class. It is served as
+`CLS_CONC_LIMIT_BOUNDS` in `GET /api/config/eligibility` and consumed by the LP record
+entry form to **warn — without blocking** — when an analyst enters a limit outside the
+class norm. The BB engine does not enforce it.
+
+Class defaults can also be fed from `pe-sub-jobs` (`POST /jobs/cls-conc-limits-ingest`,
+CSV `classification,limit_pct`), which merges into the config row directly in the shared
+database and then calls `POST /api/config/reload`. The reload endpoint re-reads the whole
+`config` table into the in-memory cache — required because the cache is otherwise only
+updated by this service's own writes.
+
 ## LP Master ordering & commit
 
 `lp_records.source_seq` (`V1_3__lp_source_seq.sql`) stores each LP's position in its
@@ -142,6 +173,16 @@ Match-queue entries carry the extraction's own `rowIndex` (the source-sheet row,
 starts below the header), and commit looks each accepted entry's row up by that same index.
 These two must use the same index space — otherwise the first *header-offset* accepted rows
 find no row at commit and are silently skipped (the cause of a 900-row file inserting 893).
+
+Commit also persists the commitment/concentration figures onto each LP record:
+`calledCap` (Called Capital), `pctCapCommit` (% of Capital Commitments) and
+`agentExcessConc` (Excess Concentration). Each reads its direct row key first, falling back
+to the row's `canonicalFields` map (rows stored before the direct keys existed). These values
+may be **platform-derived** rather than agent-reported: when the agent workbook has no such
+column, pe-sub-extraction's `DerivedFieldCalculator` computes them from extracted
+Commitment / Uncalled / Concentration Limit (see pe-sub-extraction README). Concentration (%)
+and Excess Concentration (%) have no `lp_records` column; they live only in the submission's
+stored extraction JSON (`canonicalFields`) for the review screens.
 
 ## Other commands
 

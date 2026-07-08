@@ -17,6 +17,9 @@ public record CommitBbRequest(List<CommitLpRow> lps) {
         String  parent,
         boolean spv,
         boolean hq,
+        @JsonProperty("fund_sleeve")
+        @JsonAlias({"fundSleeve"})
+        String  fundSleeve,
         @JsonProperty("investor_type")
         @JsonAlias({"investorType"})
         String  investorType,
@@ -49,7 +52,7 @@ public record CommitBbRequest(List<CommitLpRow> lps) {
         String  pctCalled,
         // Concentration & BB
         String  agentConc,
-        String  ubsConc,           // per-LP UBS dollar limit, e.g. "$25.0M"
+        String  ubsConc,           // per-LP UBS concentration limit percent, e.g. "7.5%"
         String  agentRate,
         String  abb,               // Agent Borrowing Base
         String  ubb,               // UBS Borrowing Base
@@ -58,6 +61,8 @@ public record CommitBbRequest(List<CommitLpRow> lps) {
         // Status
         boolean inc,
         boolean rcl,
+        boolean tf,
+        Integer rank,              // calculated by Shadow BB run; persisted to LP records
         String  notes
     ) {}
 }

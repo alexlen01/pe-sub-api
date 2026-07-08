@@ -12,6 +12,8 @@ public record LpRecordDto(
     String        parent,
     boolean       spv,
     boolean       hq,
+    @JsonProperty("fund_sleeve")
+    String        fundSleeve,
     @JsonProperty("investor_type")
     String        investorType,
     @JsonProperty("inst_vs_hnw")
@@ -47,6 +49,7 @@ public record LpRecordDto(
     boolean       inc,
     boolean       rcl,
     boolean       tf,
+    Integer       rank,
     String        notes,
     LocalDateTime createdAt,
     LocalDateTime updatedAt
@@ -54,7 +57,7 @@ public record LpRecordDto(
     public static LpRecordDto from(LpRecord lpRecord) {
         return new LpRecordDto(
             lpRecord.getId(), lpRecord.getFacilityId(), lpRecord.getInvestorName(), lpRecord.getParent(),
-            lpRecord.isSpv(), lpRecord.isHighQty(), lpRecord.getInvestorType(), lpRecord.getInstVsHnw(), lpRecord.getRegionLocation(), lpRecord.isIg(),
+            lpRecord.isSpv(), lpRecord.isHighQty(), lpRecord.getFundSleeve(), lpRecord.getInvestorType(), lpRecord.getInstVsHnw(), lpRecord.getRegionLocation(), lpRecord.isIg(),
             lpRecord.getAgentCls(), lpRecord.getAgentClsSource(), lpRecord.getCls(), lpRecord.getClsTag(), lpRecord.getSp(), lpRecord.getMdy(), lpRecord.getFitch(),
             lpRecord.getAum(), lpRecord.getNav(),
             lpRecord.getPension(), lpRecord.getPensionFunded(),
@@ -62,7 +65,7 @@ public record LpRecordDto(
             lpRecord.getUc(), lpRecord.getPctUncalled(), lpRecord.getPctCalled(),
             lpRecord.getAgentConc(), lpRecord.getUbsConc(), lpRecord.getUbsRate(), lpRecord.getAgentRate(),
             lpRecord.getAgentExcessConc(), lpRecord.getUbsExcessConc(), lpRecord.getAbb(), lpRecord.getUbb(),
-            lpRecord.isInc(), lpRecord.isRcl(), lpRecord.isTf(), lpRecord.getNotes(),
+            lpRecord.isInc(), lpRecord.isRcl(), lpRecord.isTf(), lpRecord.getRank(), lpRecord.getNotes(),
             lpRecord.getCreatedAt(), lpRecord.getUpdatedAt());
     }
 }

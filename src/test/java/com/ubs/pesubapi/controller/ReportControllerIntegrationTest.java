@@ -50,10 +50,10 @@ class ReportControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.summary.totalABB").isNumber())
             .andExpect(jsonPath("$.summary.ear").isNumber())
             .andExpect(jsonPath("$.totalEligibleUncalledM").isNumber())
-            // 3-LP payload: one Rated, one Unrated >2bn, one Excluded
+            // 3-LP payload: one Rated Investor, one Unrated NAV, one Excluded
             .andExpect(jsonPath("$.classBreakdown[*].cls",
-                hasItems("Rated", "Unrated >2bn", "Excluded")))
-            .andExpect(jsonPath("$.classBreakdown[0].cls").value("Rated"))
+                hasItems("Rated Investor", "Unrated NAV > $1Bn", "Excluded")))
+            .andExpect(jsonPath("$.classBreakdown[0].cls").value("Rated Investor"))
             .andExpect(jsonPath("$.classBreakdown[0].count").value(1))
             .andExpect(jsonPath("$.classBreakdown[0].uncalledM").value(closeTo(20.0, 0.01)))
             .andExpect(jsonPath("$.classBreakdown[0].ubbM").isNumber())
@@ -244,7 +244,7 @@ class ReportControllerIntegrationTest extends IntegrationTestBase {
 
     // ── Helper ────────────────────────────────────────────────────────────────────
 
-    /** Runs a Shadow BB with a 3-LP payload (Rated / Unrated / Excluded) to create a snapshot. */
+    /** Runs a Shadow BB with a 3-LP payload (Rated Investor / Unrated NAV / Excluded) to create a snapshot. */
     private void runBb(int facilityId) throws Exception {
         // TEST ONLY payload
         String body = """
@@ -254,7 +254,7 @@ class ReportControllerIntegrationTest extends IntegrationTestBase {
                   "name": "CalPERS",
                   "parent": null, "spv": false, "hq": true,
                   "type": "Institutional", "region": "North America",
-                  "ig": true, "cls": "Rated",
+                  "ig": true, "cls": "Rated Investor",
                   "sp": "AAA", "mdy": "Aaa", "fitch": "",
                   "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
                   "capCommit": "$20.0M", "pctCapCommit": null, "calledCap": "$14.0M",
@@ -267,7 +267,7 @@ class ReportControllerIntegrationTest extends IntegrationTestBase {
                   "name": "Stanford Endowment",
                   "parent": null, "spv": false, "hq": true,
                   "type": "Institutional", "region": "North America",
-                  "ig": false, "cls": "Unrated >2bn",
+                  "ig": false, "cls": "Unrated NAV > $1Bn",
                   "sp": "", "mdy": "", "fitch": "",
                   "aum": "$40.0B", "nav": null, "pension": null, "pensionFunded": null,
                   "capCommit": "$10.0M", "pctCapCommit": null, "calledCap": null,
@@ -299,3 +299,4 @@ class ReportControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isCreated());
     }
 }
+

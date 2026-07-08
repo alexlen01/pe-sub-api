@@ -4,9 +4,9 @@ import com.ubs.pesubapi.IntegrationTestBase;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.entity.LpRecord;
 import com.ubs.pesubapi.repository.AuditLogRepository;
-import com.ubs.pesubapi.repository.BbSnapshotRepository;
+
 import com.ubs.pesubapi.repository.FacilityRepository;
-import com.ubs.pesubapi.repository.LpRateRepository;
+
 import com.ubs.pesubapi.repository.LpRecordRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,21 +25,13 @@ class LpRecordControllerIntegrationTest extends IntegrationTestBase {
 
     @Autowired MockMvc mvc;
     @Autowired LpRecordRepository lpRecordRepo;
-    @Autowired LpRateRepository rateRepo;
     @Autowired FacilityRepository facilityRepo;
     @Autowired AuditLogRepository auditLogRepo;
-    @Autowired BbSnapshotRepository snapshotRepo;
 
     private int facilityId;
 
     @BeforeEach
     void setup() {
-        snapshotRepo.deleteAll();
-        rateRepo.deleteAll();
-        lpRecordRepo.deleteAll();
-        auditLogRepo.deleteAll();
-        facilityRepo.deleteAll();
-
         Facility f = new Facility();
         f.setName("Test Fund");
         f.setAgentBank("Citibank");

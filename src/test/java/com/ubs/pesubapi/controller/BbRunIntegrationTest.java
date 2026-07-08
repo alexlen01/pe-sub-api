@@ -2,8 +2,7 @@ package com.ubs.pesubapi.controller;
 
 import com.ubs.pesubapi.IntegrationTestBase;
 import com.ubs.pesubapi.entity.Facility;
-import com.ubs.pesubapi.repository.AuditLogRepository;
-import com.ubs.pesubapi.repository.BbSnapshotRepository;
+
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.LpRecordRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,18 +21,11 @@ class BbRunIntegrationTest extends IntegrationTestBase {
     @Autowired MockMvc              mvc;
     @Autowired FacilityRepository   facilityRepo;
     @Autowired LpRecordRepository   lpRecordRepo;
-    @Autowired BbSnapshotRepository snapshotRepo;
-    @Autowired AuditLogRepository   auditLogRepo;
 
     private int facilityId;
 
     @BeforeEach
     void setup() {
-        auditLogRepo.deleteAll();
-        snapshotRepo.deleteAll();
-        lpRecordRepo.deleteAll();
-        facilityRepo.deleteAll();
-
         Facility f = new Facility();
         f.setName("Apex Growth Fund IV");    // TEST ONLY
         f.setAgentBank("Wells Fargo");
@@ -73,7 +65,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                 "name": "CalPERS",
                 "parent": null, "spv": false, "hq": true,
                 "type": "Institutional", "region": "North America",
-                "ig": true, "cls": "Rated",
+                "ig": true, "cls": "Rated Investor",
                 "sp": "AAA", "mdy": "Aaa", "fitch": "",
                 "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
                 "capCommit": "$10.0M", "pctCapCommit": null, "calledCap": "$7.0M",
@@ -90,7 +82,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                 .content(body))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.result.summary.totalUBB").value(closeTo(9.0, 0.01)))
-            .andExpect(jsonPath("$.result.lps[0].cls").value("Rated"))
+            .andExpect(jsonPath("$.result.lps[0].cls").value("Rated Investor"))
             .andExpect(jsonPath("$.result.lps[0].ubbM").value(closeTo(9.0, 0.01)));
     }
 
@@ -127,7 +119,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                   "name": "CalPERS",
                   "parent": null, "spv": false, "hq": true,
                   "type": "Institutional", "region": "North America",
-                  "ig": true, "cls": "Rated",
+                  "ig": true, "cls": "Rated Investor",
                   "sp": "AAA", "mdy": "Aaa", "fitch": "",
                   "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
                   "capCommit": "$20.0M", "pctCapCommit": null, "calledCap": null,
@@ -175,6 +167,29 @@ class BbRunIntegrationTest extends IntegrationTestBase {
         mvc.perform(post("/api/bb/run/{id}", facilityId))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.result.lps", hasSize(3)));
+    }
+
+    @Test
+    void run_withoutBodyRecalculatesAndStoresRanksFromExistingLpRecords() throws Exception {
+        mvc.perform(post("/api/bb/run/{id}", facilityId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(lpPayload(facilityId)))
+            .andExpect(status().isCreated());
+
+        var corrupted = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId);
+        corrupted.forEach(lpRecord -> lpRecord.setRank(99));
+        lpRecordRepo.saveAll(corrupted);
+
+        mvc.perform(post("/api/bb/run/{id}", facilityId))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.result.lps", hasSize(3)));
+
+        var ranks = new java.util.HashMap<String, Integer>();
+        lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)
+            .forEach(lpRecord -> ranks.put(lpRecord.getInvestorName(), lpRecord.getRank()));
+        assertThat(ranks.get("CalPERS")).isEqualTo(1);
+        assertThat(ranks.get("Stanford Endowment")).isEqualTo(2);
+        assertThat(ranks.get("Tiny Fund LLC")).isNull();
     }
 
     @Test
@@ -227,34 +242,9 @@ class BbRunIntegrationTest extends IntegrationTestBase {
 
     // ── per-LP concentration limit stored in ubsConc is used by re-computation ──
 
-    @Test
-    void run_perLpConcLimitRoundTrips() throws Exception {
-        // LP has $5M uncalled, conc limit $4M → uecM = min(5,4) = 4; 90% rate → ubbM = 3.6
-        String body = """
-            {
-              "lps": [{
-                "name": "Ontario Teachers",
-                "parent": null, "spv": false, "hq": true,
-                "type": "Institutional", "region": "North America",
-                "ig": true, "cls": "Rated",
-                "sp": "AA", "mdy": "Aa2", "fitch": "",
-                "aum": "$200.0B", "nav": null, "pension": null, "pensionFunded": null,
-                "capCommit": "$5.0M", "pctCapCommit": null, "calledCap": null,
-                "uc": "$5.0M", "pctUncalled": null, "pctCalled": null,
-                "agentConc": null, "ubsConc": "$4.0M",
-                "agentRate": "95.0%%", "abb": "$4.75M",
-                "inc": true, "rcl": false, "notes": null
-              }]
-            }
-            """;
-
-        mvc.perform(post("/api/bb/run/{id}", facilityId)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body))
-            .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.result.lps[0].ubbM").value(closeTo(3.6, 0.01)))
-            .andExpect(jsonPath("$.result.lps[0].uecM").value(closeTo(4.0, 0.01)));
-    }
+    // NOTE: the per-LP conc-limit round-trip (binding dollar limit caps uecM/ubbM) is
+    // covered by ClsConcLimitDefaultIntegrationTest.run_perLpDollarLimitBeatsClassDefault,
+    // which exercises the same persist → compute path within the full fallback chain.
 
     // ── Facility list surfaces the latest snapshot's BB figures ─────────────────────
 
@@ -364,7 +354,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                   "name": "CalPERS",
                   "parent": null, "spv": false, "hq": true,
                   "type": "Institutional", "region": "North America",
-                  "ig": true, "cls": "Rated",
+                  "ig": true, "cls": "Rated Investor",
                   "sp": "AAA", "mdy": "Aaa", "fitch": "",
                   "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
                   "capCommit": "$20.0M", "pctCapCommit": null, "calledCap": "$14.0M",
@@ -377,7 +367,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                   "name": "Stanford Endowment",
                   "parent": null, "spv": false, "hq": true,
                   "type": "Institutional", "region": "North America",
-                  "ig": false, "cls": "Unrated >2bn",
+                  "ig": false, "cls": "Unrated NAV > $1Bn",
                   "sp": "", "mdy": "", "fitch": "",
                   "aum": "$40.0B", "nav": null, "pension": null, "pensionFunded": null,
                   "capCommit": "$10.0M", "pctCapCommit": null, "calledCap": null,
@@ -404,3 +394,4 @@ class BbRunIntegrationTest extends IntegrationTestBase {
             """;
     }
 }
+

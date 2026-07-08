@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/lp-master")
@@ -25,7 +26,7 @@ public class LpMasterController {
 
     @GetMapping
     public List<LpMasterDto> list() {
-        List<LpMasterDto> result = repo.findAll(Sort.by("investorName"))
+        List<LpMasterDto> result = repo.findAll(Sort.by("ubsClassification").ascending().and(Sort.by("investorName").ascending()))
                 .stream()
                 .map(LpMasterDto::from)
                 .toList();
@@ -36,6 +37,19 @@ public class LpMasterController {
     @GetMapping("/count")
     public Map<String, Long> count() {
         return Map.of("count", repo.count());
+    }
+
+    @GetMapping("/investor-types")
+    public List<String> investorTypes() {
+        List<String> result = repo.findDistinctInvestorTypes().stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .distinct()
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .toList();
+        log.info("LP Master investor types listed count={}", result.size());
+        return result;
     }
 
     @GetMapping("/{id}")

@@ -227,17 +227,16 @@ public class MatchingService {
         List<String> masterNames = lpMasterRepo.findAllInvestorNames();
         Prepared prepared = prepare(masterNames);
 
-        // Collect the non-blank rows carrying the extraction's own row index. This must be the
-        // node's "rowIndex" field (the source-sheet row, e.g. starting at 7 below a 6-row header),
-        // NOT the array position: commitAcceptedMatches keys its row lookup by that same field, so
-        // using the array position here leaves the first <header-offset> accepted entries unable to
-        // find their row at commit time — they are silently skipped and never inserted.
+        // Collect non-blank rows using the extraction row's stable sequence id when present.
+        // Multi-tab workbooks (Audax VII, CCP VII, etc.) restart worksheet row numbers on each tab,
+        // so raw rowIndex is not unique and cannot be the queue/order key. The API assigns `id`
+        // sequentially across the combined LP Data Extract array, preserving tab order + row order.
         record Row(int rowIndex, String agentName) {}
         List<Row> rows = new ArrayList<>();
         int index = 0;
         for (JsonNode lpNode : extractedLps) {
             String agentName = lpNode.path("name").asText("").trim();
-            int rowIndex = lpNode.path("rowIndex").asInt(index);
+            int rowIndex = lpNode.path("id").asInt(lpNode.path("rowIndex").asInt(index));
             if (!agentName.isBlank()) rows.add(new Row(rowIndex, agentName));
             index++;
         }

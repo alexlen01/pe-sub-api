@@ -20,6 +20,9 @@ public class LpRecord {
     @Column(name = "source_seq")
     private Integer sourceSeq;
 
+    @Column(name = "fund_sleeve")
+    private String fundSleeve;
+
     @Column(name = "investor_name", nullable = false)
     private String investorName;
 
@@ -143,6 +146,9 @@ public class LpRecord {
     @Column(name = "transferee", nullable = false)
     private boolean tf = false;
 
+    @Column(name = "lp_rank")
+    private Integer rank;
+
     private String notes;
 
     @Column(name = "lp_master_id")
@@ -164,6 +170,7 @@ public class LpRecord {
     public Integer getId()              { return id; }
     public Integer getFacilityId()      { return facilityId; }
     public Integer getSourceSeq()       { return sourceSeq; }
+    public String getFundSleeve()       { return fundSleeve; }
     public String getInvestorName()     { return investorName; }
     public String getParent()           { return parent; }
     public boolean isSpv()              { return spv; }
@@ -207,6 +214,7 @@ public class LpRecord {
     public boolean isRcl()              { return rcl; }
     public String getRecallableDist()   { return recallableDist; }
     public boolean isTf()               { return tf; }
+    public Integer getRank()            { return rank; }
     public String getNotes()            { return notes; }
     public Integer getLpMasterId()       { return lpMasterId; }
     public LocalDateTime getCreatedAt() { return createdAt; }
@@ -216,6 +224,7 @@ public class LpRecord {
     public void setFacilityId(Integer v)     { this.facilityId = v; }
     public void setLpMasterId(Integer v)     { this.lpMasterId = v; }
     public void setSourceSeq(Integer v)      { this.sourceSeq = v; }
+    public void setFundSleeve(String v)       { this.fundSleeve = v; }
     public void setInvestorName(String v)    { this.investorName = v; }
     public void setInvestorType(String v)    { this.investorType = v != null ? v : ""; }
     public void setInstVsHnw(String v)       { this.instVsHnw = v != null && !v.isBlank() ? v : "Institutional"; }
@@ -247,6 +256,7 @@ public class LpRecord {
     public void setRcl(boolean rcl)                    { this.rcl = rcl; }
     public void setRecallableDist(String v)            { this.recallableDist = v; }
     public void setUpdatedAt(LocalDateTime t)          { this.updatedAt = t; }
+    public void setRank(Integer v)                     { this.rank = v; }
 
     // Setters for extraction ingest
     public void setAum(String aum)               { this.aum = aum; }

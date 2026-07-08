@@ -4,13 +4,11 @@ import com.ubs.pesubapi.IntegrationTestBase;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.entity.LpRecord;
 import com.ubs.pesubapi.entity.LpRate;
-import com.ubs.pesubapi.repository.AuditLogRepository;
+
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.LpRateRepository;
 import com.ubs.pesubapi.repository.LpRecordRepository;
-import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
-import com.ubs.pesubapi.repository.SubmissionExtractionRepository;
-import com.ubs.pesubapi.repository.SubmissionRepository;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,29 +27,13 @@ class LpRateControllerIntegrationTest extends IntegrationTestBase {
     @Autowired MockMvc                        mvc;
     @Autowired LpRateRepository               rateRepo;
     @Autowired LpRecordRepository             lpRecordRepo;
-    @Autowired AuditLogRepository             auditLogRepo;
     @Autowired FacilityRepository             facilityRepo;
-    @Autowired SubmissionRepository           submissionRepo;
-    @Autowired SubmissionExtractionRepository extractionRepo;
-    @Autowired MatchQueueEntryRepository      matchQueueRepo;
 
     private int facilityId;
     private int lpId;
 
     @BeforeEach
     void setup() {
-        // Clear the full dependency graph in FK order. submissions and match_queue_entries
-        // both reference facilities, and this class shares one Zonky DB with the rest of the
-        // suite (refresh = NEVER), so rows left behind by submission-creating test classes
-        // would otherwise break facilityRepo.deleteAll() via submissions_facility_id_fkey.
-        matchQueueRepo.deleteAll();
-        extractionRepo.deleteAll();
-        submissionRepo.deleteAll();
-        rateRepo.deleteAll();
-        lpRecordRepo.deleteAll();
-        auditLogRepo.deleteAll();
-        facilityRepo.deleteAll();
-
         Facility f = new Facility();
         f.setName("Test Fund");
         f.setAgentBank("Citibank");

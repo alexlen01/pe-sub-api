@@ -97,7 +97,7 @@ public class BbController {
 
     @GetMapping("/summary-ext/{facilityId}")
     public ResponseEntity<Map<String, Object>> summaryExt(@PathVariable int facilityId) {
-        List<com.ubs.pesubapi.entity.LpRecord> lps = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId);
+        List<com.ubs.pesubapi.entity.LpRecord> lps = lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
         if (lps.isEmpty()) return ResponseEntity.ok(emptySummaryExt());
 
         int    totalLPs       = lps.size();
@@ -167,7 +167,6 @@ public class BbController {
             busaMap.get(rateKey)[1] += ucM(lpRecord);
         }
         List<Map<String, Object>> busaBreakdown = busaMap.entrySet().stream()
-            .filter(e -> e.getValue()[0] > 0)
             .map(e -> {
                 Map<String, Object> row = new LinkedHashMap<>();
                 row.put("rate",    e.getKey());
@@ -179,9 +178,10 @@ public class BbController {
 
         // ── Table 4: Agent breakdown — group by agent rate ────────────────────────
         Map<String, double[]> agentMap = new LinkedHashMap<>();
+        for (String key : List.of("90%", "75%", "60%", "50%", "0%"))
+            agentMap.put(key, new double[]{0, 0});   // [count, dollars]
         for (var lpRecord : lps) {
-            String rateKey = lpRecord.getAgentRate() != null && !lpRecord.getAgentRate().isBlank()
-                ? lpRecord.getAgentRate() : "0%";
+            String rateKey = formatRatePct(lpRecord.getAgentRate());
             agentMap.computeIfAbsent(rateKey, k -> new double[]{0, 0});
             agentMap.get(rateKey)[0]++;
             agentMap.get(rateKey)[1] += ucM(lpRecord);
@@ -286,6 +286,10 @@ public class BbController {
         if (rate == null) return 0;
         try { return Double.parseDouble(rate.replace("%", "").trim()); }
         catch (NumberFormatException e) { return 0; }
+    }
+
+    private static String formatRatePct(String rate) {
+        return String.format("%.0f%%", parseRatePct(rate));
     }
 
     private Map<String, Object> emptySummaryExt() {

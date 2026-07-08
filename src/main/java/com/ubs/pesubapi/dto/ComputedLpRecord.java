@@ -27,7 +27,6 @@ public record ComputedLpRecord(
     boolean inc,
     boolean rcl,
     boolean tf,
-    // Computed
     String  rate,
     String  agentRate,
     String  uec,
@@ -43,9 +42,10 @@ public record ComputedLpRecord(
     public static ComputedLpRecord from(LpRecord lpRecord, double busaRate, double uecM, double ubbM,
                                    double abbM, double deltaM, double concExcessM) {
         String cls = lpRecord.getCls();
-        boolean highQuality = "Rated".equals(cls)
-            || "Unrated >2bn".equals(cls)
-            || "Unrated 1–2bn".equals(cls);
+        boolean highQuality = "Rated Investor".equals(cls)
+            || "Unrated NAV > $1Bn".equals(cls)
+            || "FoF & Other > $10Bn AUM".equals(cls)
+            || "Corp Pension > $5Bn Assets".equals(cls);
         return new ComputedLpRecord(
             lpRecord.getId(), lpRecord.getFacilityId(), lpRecord.getInvestorName(), lpRecord.getParent(),
             lpRecord.isSpv(), lpRecord.isHighQty(), lpRecord.getInvestorType(), lpRecord.getInstVsHnw(), lpRecord.getRegionLocation(), lpRecord.isIg(),
@@ -60,7 +60,7 @@ public record ComputedLpRecord(
     private static String fmtM(double m) {
         if (m == 0) return "$0";
         double abs = Math.abs(m);
-        return (m < 0 ? "–" : "") + "$" + String.format("%.1f", abs) + "M";
+        return (m < 0 ? "-" : "") + "$" + String.format("%.1f", abs) + "M";
     }
 
     private static String fmt(double r) {

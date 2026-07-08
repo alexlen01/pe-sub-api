@@ -15,9 +15,10 @@ public interface LpRecordRepository extends JpaRepository<LpRecord, Integer> {
      * rows without a source position appear after the uploaded set, ordered alphabetically.
      */
     List<LpRecord> findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(Integer facilityId);
-    List<LpRecord> findByFacilityIdAndClsOrderByInvestorNameAsc(Integer facilityId, String cls);
-    List<LpRecord> findByFacilityIdAndInvestorNameContainingIgnoreCaseOrderByInvestorNameAsc(Integer facilityId, String investorName);
+    List<LpRecord> findByFacilityIdAndClsOrderByClsAscInvestorNameAsc(Integer facilityId, String cls);
+    List<LpRecord> findByFacilityIdAndInvestorNameContainingIgnoreCaseOrderByClsAscInvestorNameAsc(Integer facilityId, String investorName);
     List<LpRecord> findAllByOrderByInvestorNameAsc();
+    List<LpRecord> findAllByOrderByClsAscInvestorNameAsc();
 
     long countByFacilityId(Integer facilityId);
 

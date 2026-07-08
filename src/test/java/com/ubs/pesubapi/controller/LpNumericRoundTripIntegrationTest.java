@@ -3,8 +3,7 @@ package com.ubs.pesubapi.controller;
 import com.ubs.pesubapi.IntegrationTestBase;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.entity.LpRecord;
-import com.ubs.pesubapi.repository.AuditLogRepository;
-import com.ubs.pesubapi.repository.BbSnapshotRepository;
+
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.LpRecordRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,18 +34,11 @@ class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
     @Autowired MockMvc              mvc;
     @Autowired FacilityRepository   facilityRepo;
     @Autowired LpRecordRepository         lpRecordRepo;
-    @Autowired BbSnapshotRepository snapshotRepo;
-    @Autowired AuditLogRepository   auditLogRepo;
 
     private int facilityId;
 
     @BeforeEach
     void setup() {
-        auditLogRepo.deleteAll();
-        snapshotRepo.deleteAll();
-        lpRecordRepo.deleteAll();
-        facilityRepo.deleteAll();
-
         Facility f = new Facility();
         f.setName("Meridian Secondaries Fund II");    // TEST ONLY
         f.setAgentBank("Citibank");
@@ -68,7 +60,7 @@ class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
     @Test
     @WithMockUser(username = "extraction-svc", roles = {"SERVICE"})
     void ingest_dualWritesExactNumericAndRoundedDisplay() throws Exception {
-        seedLp("Acme Pension Fund", "Rated");
+        seedLp("Acme Pension Fund", "Rated Investor");
 
         String body = """
             {
@@ -114,7 +106,7 @@ class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
 
     @Test
     void run_rederivesNumericFromCommittedStrings_andClearsStale() throws Exception {
-        LpRecord stale = seedLp("CalPERS", "Rated");
+        LpRecord stale = seedLp("CalPERS", "Rated Investor");
         stale.setUc("$99.9M");
         stale.setUcNum(new BigDecimal("99999999.99"));   // TEST ONLY — stale prior-cycle value
         stale.setAbbNum(new BigDecimal("55555555.00"));  // TEST ONLY — must be cleared, abb blank
@@ -126,7 +118,7 @@ class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
                 "name": "CalPERS",
                 "parent": null, "spv": false, "hq": true,
                 "type": "Institutional", "region": "North America",
-                "ig": true, "cls": "Rated",
+                "ig": true, "cls": "Rated Investor",
                 "sp": "AAA", "mdy": "Aaa", "fitch": "",
                 "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
                 "capCommit": "$15.0M", "pctCapCommit": null, "calledCap": "$3.0M",
@@ -154,3 +146,4 @@ class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
         assertThat(lpRecord.getAbbNum()).isNull();
     }
 }
+

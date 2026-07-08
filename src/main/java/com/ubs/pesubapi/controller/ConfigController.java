@@ -38,6 +38,8 @@ public class ConfigController {
         configService.get("agent_rate_params").ifPresent(v -> out.put("AGENT_RATE_PARAMS", v));
         configService.get("elig_rules").ifPresent(v        -> out.put("ELIG_RULES", v));
         configService.get("conc_limits").ifPresent(v       -> out.put("CONC_LIMITS", v));
+        configService.get("cls_conc_limit_defaults").ifPresent(v -> out.put("CLS_CONC_LIMIT_DEFAULTS", v));
+        configService.get("cls_conc_limit_bounds").ifPresent(v   -> out.put("CLS_CONC_LIMIT_BOUNDS", v));
         configService.get("global_settings").ifPresent(v   -> out.put("GLOBAL_SETTINGS", v));
         return out.isEmpty() ? ResponseEntity.notFound().build() : ResponseEntity.ok(out);
     }
@@ -95,8 +97,20 @@ public class ConfigController {
         "agent_rate_params", "Agent Rate Parameters",
         "elig_rules",        "Eligibility Rules",
         "conc_limits",       "Concentration Limits",
+        "cls_conc_limit_defaults", "Per-LP Concentration Limit Defaults",
+        "cls_conc_limit_bounds",   "Per-LP Concentration Limit Bounds",
         "global_settings",   "Global Settings"
     );
+
+    /** Re-reads the config table into the in-memory cache. Called by pe-sub-jobs after a
+     *  config feed (e.g. cls-conc-limits-ingest) writes the shared DB directly — without
+     *  this, feed values would only surface on the next application restart. */
+    @PostMapping("/reload")
+    public ResponseEntity<Void> reload() {
+        configService.load();
+        log.info("Config cache reloaded from database");
+        return ResponseEntity.noContent().build();
+    }
 
     @PutMapping("/eligibility")
     public ResponseEntity<JsonNode> setEligibility(

@@ -165,7 +165,7 @@ class ConcentrationLimitBreachIntegrationTest extends IntegrationTestBase {
                   "name": "Equal LP %02d",
                   "parent": null, "spv": false, "hq": true,
                   "type": "Institutional", "region": "North America",
-                  "ig": true, "cls": "Rated",
+                  "ig": true, "cls": "Rated Investor",
                   "sp": "AAA", "mdy": "Aaa", "fitch": "",
                   "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
                   "capCommit": "$20.0M", "pctCapCommit": null, "calledCap": null,
@@ -178,3 +178,4 @@ class ConcentrationLimitBreachIntegrationTest extends IntegrationTestBase {
         return "{ \"lps\": [\n" + lps + "\n] }";
     }
 }
+

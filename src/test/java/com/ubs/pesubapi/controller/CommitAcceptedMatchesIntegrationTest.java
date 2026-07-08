@@ -171,6 +171,84 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void commit_multiTabRowsWithDuplicateWorksheetRowIndexes_preservesExtractSequenceAndFields() throws Exception {
+        SubmissionExtraction ext = extractionRepo.findBySubmissionId(submissionId).orElseThrow();
+        ext.setExtractedLps(mapper.readTree("""
+            [
+              {
+                "id": 1,
+                "rowIndex": 13,
+                "fundSleeve": "Nerdio",
+                "name": "EQT Investment Partners",
+                "agentClass": "Included Investor",
+                "agentClsSource": "EXTRACTED",
+                "investorType": "Investment Consultant",
+                "agentRate": "95%",
+                "agentConc": "7.5%",
+                "agentBB": "$12,500,000",
+                "agentBBNum": 12500000,
+                "transferee": "Legacy Fund IV",
+                "commit": "$25,000,000",
+                "uncalled": "$15,000,000",
+                "canonicalFields": {
+                  "LP Category": "Included Investor",
+                  "Borrowing Base": "$12,500,000"
+                }
+              },
+              {
+                "id": 2,
+                "rowIndex": 13,
+                "fundSleeve": "Apptio",
+                "name": "Second Sleeve Investor",
+                "agentClass": "Excluded Investor",
+                "agentClsSource": "EXTRACTED",
+                "investorType": "Family Office",
+                "agentRate": "0%",
+                "agentConc": "0%",
+                "agentBB": "$0",
+                "agentBBNum": 0,
+                "commit": "$10,000,000",
+                "uncalled": "$6,000,000",
+                "canonicalFields": {
+                  "LP Category": "Excluded Investor",
+                  "Borrowing Base": "$0"
+                }
+              }
+            ]
+            """));
+        ext.setTotalRows(2);
+        extractionRepo.save(ext);
+
+        mvc.perform(post("/api/submissions/{id}/confirm", submissionId))
+            .andExpect(status().isOk());
+
+        List<MatchQueueEntry> entries = matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(submissionId);
+        assertThat(entries).hasSize(2);
+        assertThat(entries.stream().map(MatchQueueEntry::getRowIndex).toList()).containsExactly(1, 2);
+
+        mvc.perform(patch("/api/submissions/{id}/shadow-bb-state", submissionId)
+                .contentType("application/json")
+                .content("{}"))
+            .andExpect(status().isOk());
+
+        List<LpRecord> stored = lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
+        assertThat(stored).hasSize(2);
+        assertThat(stored.stream().map(LpRecord::getInvestorName).toList())
+            .containsExactly("EQT Investment Partners", "Second Sleeve Investor");
+
+        LpRecord eqt = stored.getFirst();
+        assertThat(eqt.getSourceSeq()).isEqualTo(1);
+        assertThat(eqt.getFundSleeve()).isEqualTo("Nerdio");
+        assertThat(eqt.getAgentCls()).isEqualTo("Included Investor");
+        assertThat(eqt.getAgentClsSource()).isEqualTo("EXTRACTED");
+        assertThat(eqt.getAgentRate()).isEqualTo("95%");
+        assertThat(eqt.getAgentConc()).isEqualTo("7.5%");
+        assertThat(eqt.getAbb()).isEqualTo("$12,500,000");
+        assertThat(eqt.getAbbNum()).isEqualByComparingTo("12500000");
+        assertThat(eqt.isTf()).isTrue();
+    }
+
+    @Test
     void commit_sameUploadTwice_replacesShadowRowsWithoutDuplicateKey() throws Exception {
         mvc.perform(post("/api/submissions/{id}/confirm", submissionId))
             .andExpect(status().isOk());
@@ -365,6 +443,70 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         assertThat(untouchedMatchedRecord.getParent()).isEqualTo("Do Not Copy Parent");
         assertThat(untouchedMatchedRecord.getCapCommit()).isEqualTo("$99.0M");
         assertThat(untouchedMatchedRecord.getAgentCls()).isNull();
+    }
+
+    @Test
+    void commit_persistsDerivedCommitmentAndConcentrationFields() throws Exception {
+        // Row 7 carries the direct row keys (current extraction shape); row 8 carries only the
+        // canonicalFields map (extraction rows stored before the direct keys existed). Values may
+        // be platform-derived by pe-sub-extraction when the agent workbook has no such column.
+        SubmissionExtraction ext = extractionRepo.findBySubmissionId(submissionId).orElseThrow();
+        ext.setExtractedLps(mapper.readTree("""
+            [
+              {
+                "rowIndex": 7,
+                "name": "Arkansas Teachers' Retirement System",
+                "commit": "$38.0M",
+                "uncalled": "$11.0M",
+                "calledCap": "$27.0M",
+                "pctCapCommit": "4.67%",
+                "agentExcessConc": ""
+              },
+              {
+                "rowIndex": 8,
+                "name": "Phoenix Police Fire Pension Plan",
+                "canonicalFields": {
+                  "Called Capital": "$284.8M",
+                  "% of Capital Commitments": "50.25%",
+                  "Excess Concentration": "$107.3M"
+                }
+              }
+            ]
+            """));
+        extractionRepo.save(ext);
+
+        mvc.perform(post("/api/submissions/{id}/confirm", submissionId))
+            .andExpect(status().isOk());
+        acceptAllQueuedRows(submissionId);
+        mvc.perform(patch("/api/submissions/{id}/shadow-bb-state", submissionId)
+                .contentType("application/json")
+                .content("{}"))
+            .andExpect(status().isOk());
+
+        List<LpRecord> stored = lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
+        assertThat(stored).hasSize(2);
+
+        // Direct row keys
+        LpRecord arkansas = stored.get(0);
+        assertThat(arkansas.getCalledCap()).isEqualTo("$27.0M");
+        assertThat(arkansas.getPctCapCommit()).isEqualTo("4.67%");
+        assertThat(arkansas.getAgentExcessConc()).isNull(); // blank ("" = zero excess) stays unset
+
+        // canonicalFields fallback
+        LpRecord phoenix = stored.get(1);
+        assertThat(phoenix.getCalledCap()).isEqualTo("$284.8M");
+        assertThat(phoenix.getPctCapCommit()).isEqualTo("50.25%");
+        assertThat(phoenix.getAgentExcessConc()).isEqualTo("$107.3M");
+
+        // Round-trip: the listing endpoint exposes the committed values.
+        mvc.perform(get("/api/lpRecords").param("facilityId", String.valueOf(facilityId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$", hasSize(2)))
+            .andExpect(jsonPath("$[0].calledCap").value("$27.0M"))
+            .andExpect(jsonPath("$[0].pctCapCommit").value("4.67%"))
+            .andExpect(jsonPath("$[1].calledCap").value("$284.8M"))
+            .andExpect(jsonPath("$[1].pctCapCommit").value("50.25%"))
+            .andExpect(jsonPath("$[1].agentExcessConc").value("$107.3M"));
     }
 
     private ArrayNode extractedRows(int rowCount) {

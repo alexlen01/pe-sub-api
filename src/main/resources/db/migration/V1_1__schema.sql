@@ -128,6 +128,7 @@ CREATE TABLE lp_records (
     rcl                BOOLEAN      NOT NULL DEFAULT FALSE,
     recallable_dist    VARCHAR(50),
     transferee         BOOLEAN      NOT NULL DEFAULT FALSE,
+    lp_rank            INTEGER,
     source_seq         INTEGER,
     fund_sleeve        VARCHAR(255),
     notes              TEXT,

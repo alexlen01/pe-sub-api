@@ -143,7 +143,7 @@ public class LpIngestService {
         if (extractedLps == null || !extractedLps.isArray()) return;
 
         Map<Integer, JsonNode> byRow = new HashMap<>();
-        extractedLps.forEach(node -> byRow.put(node.path("rowIndex").asInt(-1), node));
+        extractedLps.forEach(node -> byRow.put(extractionOrderKey(node), node));
 
         Map<Integer, MatchQueueEntry> queueByRow =
             matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(submissionId).stream()
@@ -192,6 +192,10 @@ public class LpIngestService {
         lpRecordRepo.saveAll(toSave.values());
     }
 
+    private int extractionOrderKey(JsonNode row) {
+        return row.path("id").asInt(row.path("rowIndex").asInt(-1));
+    }
+
     /**
      * Accepted proposed matches choose the LP Master name only. Rejected matches deliberately use
      * the Agent BB name, creating a separate current-facility LP record.
@@ -214,6 +218,7 @@ public class LpIngestService {
         String rate    = textOrNull(row, "agentRate");
         String conc    = textOrNull(row, "agentConc");
         String parent  = textOrNull(row, "parent");
+        String fundSleeve = textOrNull(row, "fundSleeve");
         String nav     = textOrNull(row, "nav");
         String sp      = textOrNull(row, "sp");
         String mdy     = textOrNull(row, "moodys");
@@ -229,22 +234,15 @@ public class LpIngestService {
             ? normalizeAgentClsSource(textOrNull(row, "agentClsSource"))
             : null;
         if (agentCls != null && agentClsSource == null) agentClsSource = "EXTRACTED";
-        if (agentCls == null) {
-            agentCls = AgentLpClassificationDeriver.derive(
-                investorType,
-                sp,
-                mdy,
-                fitch,
-                textOrNull(row, "lpSizeBil"),
-                textOrNull(row, "lpSizeCriteria"),
-                notes,
-                row.path("spv").asBoolean(false)
-            );
-            if (agentCls != null) agentClsSource = "DERIVED";
-        }
-        String calledCap = textOrNull(row, "calledCap");
+        String calledCap = extractedText(row, "calledCap", "Called Capital");
         String pctCalled = textOrNull(row, "pctCalled");
         String pctUncalled = textOrNull(row, "pctUncalled");
+        // Derived-or-extracted commitment/concentration figures: the direct row key is written
+        // by current extractions; the canonicalFields fallback covers rows stored before the
+        // key existed. Values may be platform-derived (pe-sub-extraction DerivedFieldCalculator)
+        // when the agent workbook has no such column.
+        String pctCapCommit    = extractedText(row, "pctCapCommit", "% of Capital Commitments");
+        String agentExcessConc = extractedText(row, "agentExcessConc", "Excess Concentration");
         // Prefer the raw extracted agent BB column; fall back to the uncalled×rate proxy.
         String agentBB   = textOrNull(row, "agentBB");
         if (agentBB == null) agentBB = textOrNull(row, "agentBBFmt");
@@ -255,6 +253,7 @@ public class LpIngestService {
         if (rate     != null) lpRecord.setAgentRate(rate);
         if (conc     != null) lpRecord.setAgentConc(conc);
         if (parent   != null) lpRecord.setParent(parent);
+        if (fundSleeve != null) lpRecord.setFundSleeve(fundSleeve);
         if (nav      != null) lpRecord.setNav(nav);
         if (sp       != null) lpRecord.setSp(sp);
         if (mdy      != null) lpRecord.setMdy(mdy);
@@ -263,12 +262,29 @@ public class LpIngestService {
         if (agentCls != null) {
             lpRecord.setAgentCls(agentCls);
             lpRecord.setAgentClsSource(agentClsSource);
+        } else {
+            // Agent BB carried no LP Category column for this row: derive it from the investor
+            // type and any ratings so Shadow BB has a category to work with, marking the source
+            // DERIVED so the UI can distinguish it from an extracted or user-edited value.
+            String derivedAgentCls = AgentLpClassificationDeriver.derive(
+                lpRecord.getInvestorType(),
+                lpRecord.getSp(), lpRecord.getMdy(), lpRecord.getFitch(),
+                null, null,
+                notes != null ? notes : lpRecord.getNotes(),
+                false);
+            if (derivedAgentCls != null) {
+                lpRecord.setAgentCls(derivedAgentCls);
+                lpRecord.setAgentClsSource("DERIVED");
+            }
         }
         if (agentBB  != null) lpRecord.setAbb(agentBB);
         if (calledCap  != null) lpRecord.setCalledCap(calledCap);
         if (pctCalled  != null) lpRecord.setPctCalled(pctCalled);
         if (pctUncalled != null) lpRecord.setPctUncalled(pctUncalled);
+        if (pctCapCommit    != null) lpRecord.setPctCapCommit(pctCapCommit);
+        if (agentExcessConc != null) lpRecord.setAgentExcessConc(agentExcessConc);
         if (notes     != null) lpRecord.setNotes(notes);
+        lpRecord.setTf(isTransferee(row));
 
         // Precise numeric money (C2): prefer the exact value carried in the stored JSON; fall back
         // to parsing the display string for extractions saved before the numeric fields existed.
@@ -299,6 +315,20 @@ public class LpIngestService {
         if (display == null) return null;
         double millions = BbCalculationService.parseMoney(display);
         return millions == 0 ? null : BigDecimal.valueOf(millions * 1_000_000.0);
+    }
+
+    private boolean isTransferee(JsonNode row) {
+        JsonNode direct = row.get("tf");
+        if (direct != null && direct.isBoolean()) return direct.asBoolean();
+        direct = row.get("transferee");
+        if (direct == null || direct.isNull()) return false;
+        if (direct.isBoolean()) return direct.asBoolean();
+        String value = direct.asText("").trim();
+        return !value.isBlank()
+            && !"false".equalsIgnoreCase(value)
+            && !"no".equalsIgnoreCase(value)
+            && !"n".equalsIgnoreCase(value)
+            && !"0".equals(value);
     }
 
     private String normalizeAgentClsSource(String raw) {

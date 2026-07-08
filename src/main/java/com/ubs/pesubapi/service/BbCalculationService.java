@@ -12,7 +12,9 @@ import com.ubs.pesubapi.entity.LpRecord;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Port of pe-sub-common/src/engine/calculator.ts.
@@ -66,8 +68,11 @@ public class BbCalculationService {
     }
 
     public BbResult compute(List<LpRecord> lps, double concLimitM) {
+        double totalUcM = lps.stream()
+            .mapToDouble(lpRecord -> moneyM(lpRecord.getUcNum(), lpRecord.getUc())).sum();
+        Map<String, Double> clsConcDefaults = loadClsConcDefaults();
         List<ComputedLpRecord> computed = lps.stream()
-            .map(lpRecord -> computeOne(lpRecord, concLimitM))
+            .map(lpRecord -> computeOne(lpRecord, concLimitM, totalUcM, clsConcDefaults))
             .toList();
 
         List<ComputedLpRecord> included = computed.stream().filter(lpRecord -> lpRecord.inc()).toList();
@@ -88,14 +93,13 @@ public class BbCalculationService {
         return new BbResult(computed, summary, detectBreaches(computed, totalUBB));
     }
 
-    private ComputedLpRecord computeOne(LpRecord lpRecord, double facilityConc) {
+    private ComputedLpRecord computeOne(LpRecord lpRecord, double facilityConc, double totalUcM,
+                                        Map<String, Double> clsConcDefaults) {
         double busaRate    = advanceRateFraction(lpRecord);
         boolean excluded   = !lpRecord.isInc() || "Excluded".equals(lpRecord.getCls());
         double ucM         = moneyM(lpRecord.getUcNum(),  lpRecord.getUc());
         double abbM        = moneyM(lpRecord.getAbbNum(), lpRecord.getAbb());
-        // Use per-LP dollar limit stored in ubsConc (e.g. "$25.0M") when present;
-        // fall back to the facility-level concLimitM for LPs without a stored override.
-        double concLimitM  = perLpConc(lpRecord.getUbsConc(), facilityConc);
+        double concLimitM  = perLpConc(lpRecord, facilityConc, totalUcM, clsConcDefaults);
         double uecM        = excluded ? 0 : Math.min(ucM, concLimitM);
         double concExcessM = Math.max(0, ucM - uecM);
         double ubbM        = uecM * busaRate;
@@ -103,10 +107,53 @@ public class BbCalculationService {
         return ComputedLpRecord.from(lpRecord, busaRate, uecM, ubbM, abbM, deltaM, concExcessM);
     }
 
-    private static double perLpConc(String ubsConc, double facilityConc) {
-        if (ubsConc == null || ubsConc.isBlank() || ubsConc.contains("%")) return facilityConc;
-        double v = parseMoney(ubsConc);
-        return v > 0 ? v : facilityConc;
+    /** Per-LP concentration limit in $M. Fallback chain (mirrors the Run Shadow BB
+     *  screen): explicit per-LP limit stored in ubsConc as a percent of total
+     *  uncalled capital ("7.5%"), with legacy dollar strings still parsed for old
+     *  rows, then the classification default from {@code cls_conc_limit_defaults},
+     *  then the facility-level dollar limit. */
+    private static double perLpConc(LpRecord lpRecord, double facilityConc, double totalUcM,
+                                    Map<String, Double> clsConcDefaults) {
+        String cls = lpRecord.getCls();
+        // Evaluate the Excluded bucket first: an excluded LP is a hard 0 concentration
+        // limit, ahead of any explicit per-LP override or class residual default, so a
+        // stale/misconfigured Excluded default can never leak into the borrowing base.
+        if (cls != null && "Excluded".equals(normalizeDashes(cls))) return 0;
+        String ubsConc = lpRecord.getUbsConc();
+        if (ubsConc != null && !ubsConc.isBlank()) {
+            if (ubsConc.contains("%")) {
+                double pct = parsePct(ubsConc);
+                if (pct >= 0 && totalUcM > 0) return pct * totalUcM;
+            } else {
+                double v = parseMoney(ubsConc);
+                if (v > 0) return v;
+            }
+        }
+        Double defaultPct = cls == null ? null : clsConcDefaults.get(normalizeDashes(cls));
+        if (defaultPct != null && defaultPct > 0 && totalUcM > 0) return defaultPct / 100.0 * totalUcM;
+        return facilityConc;
+    }
+
+    /** Class-default per-LP concentration limits (percent of total uncalled capital)
+     *  from the {@code cls_conc_limit_defaults} config key, keyed by dash-normalized
+     *  classification label. Empty when the key is not seeded — the facility-level
+     *  fallback then applies, so detection of a missing config never breaks a run. */
+    private Map<String, Double> loadClsConcDefaults() {
+        Map<String, Double> out = new HashMap<>();
+        JsonNode node = configService.get("cls_conc_limit_defaults").orElse(null);
+        if (node != null && node.isObject()) {
+            for (Map.Entry<String, JsonNode> e : node.properties()) {
+                double pct = e.getValue().asDouble(-1);
+                if (pct >= 0) out.put(normalizeDashes(e.getKey()), pct);
+            }
+        }
+        return out;
+    }
+
+    /** The legacy tier label "Unrated 1–2bn" circulates with both an en dash (engine,
+     *  reports) and a hyphen (seeded config keys) — normalize before map lookups. */
+    private static String normalizeDashes(String s) {
+        return s.replace('–', '-').replace('—', '-').replace('‐', '-');
     }
 
     /** The top-10 warning fires within this many percentage points below the breach limit

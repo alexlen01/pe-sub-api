@@ -27,7 +27,7 @@ import com.ubs.pesubapi.service.ExtractionClientService;
 import com.ubs.pesubapi.service.LpIngestService;
 import com.ubs.pesubapi.service.MatchingService;
 import com.ubs.pesubapi.service.TemplateRecognitionService;
-import com.ubs.pesubapi.util.AgentLpClassificationDeriver;
+import com.ubs.pesubapi.util.InvestorTypeDeriver;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.transaction.annotation.Transactional;
 import org.slf4j.Logger;
@@ -292,25 +292,14 @@ public class SubmissionController {
                 row.put("id",           seqId++);
                 row.put("rowIndex",     rec.rowIndex());
                 if (rec.fundSleeve() != null) row.put("fundSleeve", rec.fundSleeve());
-                row.put("name",         fieldStr(rec.fields(), "INVESTOR_NAME"));
-                row.put("investorType", fieldStr(rec.fields(), "INVESTOR_TYPE"));
+                String investorName = fieldStr(rec.fields(), "INVESTOR_NAME");
+                row.put("name",         investorName);
                 String investorType = fieldStr(rec.fields(), "INVESTOR_TYPE");
+                if (investorType.isBlank()) investorType = InvestorTypeDeriver.derive(investorName);
+                row.put("investorType", investorType);
                 String agentClass = fieldStr(rec.fields(), "AGENT_LP_CLASSIFICATION");
                 String agentClsSource = !agentClass.isBlank() ? "EXTRACTED" : "";
-                if (agentClass.isBlank()) {
-                    agentClass = AgentLpClassificationDeriver.derive(
-                        investorType,
-                        fieldStr(rec.fields(), "S&P Rating"),
-                        fieldStr(rec.fields(), "Moody's Rating"),
-                        fieldStr(rec.fields(), "Fitch Rating"),
-                        fieldStr(rec.fields(), "LP Size ($ Bil)"),
-                        fieldStr(rec.fields(), "LP Size Criteria"),
-                        fieldStr(rec.fields(), "NOTES"),
-                        false
-                    );
-                    if (agentClass != null && !agentClass.isBlank()) agentClsSource = "DERIVED";
-                }
-                row.put("agentClass",   agentClass != null ? agentClass : "");
+                row.put("agentClass",   agentClass);
                 row.put("agentClsSource", agentClsSource);
                 row.put("commit",       fmtMoney(fieldDec(rec.fields(), "COMMITMENT")));
                 row.put("uncalled",     fmtMoney(fieldDec(rec.fields(), "UNCALLED")));
@@ -331,8 +320,10 @@ public class SubmissionController {
                 row.put("transferee",   fieldStr(rec.fields(), "Transferee"));
                 row.put("notes",        fieldStr(rec.fields(), "NOTES"));
                 row.put("calledCap",   fmtMoneyOrRaw(rec.fields(), "Called Capital"));
+                row.put("pctCapCommit", fieldStr(rec.fields(), "% of Capital Commitments"));
                 row.put("pctCalled",   fieldStr(rec.fields(), "% of LP Called"));
                 row.put("pctUncalled", fieldStr(rec.fields(), "% of Uncalled Capital"));
+                row.put("agentExcessConc", fmtMoneyOrRaw(rec.fields(), "Excess Concentration"));
                 row.put("agentBB",     fieldStr(rec.fields(), "BORROWING_BASE", "Borrowing Base"));
                 row.put("pctBB",       fieldStr(rec.fields(), "PCT_OF_BORROWING_BASE", "% of Borrowing Base"));
                 ObjectNode canonicalValues = mapper.createObjectNode();

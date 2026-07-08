@@ -27,6 +27,9 @@ public record LpClassificationRequest(
         // Identity & classification (manual)
         String  parent,
         Boolean spv,
+        @JsonProperty("fund_sleeve")
+        @JsonAlias({"fundSleeve"})
+        String  fundSleeve,
         @JsonProperty("investor_type")
         @JsonAlias({"investorType"})
         String  investorType,
@@ -58,6 +61,7 @@ public record LpClassificationRequest(
         Double  agentConcLimitPct,// null → unchanged
         // Status (manual)
         Boolean inc,
+        Boolean tf,
         String  notes
     ) {}
 }
