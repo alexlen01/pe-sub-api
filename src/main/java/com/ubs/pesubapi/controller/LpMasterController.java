@@ -43,7 +43,7 @@ public class LpMasterController {
     public List<String> investorTypes() {
         List<String> result = repo.findDistinctInvestorTypes().stream()
                 .filter(Objects::nonNull)
-                .map(String::trim)
+                .map(s -> s.trim())
                 .filter(s -> !s.isBlank())
                 .distinct()
                 .sorted(String.CASE_INSENSITIVE_ORDER)
