@@ -224,7 +224,7 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
 
         List<MatchQueueEntry> entries = matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(submissionId);
         assertThat(entries).hasSize(2);
-        assertThat(entries.stream().map(MatchQueueEntry::getRowIndex).toList()).containsExactly(1, 2);
+        assertThat(entries.stream().map(entry -> entry.getRowIndex()).toList()).containsExactly(1, 2);
 
         mvc.perform(patch("/api/submissions/{id}/shadow-bb-state", submissionId)
                 .contentType("application/json")
@@ -233,7 +233,7 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
 
         List<LpRecord> stored = lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
         assertThat(stored).hasSize(2);
-        assertThat(stored.stream().map(LpRecord::getInvestorName).toList())
+        assertThat(stored.stream().map((LpRecord lpRecord) -> lpRecord.getInvestorName()).toList())
             .containsExactly("EQT Investment Partners", "Second Sleeve Investor");
 
         LpRecord eqt = stored.getFirst();
@@ -259,7 +259,7 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isOk());
 
         List<Integer> firstIds = lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId).stream()
-            .map(LpRecord::getId)
+            .map((LpRecord lp) -> lp.getId())
             .toList();
         assertThat(firstIds).hasSize(N_ROWS);
 
@@ -289,8 +289,8 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
 
         List<LpRecord> stored = lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
         assertThat(stored).hasSize(N_ROWS);
-        assertThat(stored.stream().map(LpRecord::getId).toList()).doesNotContainAnyElementsOf(firstIds);
-        assertThat(stored.stream().map(LpRecord::getInvestorName).toList()).containsExactlyElementsOf(NAMES);
+        assertThat(stored.stream().map((LpRecord lpRecord) -> lpRecord.getId()).toList()).doesNotContainAnyElementsOf(firstIds);
+        assertThat(stored.stream().map((LpRecord lpRecord) -> lpRecord.getInvestorName()).toList()).containsExactlyElementsOf(NAMES);
         assertThat(stored.get(0).getInvestorType()).isEqualTo(investorTypeFor(0));
         assertThat(stored.get(0).getAgentCls()).isEqualTo(agentClassFor(0));
     }
