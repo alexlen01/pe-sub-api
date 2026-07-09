@@ -155,7 +155,7 @@ class LpRateControllerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void batchUpsert_returns422ForUnknownLpName() throws Exception {
+    void batchUpsert_returns400ForUnknownLpName() throws Exception {
         String body = """
             {
               "effectiveDate": "2026-05",
@@ -172,7 +172,7 @@ class LpRateControllerIntegrationTest extends IntegrationTestBase {
 
         mvc.perform(post("/api/lpRecords/rates/batch")
                 .contentType(MediaType.APPLICATION_JSON).content(body))
-            .andExpect(status().is(422));
+            .andExpect(status().isBadRequest());
     }
 
     @Test
