@@ -159,7 +159,7 @@ public class LpIngestService {
         // Insert every extracted row; no row is discarded regardless of match queue status.
         byRow.keySet().stream().sorted().forEach(rowIndex -> {
             JsonNode row = byRow.get(rowIndex);
-            String extractedName = row.path("name").asText("").trim();
+            String extractedName = row.path("name").asString("").trim();
             if (extractedName.isBlank()) return;
 
             MatchQueueEntry entry = queueByRow.get(rowIndex);
@@ -308,8 +308,8 @@ public class LpIngestService {
     private BigDecimal moneyDollars(JsonNode row, String numericKey, String displayKey) {
         JsonNode num = row.get(numericKey);
         if (num != null && num.isNumber()) return num.decimalValue();
-        if (num != null && num.isTextual() && !num.asText().isBlank()) {
-            try { return new BigDecimal(num.asText().trim()); } catch (NumberFormatException ignored) { /* fall through */ }
+        if (num != null && num.isString() && !num.asString().isBlank()) {
+            try { return new BigDecimal(num.asString().trim()); } catch (NumberFormatException ignored) { /* fall through */ }
         }
         String display = textOrNull(row, displayKey);
         if (display == null) return null;
@@ -323,7 +323,7 @@ public class LpIngestService {
         direct = row.get("transferee");
         if (direct == null || direct.isNull()) return false;
         if (direct.isBoolean()) return direct.asBoolean();
-        String value = direct.asText("").trim();
+        String value = direct.asString("").trim();
         return !value.isBlank()
             && !"false".equalsIgnoreCase(value)
             && !"no".equalsIgnoreCase(value)
@@ -451,7 +451,7 @@ public class LpIngestService {
     }
 
     private String textOrNull(JsonNode node, String field) {
-        String v = node.path(field).asText(null);
+        String v = node.path(field).asString(null);
         return (v == null || v.isBlank() || "null".equals(v)) ? null : v;
     }
 

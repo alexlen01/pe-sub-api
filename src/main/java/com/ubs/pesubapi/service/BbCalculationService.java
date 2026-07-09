@@ -35,10 +35,10 @@ public class BbCalculationService {
         JsonNode cfg = configService.get("classification_config").orElse(null);
         if (cfg == null) return 0.0;
 
-        double legacy = parsePct(cfg.path("BUSA_RATE_MAP").path(cls).asText(""));
+        double legacy = parsePct(cfg.path("BUSA_RATE_MAP").path(cls).asString(""));
         if (legacy >= 0.0) return legacy;
 
-        double ubs = parsePct(cfg.path("UBS_CLS_DEFAULT_RATE").path(cls).asText(""));
+        double ubs = parsePct(cfg.path("UBS_CLS_DEFAULT_RATE").path(cls).asString(""));
         return ubs >= 0.0 ? ubs : 0.0;
     }
 
@@ -174,7 +174,7 @@ public class BbCalculationService {
             for (JsonNode row : rows) {
                 double pct = row.path("value").asDouble(-1);
                 if (pct < 0) continue;
-                switch (row.path("label").asText()) {
+                switch (row.path("label").asString()) {
                     case "Single LP max"           -> singleLp = pct / 100.0;
                     case "Top-10 LP max"           -> top10    = pct / 100.0;
                     case "Unrated max (aggregate)" -> unrated  = pct / 100.0;

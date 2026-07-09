@@ -268,7 +268,7 @@ public class BbTemplateImportService {
 
     private List<String> parseCsv(String raw, List<String> def) {
         if (raw == null || raw.isBlank()) return def;
-        return Arrays.stream(raw.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+        return Arrays.stream(raw.split(",")).map(s -> s.trim()).filter(s -> !s.isEmpty()).toList();
     }
 
     private List<String> parseJsonArray(String raw) {
