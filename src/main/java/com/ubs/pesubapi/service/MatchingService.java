@@ -4,7 +4,6 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import com.ubs.pesubapi.entity.MatchQueueEntry;
 import com.ubs.pesubapi.repository.LpMasterRepository;
-import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -221,7 +220,7 @@ public class MatchingService {
         return lo;
     }
 
-    public @NonNull List<MatchQueueEntry> buildMatchQueueEntries(
+    public List<MatchQueueEntry> buildMatchQueueEntries(
             int submissionId, int facilityId, JsonNode extractedLps) {
         if (extractedLps == null || !extractedLps.isArray()) return new ArrayList<>();
         List<String> masterNames = lpMasterRepo.findAllInvestorNames();
@@ -235,7 +234,7 @@ public class MatchingService {
         List<Row> rows = new ArrayList<>();
         int index = 0;
         for (JsonNode lpNode : extractedLps) {
-            String agentName = lpNode.path("name").asText("").trim();
+            String agentName = lpNode.path("name").asString("").trim();
             int rowIndex = lpNode.path("id").asInt(lpNode.path("rowIndex").asInt(index));
             if (!agentName.isBlank()) rows.add(new Row(rowIndex, agentName));
             index++;
@@ -491,15 +490,15 @@ public class MatchingService {
         for (JsonNode s : root.path("legalSuffixes")) {
             if (s.path("strip").asBoolean()) {
                 stripList.add(Pattern.compile(
-                    "(?i),?\\s*\\b" + Pattern.quote(s.path("abbr").asText()) + "\\b\\.?\\s*$"));
+                    "(?i),?\\s*\\b" + Pattern.quote(s.path("abbr").asString()) + "\\b\\.?\\s*$"));
             }
         }
 
         List<Abbreviation> abbreviations = new ArrayList<>();
         for (JsonNode a : root.path("knownAbbreviations")) {
             abbreviations.add(new Abbreviation(
-                Pattern.compile("(?i)\\b" + Pattern.quote(a.path("token").asText()) + "\\b"),
-                a.path("expansion").asText()));
+                Pattern.compile("(?i)\\b" + Pattern.quote(a.path("token").asString()) + "\\b"),
+                a.path("expansion").asString()));
         }
 
         return new Config(autoAccept, reviewQueue, noMatch, jwWeight, levWeight,

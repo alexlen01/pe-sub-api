@@ -56,7 +56,7 @@ public class LpRateService {
         for (LpRateBatchRequest.Entry entry : req.rates()) {
             Integer lpId = idByName.get(entry.lpName().toLowerCase());
             if (lpId == null) throw new ResponseStatusException(
-                HttpStatus.UNPROCESSABLE_ENTITY,
+                HttpStatus.BAD_REQUEST,
                 "No LP found with name: " + entry.lpName()
             );
 

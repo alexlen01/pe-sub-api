@@ -1,6 +1,5 @@
 package com.ubs.pesubapi.service;
 
-import org.springframework.lang.NonNull;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -23,7 +22,7 @@ public class NotificationService {
         return emitter;
     }
 
-    public void broadcast(@NonNull String message) {
+    public void broadcast(String message) {
         List<SseEmitter> dead = new ArrayList<>();
         for (SseEmitter emitter : emitters) {
             try {
