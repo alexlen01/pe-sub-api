@@ -75,7 +75,7 @@ public class ReportService {
                 rates.getOrDefault(e.getKey(), "0%")))
             .toList();
 
-        double totalEligibleUncalledM = lps.stream().mapToDouble(ComputedLpRecord::uecM).sum();
+        double totalEligibleUncalledM = lps.stream().mapToDouble(lp -> lp != null ? lp.uecM() : 0).sum();
 
         return new CollateralReportDto(
             facilityId, facility.getName(), facility.getAgentBank(),
@@ -100,7 +100,7 @@ public class ReportService {
 
     public List<AgentBankExposureDto> agentBankExposure() {
         Map<Integer, BbSnapshot> latestByFacility = snapshotRepo.findLatestPerFacility().stream()
-            .collect(Collectors.toMap(BbSnapshot::getFacilityId, Function.identity()));
+            .collect(Collectors.toMap(BbSnapshot::getFacilityId, snapshot -> snapshot));
 
         Map<String, double[]> agg = new LinkedHashMap<>();          // [facilities, lps, ubsBB, agentBB]
         for (Facility f : facilityRepo.findAll()) {
