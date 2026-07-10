@@ -243,8 +243,8 @@ class BbRunIntegrationTest extends IntegrationTestBase {
     // ── per-LP concentration limit stored in ubsConc is used by re-computation ──
 
     // NOTE: the per-LP conc-limit round-trip (binding dollar limit caps uecM/ubbM) is
-    // covered by ClsConcLimitDefaultIntegrationTest.run_perLpDollarLimitBeatsClassDefault,
-    // which exercises the same persist → compute path within the full fallback chain.
+    // covered by PerLpConcentrationLimitIntegrationTest.run_perLpDollarLimitBeatsMatrix,
+    // which exercises the same persist → compute path within the full resolution chain.
 
     // ── Facility list surfaces the latest snapshot's BB figures ─────────────────────
 
@@ -277,9 +277,10 @@ class BbRunIntegrationTest extends IntegrationTestBase {
 
     @Test
     void run_computesUbbForUbsTaxonomyClass() throws Exception {
-        // LpRecord classified under the UBS taxonomy ("FoF & Other > $10Bn AUM" → 75%), with no stored
-        // per-LP ubsRate. Previously the engine keyed only on the legacy taxonomy and returned 0%,
-        // so UBS BB was $0. Now: uec = min(10, 25) = 10; 75% → ubbM = 7.5.
+        // LpRecord classified under the UBS taxonomy ("FoF & Other > $10Bn AUM"), no stored per-LP
+        // ubsRate. The bb_criteria_matrix now supplies the default: this LP is 0% funded
+        // (called = commit − uncalled = 0), so it takes the FoF "< 40% funded" advance rate of 65%
+        // (not the ≥40% mature 75%). uec = min(10, 25) = 10; 65% → ubbM = 6.5.
         String body = """
             {
               "lps": [{
@@ -302,8 +303,8 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.result.summary.totalUBB").value(closeTo(7.5, 0.01)))
-            .andExpect(jsonPath("$.result.lps[0].ubbM").value(closeTo(7.5, 0.01)));
+            .andExpect(jsonPath("$.result.summary.totalUBB").value(closeTo(6.5, 0.01)))
+            .andExpect(jsonPath("$.result.lps[0].ubbM").value(closeTo(6.5, 0.01)));
     }
 
     @Test

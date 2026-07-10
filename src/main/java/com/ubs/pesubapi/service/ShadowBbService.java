@@ -36,15 +36,17 @@ public class ShadowBbService {
     private final BbSnapshotRepository snapshotRepo;
     private final BbCalculationService calculator;
     private final LpMasterService      lpMasterService;
+    private final LpMasterWriteBackService lpMasterWriteBack;
 
     public ShadowBbService(FacilityRepository facilityRepo, LpRecordRepository lpRecordRepo,
                            BbSnapshotRepository snapshotRepo, BbCalculationService calculator,
-                           LpMasterService lpMasterService) {
+                           LpMasterService lpMasterService, LpMasterWriteBackService lpMasterWriteBack) {
         this.facilityRepo    = facilityRepo;
         this.lpRecordRepo          = lpRecordRepo;
         this.snapshotRepo    = snapshotRepo;
         this.calculator      = calculator;
         this.lpMasterService = lpMasterService;
+        this.lpMasterWriteBack = lpMasterWriteBack;
     }
 
     /** The outcome of a run, carrying everything the controller needs for audit + notification. */
@@ -71,6 +73,11 @@ public class ShadowBbService {
 
         facility.setLastRunAt(LocalDateTime.now());
         facilityRepo.save(facility);
+
+        // Sync the settled facility LP records back to the bank-wide LP Master so a Run *and* a
+        // Re-Run (which carries no rows and only recomputes) both refresh LP Master's UBS credit
+        // profile — not only the wizard's separate /complete step. Same transaction; idempotent.
+        lpMasterWriteBack.writeBack(facilityId);
 
         return new RunResult(saved, facility.getName(), lps.size());
     }

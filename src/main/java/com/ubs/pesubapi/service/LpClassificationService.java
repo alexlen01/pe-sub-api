@@ -27,10 +27,13 @@ public class LpClassificationService {
 
     private final LpRecordRepository     lpRecordRepo;
     private final LpRateRepository rateRepo;
+    private final LpMasterWriteBackService lpMasterWriteBack;
 
-    public LpClassificationService(LpRecordRepository lpRecordRepo, LpRateRepository rateRepo) {
+    public LpClassificationService(LpRecordRepository lpRecordRepo, LpRateRepository rateRepo,
+                                   LpMasterWriteBackService lpMasterWriteBack) {
         this.lpRecordRepo   = lpRecordRepo;
         this.rateRepo = rateRepo;
+        this.lpMasterWriteBack = lpMasterWriteBack;
     }
 
     @Transactional
@@ -78,6 +81,7 @@ public class LpClassificationService {
             // Rates: persist the display strings on the lpRecord, and upsert the decimal fractions
             // into lp_rates below for the submission period.
             if (row.ubsAdvRatePct()  != null) lpRecord.setUbsRate(formatPct(row.ubsAdvRatePct()));
+            if (row.ubsConcLimitPct() != null) lpRecord.setUbsConc(formatPct(row.ubsConcLimitPct()));
             if (row.agentRatePct()   != null) lpRecord.setAgentRate(formatPct(row.agentRatePct()));
             if (row.agentConcLimitPct() != null) lpRecord.setAgentConc(formatPct(row.agentConcLimitPct()));
             lpRecord.setUpdatedAt(LocalDateTime.now());
@@ -87,6 +91,14 @@ public class LpClassificationService {
             if (row.ubsAdvRatePct() != null || row.ubsConcLimitPct() != null) {
                 upsertRate(lpRecord, effectiveDate, row);
             }
+        }
+
+        // Propagate the manual edits to the bank-wide LP Master. The screen auto-saves each row as
+        // the user types (silent, high-frequency); only the aggregated flush sent on leaving the
+        // screen carries audit=true. Gating the (facility-wide) write-back on that flush keeps a
+        // single LP Master sync per editing session rather than one per keystroke.
+        if (updated > 0 && Boolean.TRUE.equals(req.audit())) {
+            lpMasterWriteBack.writeBack(req.facilityId());
         }
         return updated;
     }

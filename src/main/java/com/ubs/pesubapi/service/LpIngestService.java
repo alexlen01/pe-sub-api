@@ -395,61 +395,6 @@ public class LpIngestService {
         }
     }
 
-    /**
-     * Writes finalized UBS credit-profile decisions back to LP Master after a Shadow BB
-     * run is accepted.  Called from {@code SubmissionController /complete}.
-     *
-     * For each LP record in the facility: if an LP Master row exists, update its UBS
-     * classification / advance rate / concentration limit from the accepted facility record.
-     * If no LP Master row exists yet (LpRecord was new in this submission), create one now so
-     * future submissions across any facility benefit from this cycle's decisions.
-     * The {@code lp_master_id} FK is stamped onto the facility record after upsert.
-     */
-    @Transactional
-    public void writeBackToLpMaster(int facilityId) {
-        for (LpRecord lpRecord : lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)) {
-            LpMaster master = lpMasterRepo.findByInvestorName(lpRecord.getInvestorName())
-                .orElseGet(() -> {
-                    LpMaster m = new LpMaster();
-                    m.setInvestorName(lpRecord.getInvestorName());
-                    return m;
-                });
-
-            // UBS credit profile — the definitive output of the accepted Shadow BB cycle
-            if (lpRecord.getCls()     != null && !lpRecord.getCls().isBlank())     master.setUbsClassification(lpRecord.getCls());
-            if (lpRecord.getUbsRate() != null && !lpRecord.getUbsRate().isBlank()) master.setUbsDefaultAdvRate(lpRecord.getUbsRate());
-            if (lpRecord.getUbsConc() != null && !lpRecord.getUbsConc().isBlank()) master.setUbsDefaultConcLimit(lpRecord.getUbsConc());
-
-            // Stable identity — refresh blanks with anything the facility record now carries
-            if (lpRecord.getInvestorType() != null && !lpRecord.getInvestorType().isBlank() && (master.getInvestorType() == null || master.getInvestorType().isBlank())) master.setInvestorType(lpRecord.getInvestorType());
-            if (lpRecord.getInstVsHnw()  != null && !lpRecord.getInstVsHnw().isBlank()  && (master.getInstVsHnw()  == null || master.getInstVsHnw().isBlank()))  master.setInstVsHnw(lpRecord.getInstVsHnw());
-            if (lpRecord.getRegion()  != null && !lpRecord.getRegion().isBlank()  && (master.getRegion()  == null || master.getRegion().isBlank()))  master.setRegion(lpRecord.getRegion());
-            if (lpRecord.getParent()  != null && !lpRecord.getParent().isBlank()  && (master.getParent()  == null || master.getParent().isBlank()))  master.setParent(lpRecord.getParent());
-            master.setSpv(lpRecord.isSpv());
-            master.setHighQty(lpRecord.isHighQty());
-            master.setIg(lpRecord.isIg());
-
-            // Ratings — overwrite with latest cycle values when non-blank
-            if (!lpRecord.getSp().isBlank())    master.setSp(lpRecord.getSp());
-            if (!lpRecord.getMdy().isBlank())   master.setMdy(lpRecord.getMdy());
-            if (!lpRecord.getFitch().isBlank()) master.setFitch(lpRecord.getFitch());
-
-            // Financial scale — overwrite with latest cycle values when non-null
-            if (lpRecord.getAum()          != null) master.setAum(lpRecord.getAum());
-            if (lpRecord.getNav()          != null) master.setNav(lpRecord.getNav());
-            if (lpRecord.getPension()      != null) master.setPension(lpRecord.getPension());
-            if (lpRecord.getPensionFunded()!= null) master.setPensionFunded(lpRecord.getPensionFunded());
-
-            LpMaster saved = lpMasterRepo.save(master);
-
-            // Stamp the FK so future lookups can join directly
-            if (!saved.getId().equals(lpRecord.getLpMasterId())) {
-                lpRecord.setLpMasterId(saved.getId());
-                lpRecordRepo.save(lpRecord);
-            }
-        }
-    }
-
     private String textOrNull(JsonNode node, String field) {
         String v = node.path(field).asString(null);
         return (v == null || v.isBlank() || "null".equals(v)) ? null : v;
@@ -507,6 +452,7 @@ public class LpIngestService {
         String agentClsSource = normalizeAgentClsSource(strValueIfValid(row.agentClsSource()));
         String parent   = strValueIfValid(row.parent());
         String notes    = strValueIfValid(row.notes());
+        String transferee = strValueIfValid(row.transferee());
 
         if (sp       != null) { lpRecord.setSp(sp);               changed.add("sp"); }
         if (mdy      != null) { lpRecord.setMdy(mdy);             changed.add("mdy"); }
@@ -520,6 +466,10 @@ public class LpIngestService {
         }
         if (parent   != null) { lpRecord.setParent(parent);       changed.add("parent"); }
         if (notes    != null) { lpRecord.setNotes(notes);         changed.add("notes"); }
+        if (transferee != null) {
+            lpRecord.setTf(isTruthyFlag(transferee));
+            changed.add("tf");
+        }
 
         lpRecord.setUpdatedAt(LocalDateTime.now());
         return changed;
@@ -528,6 +478,14 @@ public class LpIngestService {
     private String strValueIfValid(IngestRequest.StringField f) {
         return (f != null && f.value() != null && !f.value().isBlank()
                 && f.confidence() >= MIN_FIELD_CONFIDENCE) ? f.value() : null;
+    }
+
+    private boolean isTruthyFlag(String value) {
+        String normalized = value.trim();
+        return !"false".equalsIgnoreCase(normalized)
+            && !"no".equalsIgnoreCase(normalized)
+            && !"n".equalsIgnoreCase(normalized)
+            && !"0".equals(normalized);
     }
 
     private BigDecimal valueIfValid(IngestRequest.DecimalField f) {

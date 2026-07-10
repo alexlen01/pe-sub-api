@@ -15,21 +15,27 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
- * The per-LP concentration limit must resolve through the configured fallback chain:
- * explicit per-LP limit (dollar or percent of total uncalled) → classification default
- * from the {@code cls_conc_limit_defaults} config key (the map edited on the Config
- * screen next to the BUSA Advance Rate Schedule) → facility-level dollar limit.
+ * The per-LP concentration limit resolves through the Stage-2 chain:
+ * explicit per-LP limit (dollar or percent of total uncalled)
+ *   → {@code bb_criteria_matrix} (rating-band aware for Rated Investors)
+ *   → facility-level dollar limit.
+ * There is no legacy classification-default fallback: a class the matrix does not carry, with no
+ * explicit per-LP limit, falls straight to the facility limit ({@code cls_conc_limit_defaults} is
+ * not consulted by the borrowing-base engine).
  */
-class ClsConcLimitDefaultIntegrationTest extends IntegrationTestBase {
+class PerLpConcentrationLimitIntegrationTest extends IntegrationTestBase {
 
     /** Mirrors the V1_3 seed so each test leaves the shared config cache as it found it. TEST ONLY */
     private static final String SEED_CLS_CONC_DEFAULTS = """
         {
           "Rated Investor": 20.0,
+          "Corp Pension > $5Bn Assets": 12.5,
+          "Corp Pension > $1Bn Assets": 20.0,
           "Unrated NAV > $1Bn": 15.0,
           "FoF & Other > $10Bn AUM": 10.0,
-          "Corp Pension > $5Bn Assets": 12.5,
           "Other Institutional": 7.5,
+          "HNW Feeder (acceptable)": 5.0,
+          "HNW (acceptable)": 1.0,
           "Excluded": 0.0
         }
         """;
@@ -53,63 +59,58 @@ class ClsConcLimitDefaultIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void run_classDefaultCapsLpsWithoutExplicitLimit() throws Exception {
-        // Rated default tightened to 5%. Two Rated LPs at $20M uncalled each with no
-        // per-LP limit → total uncalled $40M → cap $2M each → UBB $1.8M at the 90% rate.
+    void run_matrixBandLimitCapsRatedInvestor() throws Exception {
+        // Two AAA Rated LPs at $20M uncalled each (total $40M), no per-LP limit. The matrix caps a
+        // Rated AAA at 25% of total uncalled → $10M each; 90% advance → ubb $9M. The tightened
+        // cls_conc_limit_defaults entry has no effect — the engine no longer consults it.
         putClsConcDefaults("""
             {"Rated Investor": 5}
             """);
 
         mvc.perform(post("/api/bb/run/{id}", facilityId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(twoLpPayload(null, null)))
+                .content(twoRatedPayload(null, null)))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.result.lps[*].uecM", everyItem(closeTo(2.0, 0.001))))
-            .andExpect(jsonPath("$.result.lps[*].ubbM", everyItem(closeTo(1.8, 0.001))));
+            .andExpect(jsonPath("$.result.lps[*].uecM", everyItem(closeTo(10.0, 0.001))))
+            .andExpect(jsonPath("$.result.lps[*].ubbM", everyItem(closeTo(9.0, 0.001))));
     }
 
     @Test
-    void run_perLpPercentLimitBeatsClassDefault() throws Exception {
-        // First LP carries an explicit 10% limit → $4M of the $40M total uncalled; the
-        // second falls to the 5% Rated class default → $2M.
-        putClsConcDefaults("""
-            {"Rated Investor": 5}
-            """);
-
+    void run_perLpPercentLimitBeatsMatrix() throws Exception {
+        // First LP carries an explicit 10% limit → $4M of the $40M total uncalled; the second falls
+        // to the matrix Rated AAA default of 25% → $10M.
         mvc.perform(post("/api/bb/run/{id}", facilityId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(twoLpPayload("10%", null)))
+                .content(twoRatedPayload("10%", null)))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.result.lps[?(@.name=='Chain LP 01')].uecM", contains(closeTo(4.0, 0.001))))
-            .andExpect(jsonPath("$.result.lps[?(@.name=='Chain LP 02')].uecM", contains(closeTo(2.0, 0.001))));
+            .andExpect(jsonPath("$.result.lps[?(@.name=='Chain LP 02')].uecM", contains(closeTo(10.0, 0.001))));
     }
 
     @Test
-    void run_perLpDollarLimitBeatsClassDefault() throws Exception {
-        // An explicit, binding $4M dollar limit wins over the 5% class default ($2M of the
-        // $40M total uncalled): uecM = min($20M, $4M) = $4M → ubbM = $3.6M at the 90% rate.
-        // Also covers the plain per-LP conc-limit round-trip (payload → persisted → computed).
-        putClsConcDefaults("""
-            {"Rated Investor": 5}
-            """);
-
+    void run_perLpDollarLimitBeatsMatrix() throws Exception {
+        // An explicit, binding $4M dollar limit wins over the matrix's 25% ($10M of the $40M total):
+        // uecM = min($20M, $4M) = $4M → ubbM = $3.6M at the 90% rate.
         mvc.perform(post("/api/bb/run/{id}", facilityId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(twoLpPayload("$4.0M", "$4.0M")))
+                .content(twoRatedPayload("$4.0M", "$4.0M")))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.result.lps[*].uecM", everyItem(closeTo(4.0, 0.001))))
             .andExpect(jsonPath("$.result.lps[*].ubbM", everyItem(closeTo(3.6, 0.001))));
     }
 
     @Test
-    void run_fallsBackToFacilityLimitWithoutClassDefault() throws Exception {
-        // Empty map → no class default; LPs without per-LP limits use the facility's
-        // $25M default, which does not bind the $20M uncalled.
-        putClsConcDefaults("{}");
+    void run_fallsBackToFacilityLimitOutsideMatrix() throws Exception {
+        // A classification the matrix does not carry, with no explicit per-LP limit, falls straight
+        // to the facility's $25M default (which does not bind the $20M uncalled) — a non-empty
+        // cls_conc_limit_defaults entry for the class is ignored.
+        putClsConcDefaults("""
+            {"Legacy Institutional": 5}
+            """);
 
         mvc.perform(post("/api/bb/run/{id}", facilityId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(twoLpPayload(null, null)))
+                .content(twoLegacyPayload()))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.result.lps[*].uecM", everyItem(closeTo(20.0, 0.001))));
     }
@@ -124,26 +125,32 @@ class ClsConcLimitDefaultIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isOk());
     }
 
-    /** Two identical Rated US LPs ($20M uncalled each) with configurable per-LP limits. TEST ONLY */
-    private static String twoLpPayload(String ubsConc1, String ubsConc2) {
-        return "{ \"lps\": [\n" + lpJson(1, ubsConc1) + ",\n" + lpJson(2, ubsConc2) + "\n] }";
+    /** Two AAA-rated US LPs ($20M uncalled each) with configurable per-LP limits. TEST ONLY */
+    private static String twoRatedPayload(String ubsConc1, String ubsConc2) {
+        return "{ \"lps\": [\n" + lpJson(1, "Rated Investor", "AAA", "Aaa", ubsConc1) + ",\n"
+            + lpJson(2, "Rated Investor", "AAA", "Aaa", ubsConc2) + "\n] }";
     }
 
-    private static String lpJson(int i, String ubsConc) {
+    /** Two LPs classified outside the criteria matrix ($20M uncalled each). TEST ONLY */
+    private static String twoLegacyPayload() {
+        return "{ \"lps\": [\n" + lpJson(1, "Legacy Institutional", "", "", null) + ",\n"
+            + lpJson(2, "Legacy Institutional", "", "", null) + "\n] }";
+    }
+
+    private static String lpJson(int i, String cls, String sp, String mdy, String ubsConc) {
         return """
             {
               "name": "Chain LP %02d",
               "parent": null, "spv": false, "hq": true,
               "type": "Institutional", "region": "North America",
-              "ig": true, "cls": "Rated Investor",
-              "sp": "AAA", "mdy": "Aaa", "fitch": "",
+              "ig": true, "cls": "%s",
+              "sp": "%s", "mdy": "%s", "fitch": "",
               "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
               "capCommit": "$20.0M", "pctCapCommit": null, "calledCap": null,
               "uc": "$20.0M", "pctUncalled": null, "pctCalled": null,
               "agentConc": null, "ubsConc": %s,
               "agentRate": "95%%", "abb": "$19.0M",
               "inc": true, "rcl": false, "notes": null
-            }""".formatted(i, ubsConc == null ? "null" : "\"" + ubsConc + "\"");
+            }""".formatted(i, cls, sp, mdy, ubsConc == null ? "null" : "\"" + ubsConc + "\"");
     }
 }
-

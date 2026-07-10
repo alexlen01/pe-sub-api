@@ -76,6 +76,12 @@ public class LpMasterService {
         lpRecord.setPctCalled(row.pctCalled());
         lpRecord.setAgentConc(row.agentConc());
         lpRecord.setUbsConc(row.ubsConc());
+        // Persist the resolved UBS advance rate alongside the conc limit so the accepted run's
+        // credit profile round-trips to LP Master (writeBackToLpMaster reads ubsRate). Guarded so an
+        // older client that omits the field does not clear a previously stored per-LP rate.
+        if (row.ubsRate() != null && !row.ubsRate().isBlank()) {
+            lpRecord.setUbsRate(row.ubsRate());
+        }
         lpRecord.setAgentRate(row.agentRate());
         lpRecord.setAbb(row.abb());
         // C2: keep the precise numeric columns in lockstep with the display strings written here.

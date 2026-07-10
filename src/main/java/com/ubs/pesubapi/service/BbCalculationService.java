@@ -12,9 +12,8 @@ import com.ubs.pesubapi.entity.LpRecord;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
 
 /**
  * Port of pe-sub-common/src/engine/calculator.ts.
@@ -24,37 +23,49 @@ import java.util.Map;
 public class BbCalculationService {
 
     private final ConfigService configService;
+    private final BbCriteriaResolver criteriaResolver;
 
-    public BbCalculationService(ConfigService configService) {
+    public BbCalculationService(ConfigService configService, BbCriteriaResolver criteriaResolver) {
         this.configService = configService;
-    }
-
-    /** Returns the BUSA advance rate for a given LP Classification. */
-    public double getRateForCls(String cls) {
-        if (cls == null || cls.isBlank()) return 0.0;
-        JsonNode cfg = configService.get("classification_config").orElse(null);
-        if (cfg == null) return 0.0;
-
-        double legacy = parsePct(cfg.path("BUSA_RATE_MAP").path(cls).asString(""));
-        if (legacy >= 0.0) return legacy;
-
-        double ubs = parsePct(cfg.path("UBS_CLS_DEFAULT_RATE").path(cls).asString(""));
-        return ubs >= 0.0 ? ubs : 0.0;
+        this.criteriaResolver = criteriaResolver;
     }
 
     // The UBS Advance Rate is an independent manual-input column on the Shadow BB: the same class
     // may appear at 0.90 / 0.75 / 0.65 / 0.00 across the population, so the stored per-LP rate
-    // takes precedence over the classification default. Mirrors the frontend advanceRateFraction
-    // (bbCalculationService.ts). "90%"/"90" → 0.90, "0.90" → 0.90; blank → classification default.
+    // takes precedence over the computed default. The workbook (bb_criteria_matrix) derives that
+    // default from (classification, rating band, funded %). No legacy flat-map fallback: a class the
+    // matrix does not carry, with no stored rate, is 0%. Mirrors the frontend advanceRateFraction.
     public double advanceRateFraction(LpRecord lpRecord) {
+        return advanceRateFraction(lpRecord, resolveCriteria(lpRecord));
+    }
+
+    /** Advance rate (fraction) with the LP's Borrowing Base Criteria already resolved, so the
+     *  {@code compute} loop resolves the matrix once per LP rather than twice. */
+    double advanceRateFraction(LpRecord lpRecord, Optional<BbCriteriaResolver.Criteria> criteria) {
         String raw = lpRecord.getUbsRate();
         if (raw != null && !raw.isBlank()) {
             try {
                 double n = Double.parseDouble(raw.replace("%", "").trim());
                 return n > 1 ? n / 100.0 : n;
-            } catch (NumberFormatException ignored) { /* fall through to class default */ }
+            } catch (NumberFormatException ignored) { /* fall through to matrix default */ }
         }
-        return getRateForCls(lpRecord.getCls());
+        return criteria.map(c -> c.advanceRatePct() / 100.0).orElse(0.0);
+    }
+
+    private Optional<BbCriteriaResolver.Criteria> resolveCriteria(LpRecord lpRecord) {
+        return criteriaResolver.resolve(lpRecord.getCls(), lpRecord.getSp(), lpRecord.getMdy(),
+            lpRecord.getFitch(), pctFunded(lpRecord));
+    }
+
+    /** LP funded fraction (called ÷ commitment): stored Called Capital when present, else the
+     *  derived Capital Commitments − Uncalled Capital. 0 when commitment is unavailable. */
+    private static double pctFunded(LpRecord lpRecord) {
+        double commitM = moneyM(lpRecord.getCapCommitNum(), lpRecord.getCapCommit());
+        if (commitM <= 0) return 0;
+        double calledM = lpRecord.getCalledCap() != null && !lpRecord.getCalledCap().isBlank()
+            ? parseMoney(lpRecord.getCalledCap())
+            : Math.max(0, commitM - moneyM(lpRecord.getUcNum(), lpRecord.getUc()));
+        return calledM / commitM;
     }
 
     private static double parsePct(String raw) {
@@ -70,9 +81,8 @@ public class BbCalculationService {
     public BbResult compute(List<LpRecord> lps, double concLimitM) {
         double totalUcM = lps.stream()
             .mapToDouble(lpRecord -> moneyM(lpRecord.getUcNum(), lpRecord.getUc())).sum();
-        Map<String, Double> clsConcDefaults = loadClsConcDefaults();
         List<ComputedLpRecord> computed = lps.stream()
-            .map(lpRecord -> computeOne(lpRecord, concLimitM, totalUcM, clsConcDefaults))
+            .map(lpRecord -> computeOne(lpRecord, concLimitM, totalUcM))
             .toList();
 
         List<ComputedLpRecord> included = computed.stream().filter(lpRecord -> lpRecord.inc()).toList();
@@ -93,13 +103,13 @@ public class BbCalculationService {
         return new BbResult(computed, summary, detectBreaches(computed, totalUBB));
     }
 
-    private ComputedLpRecord computeOne(LpRecord lpRecord, double facilityConc, double totalUcM,
-                                        Map<String, Double> clsConcDefaults) {
-        double busaRate    = advanceRateFraction(lpRecord);
+    private ComputedLpRecord computeOne(LpRecord lpRecord, double facilityConc, double totalUcM) {
+        Optional<BbCriteriaResolver.Criteria> criteria = resolveCriteria(lpRecord);
+        double busaRate    = advanceRateFraction(lpRecord, criteria);
         boolean excluded   = !lpRecord.isInc() || "Excluded".equals(lpRecord.getCls());
         double ucM         = moneyM(lpRecord.getUcNum(),  lpRecord.getUc());
         double abbM        = moneyM(lpRecord.getAbbNum(), lpRecord.getAbb());
-        double concLimitM  = perLpConc(lpRecord, facilityConc, totalUcM, clsConcDefaults);
+        double concLimitM  = perLpConc(lpRecord, facilityConc, totalUcM, criteria);
         double uecM        = excluded ? 0 : Math.min(ucM, concLimitM);
         double concExcessM = Math.max(0, ucM - uecM);
         double ubbM        = uecM * busaRate;
@@ -107,17 +117,16 @@ public class BbCalculationService {
         return ComputedLpRecord.from(lpRecord, busaRate, uecM, ubbM, abbM, deltaM, concExcessM);
     }
 
-    /** Per-LP concentration limit in $M. Fallback chain (mirrors the Run Shadow BB
-     *  screen): explicit per-LP limit stored in ubsConc as a percent of total
-     *  uncalled capital ("7.5%"), with legacy dollar strings still parsed for old
-     *  rows, then the classification default from {@code cls_conc_limit_defaults},
-     *  then the facility-level dollar limit. */
+    /** Per-LP concentration limit in $M. Chain: explicit per-LP limit stored in ubsConc as a
+     *  percent of total uncalled capital ("7.5%"), with legacy dollar strings still parsed for old
+     *  rows, then the {@code bb_criteria_matrix} default (rating-band aware for Rated Investors),
+     *  then the facility-level dollar limit. No legacy classification-default fallback. */
     private static double perLpConc(LpRecord lpRecord, double facilityConc, double totalUcM,
-                                    Map<String, Double> clsConcDefaults) {
+                                    Optional<BbCriteriaResolver.Criteria> criteria) {
         String cls = lpRecord.getCls();
         // Evaluate the Excluded bucket first: an excluded LP is a hard 0 concentration
-        // limit, ahead of any explicit per-LP override or class residual default, so a
-        // stale/misconfigured Excluded default can never leak into the borrowing base.
+        // limit, ahead of any explicit per-LP override or class default, so a
+        // stale/misconfigured default can never leak into the borrowing base.
         if (cls != null && "Excluded".equals(normalizeDashes(cls))) return 0;
         String ubsConc = lpRecord.getUbsConc();
         if (ubsConc != null && !ubsConc.isBlank()) {
@@ -129,25 +138,11 @@ public class BbCalculationService {
                 if (v > 0) return v;
             }
         }
-        Double defaultPct = cls == null ? null : clsConcDefaults.get(normalizeDashes(cls));
-        if (defaultPct != null && defaultPct > 0 && totalUcM > 0) return defaultPct / 100.0 * totalUcM;
-        return facilityConc;
-    }
-
-    /** Class-default per-LP concentration limits (percent of total uncalled capital)
-     *  from the {@code cls_conc_limit_defaults} config key, keyed by dash-normalized
-     *  classification label. Empty when the key is not seeded — the facility-level
-     *  fallback then applies, so detection of a missing config never breaks a run. */
-    private Map<String, Double> loadClsConcDefaults() {
-        Map<String, Double> out = new HashMap<>();
-        JsonNode node = configService.get("cls_conc_limit_defaults").orElse(null);
-        if (node != null && node.isObject()) {
-            for (Map.Entry<String, JsonNode> e : node.properties()) {
-                double pct = e.getValue().asDouble(-1);
-                if (pct >= 0) out.put(normalizeDashes(e.getKey()), pct);
-            }
+        // Matrix default (rating-band aware for Rated Investors), as a percent of total uncalled.
+        if (criteria.isPresent() && criteria.get().concLimitPct() > 0 && totalUcM > 0) {
+            return criteria.get().concLimitPct() / 100.0 * totalUcM;
         }
-        return out;
+        return facilityConc;
     }
 
     /** The legacy tier label "Unrated 1–2bn" circulates with both an en dash (engine,

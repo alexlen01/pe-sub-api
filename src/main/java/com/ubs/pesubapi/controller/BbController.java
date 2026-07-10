@@ -274,9 +274,10 @@ public class BbController {
         if (cls == null || cls.isBlank()) return "Excluded Investors";
         return switch (cls) {
             case "Rated Investor", "Rated" -> "Rated Investors";
-            case "FoF & Other > $10Bn AUM", "Corp Pension > $5Bn Assets", "Unrated NAV > $1Bn",
-                 "Unrated >2bn", "Unrated 1–2bn" -> "Unrated Investors";
-            case "Other Institutional", "Eligible", "Included (PWM)" -> "Eligible Investors";
+            case "FoF & Other > $10Bn AUM", "Corp Pension > $5Bn Assets", "Corp Pension > $1Bn Assets",
+                 "Unrated NAV > $1Bn", "Unrated >2bn", "Unrated 1–2bn" -> "Unrated Investors";
+            case "Other Institutional", "Eligible",
+                 "HNW Feeder (acceptable)", "HNW (acceptable)", "Included (PWM)" -> "Eligible Investors";
             case "Excluded" -> "Excluded Investors";
             default -> "Eligible Investors";
         };

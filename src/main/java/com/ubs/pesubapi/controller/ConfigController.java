@@ -35,11 +35,10 @@ public class ConfigController {
         Map<String, JsonNode> out = new LinkedHashMap<>();
         configService.get("busa_tiers").ifPresent(v        -> out.put("BUSA_TIERS", v));
         configService.get("agent_tiers").ifPresent(v       -> out.put("AGENT_TIERS", v));
-        configService.get("agent_rate_params").ifPresent(v -> out.put("AGENT_RATE_PARAMS", v));
-        configService.get("elig_rules").ifPresent(v        -> out.put("ELIG_RULES", v));
         configService.get("conc_limits").ifPresent(v       -> out.put("CONC_LIMITS", v));
         configService.get("cls_conc_limit_defaults").ifPresent(v -> out.put("CLS_CONC_LIMIT_DEFAULTS", v));
         configService.get("cls_conc_limit_bounds").ifPresent(v   -> out.put("CLS_CONC_LIMIT_BOUNDS", v));
+        configService.get("bb_criteria_matrix").ifPresent(v -> out.put("BB_CRITERIA_MATRIX", v));
         configService.get("global_settings").ifPresent(v   -> out.put("GLOBAL_SETTINGS", v));
         return out.isEmpty() ? ResponseEntity.notFound().build() : ResponseEntity.ok(out);
     }
@@ -94,11 +93,10 @@ public class ConfigController {
     private static final Map<String, String> ELIGIBILITY_LABELS = Map.of(
         "busa_tiers",        "BUSA Advance Rate Schedule",
         "agent_tiers",       "Agent Advance Rate Schedule",
-        "agent_rate_params", "Agent Rate Parameters",
-        "elig_rules",        "Eligibility Rules",
         "conc_limits",       "Concentration Limits",
         "cls_conc_limit_defaults", "Per-LP Concentration Limit Defaults",
         "cls_conc_limit_bounds",   "Per-LP Concentration Limit Bounds",
+        "bb_criteria_matrix",      "Borrowing Base Criteria Matrix",
         "global_settings",   "Global Settings"
     );
 

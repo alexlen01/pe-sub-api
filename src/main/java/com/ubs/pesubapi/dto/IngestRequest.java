@@ -32,6 +32,7 @@ public record IngestRequest(
         StringField agentClsSource,
         StringField parent,
         StringField notes,
+        StringField transferee,
         boolean requiresReview,
         List<WarningEntry> warnings
     ) {}

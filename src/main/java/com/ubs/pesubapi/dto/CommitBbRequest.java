@@ -53,6 +53,7 @@ public record CommitBbRequest(List<CommitLpRow> lps) {
         // Concentration & BB
         String  agentConc,
         String  ubsConc,           // per-LP UBS concentration limit percent, e.g. "7.5%"
+        String  ubsRate,           // per-LP UBS advance rate percent, e.g. "90%" (matrix-resolved or manual override)
         String  agentRate,
         String  abb,               // Agent Borrowing Base
         String  ubb,               // UBS Borrowing Base

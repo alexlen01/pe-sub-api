@@ -25,6 +25,7 @@ import com.ubs.pesubapi.service.AsyncTaskRunner;
 import com.ubs.pesubapi.service.AuditLogService;
 import com.ubs.pesubapi.service.ExtractionClientService;
 import com.ubs.pesubapi.service.LpIngestService;
+import com.ubs.pesubapi.service.LpMasterWriteBackService;
 import com.ubs.pesubapi.service.MatchingService;
 import com.ubs.pesubapi.service.TemplateRecognitionService;
 import com.ubs.pesubapi.util.InvestorTypeDeriver;
@@ -69,6 +70,7 @@ public class SubmissionController {
     private final AuditLogService                auditService;
     private final ExtractionClientService        extractionClient;
     private final LpIngestService                ingestService;
+    private final LpMasterWriteBackService       lpMasterWriteBack;
     private final MatchingService                matchingService;
     private final SubmissionExtractionRepository extractionRepo;
     private final MatchQueueEntryRepository      matchQueueRepo;
@@ -88,6 +90,7 @@ public class SubmissionController {
                                 AuditLogService auditService,
                                 ExtractionClientService extractionClient,
                                 LpIngestService ingestService,
+                                LpMasterWriteBackService lpMasterWriteBack,
                                 MatchingService matchingService,
                                 SubmissionExtractionRepository extractionRepo,
                                 MatchQueueEntryRepository matchQueueRepo,
@@ -103,6 +106,7 @@ public class SubmissionController {
         this.auditService       = auditService;
         this.extractionClient   = extractionClient;
         this.ingestService      = ingestService;
+        this.lpMasterWriteBack  = lpMasterWriteBack;
         this.matchingService    = matchingService;
         this.extractionRepo     = extractionRepo;
         this.matchQueueRepo     = matchQueueRepo;
@@ -781,7 +785,7 @@ public class SubmissionController {
             }
             // Write finalized UBS classification / rate / conc decisions back to LP Master
             // so future submissions for any facility benefit from this cycle's credit profile.
-            ingestService.writeBackToLpMaster(facilityId);
+            lpMasterWriteBack.writeBack(facilityId);
         }
 
         auditService.log("Shadow BB Completed", "Submission #" + id + " Shadow BB accepted",
@@ -882,6 +886,7 @@ public class SubmissionController {
             agentClsSourceField(fields.get("AGENT_LP_CLASSIFICATION")),
             toStringField(fields.get("Parent / Sponsor")),
             toStringField(fields.get("NOTES")),
+            toStringField(fields.get("Transferee")),
             rec.requiresReview(),
             rec.warnings() != null
                 ? rec.warnings().stream()
