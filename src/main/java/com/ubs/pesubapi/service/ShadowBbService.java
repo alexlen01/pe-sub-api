@@ -105,7 +105,7 @@ public class ShadowBbService {
         }
         RankedValue state = new RankedValue();
         return rankable.stream().collect(Collectors.toMap(
-            LpRecord::getId,
+            lp -> lp.getId(),
             lpRecord -> {
                 int index = position.incrementAndGet();
                 double value = BbCalculationService.moneyM(lpRecord.getUcNum(), lpRecord.getUc());

@@ -13,7 +13,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.*;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /** Builds the Reports screen payloads from persisted BB snapshots and facilities,
@@ -100,7 +99,7 @@ public class ReportService {
 
     public List<AgentBankExposureDto> agentBankExposure() {
         Map<Integer, BbSnapshot> latestByFacility = snapshotRepo.findLatestPerFacility().stream()
-            .collect(Collectors.toMap(BbSnapshot::getFacilityId, snapshot -> snapshot));
+            .collect(Collectors.toMap(s -> s.getFacilityId(), s -> s));
 
         Map<String, double[]> agg = new LinkedHashMap<>();          // [facilities, lps, ubsBB, agentBB]
         for (Facility f : facilityRepo.findAll()) {
@@ -120,7 +119,7 @@ public class ReportService {
             .map(e -> new AgentBankExposureDto(
                 e.getKey(), (int) e.getValue()[0], (int) e.getValue()[1],
                 e.getValue()[2], e.getValue()[3], e.getValue()[2] - e.getValue()[3]))
-            .sorted(Comparator.comparingDouble(AgentBankExposureDto::ubsBBM).reversed())
+            .sorted(Comparator.comparingDouble((AgentBankExposureDto dto) -> dto != null ? dto.ubsBBM() : 0).reversed())
             .toList();
     }
 

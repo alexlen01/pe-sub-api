@@ -92,7 +92,7 @@ public class TemplateRecognitionService {
         String fileKey = signals != null ? normalize(signals.fileName()) : "";
         List<String> cells = signals == null ? List.of() : signals.sheetsOrEmpty().stream()
             .flatMap(s -> s.rows() != null ? s.rows().stream() : List.<List<String>>of().stream())
-            .flatMap(List::stream)
+            .flatMap(row -> row.stream())
             .filter(Objects::nonNull)
             .map(this::normalize)
             .filter(c -> !c.isBlank())
@@ -135,7 +135,7 @@ public class TemplateRecognitionService {
 
             List<BbTemplateTab> tabs = tabRepo.findByTemplateIdAndTabRoleOrderByTabSortAsc(t.getId(), TabRole.LP_GRID);
             boolean namedTab = tabs.stream()
-                .map(BbTemplateTab::getSheetName)
+                .map(tab -> tab.getSheetName())
                 .filter(Objects::nonNull)
                 .anyMatch(sn -> sheetNames.contains(normalize(sn)));
             if (namedTab) { score += SCORE_NAMED_TAB; if (by.isEmpty()) by = "namedTab"; }
@@ -179,7 +179,7 @@ public class TemplateRecognitionService {
 
         if (tabs.size() > 1) {
             List<String> sheetNames = tabs.stream()
-                .map(BbTemplateTab::getSheetName).filter(Objects::nonNull).toList();
+                .map(tab -> tab.getSheetName()).filter(Objects::nonNull).toList();
             return new ResolvedTemplate(true, t.getTemplateSlug(), t.getTemplateName(), t.getAgentName(),
                 sheetNames.isEmpty() ? null : sheetNames.getFirst(), header, span, sheetNames,
                 false, groupMap, skip, columns, matchedBy);

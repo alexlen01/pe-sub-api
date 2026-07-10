@@ -56,7 +56,6 @@ public class BbTemplateService {
     // ── Mutations ─────────────────────────────────────────────────────────────
 
     @CacheEvict(value = "bb-templates", allEntries = true)
-    @SuppressWarnings("null")
     @Transactional
     public BbTemplateDto create(BbTemplateRequest req) {
         BbTemplate entity = applyRequest(new BbTemplate(), req);
@@ -76,7 +75,6 @@ public class BbTemplateService {
     }
 
     @CacheEvict(value = "bb-templates", allEntries = true)
-    @SuppressWarnings("null")
     @Transactional
     public BbTemplateDto upsertBySlug(BbTemplateRequest req) {
         String slug = req.templateSlug();
@@ -99,7 +97,6 @@ public class BbTemplateService {
     }
 
     @CacheEvict(value = "bb-templates", allEntries = true)
-    @SuppressWarnings("null")
     @Transactional
     public BbTemplateDto update(int id, BbTemplateRequest req) {
         BbTemplate entity = templateRepo.findById(id)
