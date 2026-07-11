@@ -698,7 +698,7 @@ public class SubmissionController {
         Optional<SubmissionExtraction> extOpt = extractionRepo.findBySubmissionId(id);
 
         boolean recognizedRegistryTemplate = extOpt
-            .map(SubmissionExtraction::getTemplateVersion)
+            .map(ext -> ext.getTemplateVersion())
             .filter(version -> version != null && !version.isBlank())
             .map(version -> !templateRepo.findAllByTemplateNameIgnoreCase(version).isEmpty()
                 || templateRepo.findByTemplateSlug(version).isPresent())
