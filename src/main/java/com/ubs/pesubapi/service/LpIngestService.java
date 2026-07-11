@@ -10,6 +10,8 @@ import com.ubs.pesubapi.repository.LpMasterRepository;
 import com.ubs.pesubapi.repository.LpRecordRepository;
 import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
 import com.ubs.pesubapi.util.AgentLpClassificationDeriver;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,8 +19,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -27,6 +29,7 @@ import java.util.stream.Collectors;
 @Service
 public class LpIngestService {
 
+    private static final Logger log = LoggerFactory.getLogger(LpIngestService.class);
     private static final double MIN_FIELD_CONFIDENCE = 0.7;
 
     private final LpRecordRepository              lpRecordRepo;
@@ -142,8 +145,13 @@ public class LpIngestService {
     public void commitMatchQueueDecisions(int submissionId, int facilityId, JsonNode extractedLps) {
         if (extractedLps == null || !extractedLps.isArray()) return;
 
-        Map<Integer, JsonNode> byRow = new HashMap<>();
-        extractedLps.forEach(node -> byRow.put(extractionOrderKey(node), node));
+        // Preserve every extracted row in natural (source-file) order. A *stable* sort on the
+        // extraction order key keeps the original array order for rows that share — or lack — a key,
+        // so no row is silently dropped. The prior HashMap keyed on this value discarded any rows
+        // that collided on it (duplicate id/rowIndex, or both missing → key -1).
+        List<JsonNode> orderedRows = new ArrayList<>();
+        extractedLps.forEach(orderedRows::add);
+        orderedRows.sort(Comparator.comparingInt(this::extractionOrderKey));
 
         Map<Integer, MatchQueueEntry> queueByRow =
             matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(submissionId).stream()
@@ -154,13 +162,18 @@ public class LpIngestService {
         lpRecordRepo.deleteByFacilityId(facilityId);
         lpRecordRepo.flush();
 
-        Map<String, LpRecord> toSave = new LinkedHashMap<>();
+        // One LpRecord per extracted line. Same-name lines (an LP across multiple fund sleeves, or
+        // two lines both accepted against one LP Master entry) are kept as DISTINCT records —
+        // collapsing them by investor name would drop a line's uncalled capital and understate the
+        // borrowing base. This is why V1_4 removed the (facility_id, investor_name) unique constraint.
+        List<LpRecord> toSave = new ArrayList<>();
+        int skippedBlank = 0;
 
         // Insert every extracted row; no row is discarded regardless of match queue status.
-        byRow.keySet().stream().sorted().forEach(rowIndex -> {
-            JsonNode row = byRow.get(rowIndex);
+        for (JsonNode row : orderedRows) {
+            int rowIndex = extractionOrderKey(row);
             String extractedName = row.path("name").asString("").trim();
-            if (extractedName.isBlank()) return;
+            if (extractedName.isBlank()) { skippedBlank++; continue; }
 
             MatchQueueEntry entry = queueByRow.get(rowIndex);
             boolean isAccepted = entry != null
@@ -186,10 +199,15 @@ public class LpIngestService {
 
             lpRecord.setSourceSeq(rowIndex);
             applyExtractedJsonRow(lpRecord, row);
-            toSave.put(name, lpRecord);
-        });
+            toSave.add(lpRecord);
+        }
 
-        lpRecordRepo.saveAll(toSave.values());
+        lpRecordRepo.saveAll(toSave);
+
+        // Reconciliation: extractedRows == persisted + skippedBlank. Any shortfall is now a real,
+        // logged fact rather than a silent name-collapse (the "52 processed, 47 persisted" bug).
+        log.info("Commit decisions submission={} facility={}: extractedRows={} persisted={} skippedBlank={}",
+            submissionId, facilityId, orderedRows.size(), toSave.size(), skippedBlank);
     }
 
     private int extractionOrderKey(JsonNode row) {

@@ -56,8 +56,8 @@ CREATE TABLE facilities (
 --                   parsing the display string only when null, so the borrowing base is computed
 --                   from exact dollars rather than a re-parsed "$12.3M". Nullable + additive.
 --
--- One LP record per (facility_id, investor_name): the same name appears at most once
--- per facility. This constraint backs the idempotent ingest/commit upsert.
+-- Multiple LP rows with the same investor_name may exist within one facility
+-- (for sleeves/vintages/SPVs). Row identity is the surrogate id.
 CREATE TABLE lp_master (
     id                       SERIAL        PRIMARY KEY,
     investor_name            VARCHAR(255)  NOT NULL UNIQUE,
@@ -134,12 +134,12 @@ CREATE TABLE lp_records (
     notes              TEXT,
     created_at         TIMESTAMP    NOT NULL DEFAULT NOW(),
     updated_at         TIMESTAMP    NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_lp_records_facility_investor UNIQUE (facility_id, investor_name),
     CONSTRAINT ck_lp_records_agent_cls_source
         CHECK (agent_cls_source IS NULL OR agent_cls_source IN ('EXTRACTED', 'DERIVED', 'USER_EDITED'))
 );
 
 CREATE INDEX idx_lp_records_lp_master ON lp_records(lp_master_id);
+    CREATE INDEX idx_lp_records_facility_investor ON lp_records (facility_id, investor_name);
 
 CREATE TABLE bb_snapshots (
     id             SERIAL PRIMARY KEY,

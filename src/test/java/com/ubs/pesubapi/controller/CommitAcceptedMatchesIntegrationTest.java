@@ -509,6 +509,43 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$[1].agentExcessConc").value("$107.3M"));
     }
 
+    @Test
+    void commit_sameInvestorNameAcrossFundSleeves_keepsBothLines() throws Exception {
+        // Two Agent BB lines for the same LP (different fund sleeves, different uncalled capital).
+        // Previously these collapsed into one lp_record via the (facility_id, investor_name) unique
+        // key, silently dropping a commitment line and understating the borrowing base — the
+        // "52 processed, 47 persisted" class of loss. Both must now persist as distinct records.
+        SubmissionExtraction ext = extractionRepo.findBySubmissionId(submissionId).orElseThrow();
+        ext.setExtractedLps(mapper.readTree("""
+            [
+              { "id": 1, "rowIndex": 7, "fundSleeve": "Fund IX", "name": "Blackstone Strategic Partners",
+                "commit": "$40.0M", "uncalled": "$18.0M" },
+              { "id": 2, "rowIndex": 8, "fundSleeve": "Fund X",  "name": "Blackstone Strategic Partners",
+                "commit": "$25.0M", "uncalled": "$11.0M" }
+            ]
+            """));
+        ext.setTotalRows(2);
+        extractionRepo.save(ext);
+
+        mvc.perform(post("/api/submissions/{id}/confirm", submissionId))
+            .andExpect(status().isOk());
+        acceptAllQueuedRows(submissionId);
+        mvc.perform(patch("/api/submissions/{id}/shadow-bb-state", submissionId)
+                .contentType("application/json")
+                .content("{}"))
+            .andExpect(status().isOk());
+
+        List<LpRecord> stored = lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
+        assertThat(stored).hasSize(2);
+        assertThat(stored).allMatch(lp -> "Blackstone Strategic Partners".equals(lp.getInvestorName()));
+        assertThat(stored.stream().map(LpRecord::getFundSleeve).toList())
+            .containsExactly("Fund IX", "Fund X");
+        assertThat(stored.stream().map(LpRecord::getUc).toList())
+            .containsExactly("$18.0M", "$11.0M");
+        assertThat(stored.stream().map(LpRecord::getSourceSeq).toList())
+            .containsExactly(1, 2);
+    }
+
     private ArrayNode extractedRows(int rowCount) {
         ArrayNode rows = mapper.createArrayNode();
         IntStream.range(0, rowCount)

@@ -4,14 +4,20 @@ import com.ubs.pesubapi.entity.MatchQueueEntry;
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
 import com.ubs.pesubapi.service.MatchingService;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/matching")
@@ -108,6 +114,46 @@ public class MatchingController {
         }).orElse(ResponseEntity.notFound().build());
     }
 
+    // ── PATCH /api/matching/queue/decisions (batch) ───────────────────────────
+    //
+    // Applies many accept/reject decisions in one request + transaction. Collapses the N per-row
+    // PATCHes the Match Queue previously fired on a bulk Accept/Reject (browsers cap ~6 concurrent,
+    // so a 52-row action ran in ~9 sequential waves) into a single round-trip, cutting the latency
+    // the Commit step then has to await. Routing: the literal "decisions" segment is matched ahead
+    // of the "{id}" path variable, so this never collides with the single-decide endpoint above.
+
+    @PatchMapping("/queue/decisions")
+    public ResponseEntity<List<MatchQueueItemDto>> decideBatch(
+            @Valid @RequestBody BatchDecisionRequest request) {
+
+        // Last decision for a given id wins if the client repeats one; preserve request order.
+        Map<Integer, BatchDecisionRequest.Decision> byId = request.decisions().stream()
+            .collect(Collectors.toMap(BatchDecisionRequest.Decision::id, d -> d,
+                (a, b) -> b, LinkedHashMap::new));
+
+        List<MatchQueueEntry> entries = matchQueueRepo.findAllById(byId.keySet());
+        entries.forEach(entry -> {
+            BatchDecisionRequest.Decision d = byId.get(entry.getId());
+            entry.setDecision(capitalise(d.decision()));
+            if (d.masterName() != null) {
+                entry.setMasterNameOverride(d.masterName().isBlank() ? null : d.masterName());
+                if (!d.masterName().isBlank()) entry.setDecision("Accepted");
+            }
+        });
+        // saveAll runs in a single transaction — the batch is applied all-or-nothing.
+        List<MatchQueueEntry> saved = matchQueueRepo.saveAll(entries);
+
+        Map<Integer, String> facilityNames = new HashMap<>();
+        saved.stream().map(MatchQueueEntry::getFacilityId).filter(Objects::nonNull).distinct()
+            .forEach(fid -> facilityRepo.findById(fid).ifPresent(f -> facilityNames.put(fid, f.getName())));
+
+        List<MatchQueueItemDto> dtos = saved.stream()
+            .map(e -> toDto(e, facilityNames.getOrDefault(e.getFacilityId(), "—")))
+            .toList();
+        log.info("Match queue batch decided requested={} applied={}", byId.size(), dtos.size());
+        return ResponseEntity.ok(dtos);
+    }
+
     // ── DTO ───────────────────────────────────────────────────────────────────
 
     record MatchQueueItemDto(
@@ -124,6 +170,16 @@ public class MatchingController {
         List<String> reasons,
         tools.jackson.databind.JsonNode matchDetails
     ) {}
+
+    record BatchDecisionRequest(
+        @NotEmpty List<@Valid Decision> decisions
+    ) {
+        record Decision(
+            @NotNull Integer id,
+            @NotNull String decision,
+            String masterName
+        ) {}
+    }
 
     private MatchQueueItemDto toDto(MatchQueueEntry e, String facilityName) {
         String displayName = e.getMasterNameOverride() != null

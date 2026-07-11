@@ -11,12 +11,10 @@ import com.ubs.pesubapi.repository.LpRecordRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -269,16 +267,16 @@ class LpRecordControllerIntegrationTest extends IntegrationTestBase {
             .contains("2 LP records updated from Shadow BB classification");
     }
 
-    // ── Dedup: one record per (facility, investor name) ─────────────────────────────
+    // ── Same-name lines: an LP may appear on multiple lines within one facility ──────
+    // Distinct fund sleeves / vintages, or two Agent BB lines both accepted against one LP Master
+    // entry. Collapsing them would drop a commitment line and understate the borrowing base, so
+    // both persist as distinct records (surrogate-PK identity). See migration V1_4.
 
     @Test
-    void duplicateInvestorNameInFacility_violatesUniqueConstraint() {
+    void duplicateInvestorNameInFacility_keepsBothLines() {
         lpRecordRepo.saveAndFlush(buildLp("Acme Pension Fund", "Rated"));
+        lpRecordRepo.saveAndFlush(buildLp("Acme Pension Fund", "Eligible"));
 
-        assertThatThrownBy(() ->
-            lpRecordRepo.saveAndFlush(buildLp("Acme Pension Fund", "Eligible")))
-            .isInstanceOf(DataIntegrityViolationException.class);
-
-        assertThat(lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)).hasSize(1);
+        assertThat(lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)).hasSize(2);
     }
 }

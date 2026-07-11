@@ -6,10 +6,12 @@ import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.entity.LpRecord;
 import com.ubs.pesubapi.entity.LpMaster;
 import com.ubs.pesubapi.entity.Submission;
+import com.ubs.pesubapi.entity.MatchQueueEntry;
 import com.ubs.pesubapi.entity.SubmissionExtraction;
 
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.LpMasterRepository;
+import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
 
 import com.ubs.pesubapi.repository.LpRecordRepository;
 
@@ -23,7 +25,9 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.util.Arrays;
+import java.util.List;
 
+import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -42,6 +46,7 @@ class MatchQueueIntegrationTest extends IntegrationTestBase {
     @Autowired SubmissionRepository           submissionRepo;
     @Autowired SubmissionExtractionRepository extractionRepo;
     @Autowired LpRecordRepository             lpRecordRepo;
+    @Autowired MatchQueueEntryRepository      matchQueueRepo;
 
     private int facilityId;
     private int submissionId;
@@ -128,5 +133,41 @@ class MatchQueueIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$[1].isNew").value(true))
             .andExpect(jsonPath("$[1].decision").value("Pending"))
             .andExpect(jsonPath("$[1].matchDetails.band").value("NO_MATCH"));
+    }
+
+    @Test
+    void batchDecide_appliesAllDecisionsInOneRequest() throws Exception {
+        // Row 0 auto-accepts on confirm; row 1 is Pending. The batch flips BOTH, proving the single
+        // request wrote each decision independently (not a no-op on the confirm-time defaults).
+        seedExtraction("Texas Teachers Ret. Sys.", "Brand New Investor XYZ");
+        mvc.perform(post("/api/submissions/{id}/confirm", submissionId))
+            .andExpect(status().isOk());
+
+        List<MatchQueueEntry> entries = matchQueueRepo.findBySubmissionIdOrderByRowIndexAsc(submissionId);
+        int id0 = entries.get(0).getId();
+        int id1 = entries.get(1).getId();
+
+        String body = """
+            { "decisions": [
+                { "id": %d, "decision": "Rejected" },
+                { "id": %d, "decision": "Accepted" }
+            ] }
+            """.formatted(id0, id1);
+
+        mvc.perform(patch("/api/matching/queue/decisions")
+                .contentType("application/json").content(body))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$", hasSize(2)));
+
+        // Both persisted in the single transaction; distinct decisions applied per id.
+        mvc.perform(get("/api/matching/queue").param("submissionId", String.valueOf(submissionId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].decision").value("Rejected"))
+            .andExpect(jsonPath("$[1].decision").value("Accepted"));
+
+        // Empty decisions list is rejected by @NotEmpty validation (400, not a silent no-op).
+        mvc.perform(patch("/api/matching/queue/decisions")
+                .contentType("application/json").content("{\"decisions\":[]}"))
+            .andExpect(status().isBadRequest());
     }
 }
