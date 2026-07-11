@@ -22,6 +22,7 @@ public record LpClassificationRequest(
     List<Row> rows
 ) {
     public record Row(
+        Integer id,
         String  name,
         String  originalName,
         // Identity & classification (manual)

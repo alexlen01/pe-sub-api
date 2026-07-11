@@ -7,6 +7,12 @@ import com.ubs.pesubapi.repository.LpRecordRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
 /**
  * Synchronises the bank-wide {@code lp_master} store from a facility's current {@code lp_records}.
  *
@@ -41,46 +47,77 @@ public class LpMasterWriteBackService {
      */
     @Transactional
     public void writeBack(int facilityId) {
-        for (LpRecord lpRecord : lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)) {
-            LpMaster master = lpMasterRepo.findByInvestorName(lpRecord.getInvestorName())
-                .orElseGet(() -> {
-                    LpMaster m = new LpMaster();
-                    m.setInvestorName(lpRecord.getInvestorName());
-                    return m;
-                });
+        List<LpRecord> facilityRecords = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId);
+        if (facilityRecords.isEmpty()) return;
 
-            // UBS credit profile — the definitive output of the accepted Shadow BB cycle
-            if (lpRecord.getCls()     != null && !lpRecord.getCls().isBlank())     master.setUbsClassification(lpRecord.getCls());
-            if (lpRecord.getUbsRate() != null && !lpRecord.getUbsRate().isBlank()) master.setUbsDefaultAdvRate(lpRecord.getUbsRate());
-            if (lpRecord.getUbsConc() != null && !lpRecord.getUbsConc().isBlank()) master.setUbsDefaultConcLimit(lpRecord.getUbsConc());
+        Map<String, LpMaster> mastersByName = lpMasterRepo.findByInvestorNameIn(
+            facilityRecords.stream()
+                .map(LpRecord::getInvestorName)
+                .filter(name -> name != null && !name.isBlank())
+                .distinct()
+                .toList())
+            .stream()
+            .filter(master -> master.getInvestorName() != null && !master.getInvestorName().isBlank())
+            .collect(java.util.stream.Collectors.toMap(LpMaster::getInvestorName, master -> master, (a, b) -> a, LinkedHashMap::new));
 
-            // Stable identity — refresh blanks with anything the facility record now carries
-            if (lpRecord.getInvestorType() != null && !lpRecord.getInvestorType().isBlank() && (master.getInvestorType() == null || master.getInvestorType().isBlank())) master.setInvestorType(lpRecord.getInvestorType());
-            if (lpRecord.getInstVsHnw()  != null && !lpRecord.getInstVsHnw().isBlank()  && (master.getInstVsHnw()  == null || master.getInstVsHnw().isBlank()))  master.setInstVsHnw(lpRecord.getInstVsHnw());
-            if (lpRecord.getRegion()  != null && !lpRecord.getRegion().isBlank()  && (master.getRegion()  == null || master.getRegion().isBlank()))  master.setRegion(lpRecord.getRegion());
-            if (lpRecord.getParent()  != null && !lpRecord.getParent().isBlank()  && (master.getParent()  == null || master.getParent().isBlank()))  master.setParent(lpRecord.getParent());
-            master.setSpv(lpRecord.isSpv());
-            master.setHighQty(lpRecord.isHighQty());
-            master.setIg(lpRecord.isIg());
+        Map<String, LpMaster> stagedMasters = new LinkedHashMap<>();
+        for (LpRecord lpRecord : facilityRecords) {
+            String investorName = lpRecord.getInvestorName();
+            if (investorName == null || investorName.isBlank()) continue;
 
-            // Ratings — overwrite with latest cycle values when non-blank
-            if (!lpRecord.getSp().isBlank())    master.setSp(lpRecord.getSp());
-            if (!lpRecord.getMdy().isBlank())   master.setMdy(lpRecord.getMdy());
-            if (!lpRecord.getFitch().isBlank()) master.setFitch(lpRecord.getFitch());
+            LpMaster master = stagedMasters.computeIfAbsent(investorName, name -> {
+                LpMaster existing = mastersByName.get(name);
+                if (existing != null) return existing;
+                LpMaster fresh = new LpMaster();
+                fresh.setInvestorName(name);
+                return fresh;
+            });
 
-            // Financial scale — overwrite with latest cycle values when non-null
-            if (lpRecord.getAum()          != null) master.setAum(lpRecord.getAum());
-            if (lpRecord.getNav()          != null) master.setNav(lpRecord.getNav());
-            if (lpRecord.getPension()      != null) master.setPension(lpRecord.getPension());
-            if (lpRecord.getPensionFunded()!= null) master.setPensionFunded(lpRecord.getPensionFunded());
+            mergeFacilityRecordIntoMaster(master, lpRecord);
+        }
 
-            LpMaster saved = lpMasterRepo.save(master);
+        List<LpMaster> savedMasters = lpMasterRepo.saveAll(new ArrayList<>(stagedMasters.values()));
+        Map<String, Integer> masterIdsByName = savedMasters.stream()
+            .filter(master -> master.getInvestorName() != null)
+            .collect(java.util.stream.Collectors.toMap(LpMaster::getInvestorName, LpMaster::getId, (a, b) -> a, LinkedHashMap::new));
 
-            // Stamp the FK so future lookups can join directly
-            if (!saved.getId().equals(lpRecord.getLpMasterId())) {
-                lpRecord.setLpMasterId(saved.getId());
-                lpRecordRepo.save(lpRecord);
+        List<LpRecord> recordsToUpdate = new ArrayList<>();
+        for (LpRecord lpRecord : facilityRecords) {
+            Integer masterId = masterIdsByName.get(lpRecord.getInvestorName());
+            if (masterId != null && !Objects.equals(masterId, lpRecord.getLpMasterId())) {
+                lpRecord.setLpMasterId(masterId);
+                recordsToUpdate.add(lpRecord);
             }
         }
+        if (!recordsToUpdate.isEmpty()) {
+            lpRecordRepo.saveAll(recordsToUpdate);
+        }
+    }
+
+    private void mergeFacilityRecordIntoMaster(LpMaster master, LpRecord lpRecord) {
+        // UBS credit profile — the definitive output of the accepted Shadow BB cycle
+        if (lpRecord.getCls()     != null && !lpRecord.getCls().isBlank())     master.setUbsClassification(lpRecord.getCls());
+        if (lpRecord.getUbsRate() != null && !lpRecord.getUbsRate().isBlank()) master.setUbsDefaultAdvRate(lpRecord.getUbsRate());
+        if (lpRecord.getUbsConc() != null && !lpRecord.getUbsConc().isBlank()) master.setUbsDefaultConcLimit(lpRecord.getUbsConc());
+
+        // Stable identity — refresh blanks with anything the facility record now carries
+        if (lpRecord.getInvestorType() != null && !lpRecord.getInvestorType().isBlank() && (master.getInvestorType() == null || master.getInvestorType().isBlank())) master.setInvestorType(lpRecord.getInvestorType());
+        if (lpRecord.getInstVsHnw()  != null && !lpRecord.getInstVsHnw().isBlank()  && (master.getInstVsHnw()  == null || master.getInstVsHnw().isBlank()))  master.setInstVsHnw(lpRecord.getInstVsHnw());
+        if (lpRecord.getRegion()  != null && !lpRecord.getRegion().isBlank()  && (master.getRegion()  == null || master.getRegion().isBlank()))  master.setRegion(lpRecord.getRegion());
+        if (lpRecord.getParent()  != null && !lpRecord.getParent().isBlank()  && (master.getParent()  == null || master.getParent().isBlank()))  master.setParent(lpRecord.getParent());
+        master.setSpv(lpRecord.isSpv());
+        master.setHighQty(lpRecord.isHighQty());
+        master.setIg(lpRecord.isIg());
+
+        // Ratings — overwrite with latest cycle values when non-blank
+        if (!lpRecord.getSp().isBlank())    master.setSp(lpRecord.getSp());
+        if (!lpRecord.getMdy().isBlank())   master.setMdy(lpRecord.getMdy());
+        if (!lpRecord.getFitch().isBlank()) master.setFitch(lpRecord.getFitch());
+
+        // Financial scale — overwrite with latest cycle values when non-null
+        if (lpRecord.getAum()          != null) master.setAum(lpRecord.getAum());
+        if (lpRecord.getNav()          != null) master.setNav(lpRecord.getNav());
+        if (lpRecord.getPension()      != null) master.setPension(lpRecord.getPension());
+        if (lpRecord.getPensionFunded()!= null) master.setPensionFunded(lpRecord.getPensionFunded());
     }
 }

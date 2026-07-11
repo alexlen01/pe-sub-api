@@ -41,16 +41,22 @@ public class LpClassificationService {
         if (req.facilityId() == null || req.rows() == null) return 0;
         LocalDate effectiveDate = parseMonth(req.effectiveDate());
 
+        Map<Integer, LpRecord> byId = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(req.facilityId()).stream()
+            .filter(lpRecord -> lpRecord.getId() != null)
+            .collect(Collectors.toMap(LpRecord::getId, lpRecord -> lpRecord, (a, b) -> a));
         Map<String, LpRecord> byName = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(req.facilityId()).stream()
             .collect(Collectors.toMap(lpRecord -> lpRecord.getInvestorName(), lpRecord -> lpRecord, (a, b) -> a));
 
         int updated = 0;
         for (LpClassificationRequest.Row row : req.rows()) {
             if (row.name() == null) continue;
-            String lookupName = row.originalName() != null && !row.originalName().isBlank()
-                ? row.originalName()
-                : row.name();
-            LpRecord lpRecord = byName.get(lookupName);
+            LpRecord lpRecord = row.id() != null ? byId.get(row.id()) : null;
+            if (lpRecord == null) {
+                String lookupName = row.originalName() != null && !row.originalName().isBlank()
+                    ? row.originalName()
+                    : row.name();
+                lpRecord = byName.get(lookupName);
+            }
             if (lpRecord == null) continue;   // only persisted LP Master records are updated
 
             if (row.name() != null && !row.name().isBlank()) lpRecord.setInvestorName(row.name());
