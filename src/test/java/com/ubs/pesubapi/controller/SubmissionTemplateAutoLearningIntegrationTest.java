@@ -29,6 +29,8 @@ class SubmissionTemplateAutoLearningIntegrationTest extends IntegrationTestBase 
 
     @Test
     void confirm_recognizedPreloadedTemplate_doesNotCreateAgentNamedTemplate() throws Exception {
+        long before = templates.count();
+
         BbTemplate recognized = new BbTemplate();
         recognized.setTemplateName("AEP VII");
         recognized.setTemplateSlug("aep-vii");
@@ -41,7 +43,7 @@ class SubmissionTemplateAutoLearningIntegrationTest extends IntegrationTestBase 
             .andExpect(jsonPath("$.templateSaved").value(false));
 
         assertThat(templates.findAllByTemplateNameIgnoreCase("Wells Fargo")).isEmpty();
-        assertThat(templates.findAll()).hasSize(1);
+        assertThat(templates.count()).isEqualTo(before + 1);
     }
 
     @Test
