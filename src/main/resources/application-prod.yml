@@ -1,0 +1,10 @@
+spring:
+  datasource:
+    url: ${PROD_DATASOURCE_URL}
+server:
+  port: ${PROD_API_PORT}
+pe-sub-extraction:
+  base-url: ${PROD_EXTRACTION_URL}
+app:
+  cors:
+    allowed-origin-patterns: ${PROD_ALLOWED_ORIGINS}

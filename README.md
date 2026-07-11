@@ -109,6 +109,9 @@ Money fields are in $millions; rate fields are decimal fractions (0.874 = 87.4%)
   `summary` (UBS/Agent BB, EAR, deltas, LP counts), `totalEligibleUncalledM`, and `classBreakdown`
   — one row per LP category (`cls`, `count`, `uncalledM`, `ubbM`, `rate`), legacy tiers first in
   canonical order.
+- `GET /api/reports/collateral/{facilityId}/pdf[?snapshotId=&watermark=]` — downloads the same
+  persisted certificate as a styled PDFBox PDF (`application/pdf`) with summary and LP-category
+  tables, selected snapshot metadata, watermark, and confidentiality footer.
 - `GET /api/reports/ear/{facilityId}` — EAR trend: one `{calculatedAt, ear, agentEar, earDelta}`
   point per snapshot, oldest first. Empty array when the facility has no snapshots yet.
 - `GET /api/reports/agent-banks` — UBS exposure aggregated by agent bank across every facility's
@@ -155,10 +158,26 @@ entry form to **warn — without blocking** — when an analyst enters a limit o
 class norm. The BB engine does not enforce it.
 
 Class defaults can also be fed from `pe-sub-jobs` (`POST /jobs/cls-conc-limits-ingest`,
-CSV `classification,limit_pct`), which merges into the config row directly in the shared
-database and then calls `POST /api/config/reload`. The reload endpoint re-reads the whole
-`config` table into the in-memory cache — required because the cache is otherwise only
-updated by this service's own writes.
+CSV `classification,limit_pct`), which posts the parsed map to
+`PATCH /api/config/cls-conc-limit-defaults` (SERVICE role). The endpoint merges fed classes
+into the map — unfed classes are preserved — and persists + refreshes the in-memory cache in
+one step, so no follow-up reload is needed. `POST /api/config/reload` remains as a recovery
+hook for out-of-band changes to the `config` table.
+
+## Seed ingest endpoints (pe-sub-jobs)
+
+pe-sub-jobs holds no database connection: all of its feeds write through SERVICE-gated bulk
+endpoints on this API (which owns the schema and audits the writes):
+
+| Endpoint | Feed | Semantics |
+|---|---|---|
+| `POST /api/facilities/ingest` | Agent Bank Summary CSV | Upsert by facility `name`; platform-owned fields (status, conc limit, facility size) never touched |
+| `POST /api/lp-master/ingest` | LP Master CSV | Upsert by `investorName`; whole profile replaced (feed is authoritative) |
+| `POST /api/lpRecords/seed` | Facility-LP seeds CSV | Facility + LP Master resolved by name server-side, LP Master profile merged, classifications normalized; existing (facility, investor) pairs skipped, never overwritten — `lp_records` intentionally has no unique constraint on that pair (multi-sleeve), so idempotency is application-level |
+| `PATCH /api/config/cls-conc-limit-defaults` | cls-conc limits CSV | jsonb-style merge into the defaults map (see above) |
+
+Each returns `{"created": n, "updated": n, "skipped": n}`; unresolvable or blank rows are
+counted as skipped rather than failing the batch.
 
 ## LP Master ordering & commit
 
@@ -199,14 +218,14 @@ by a security filter that runs in one of two modes, selected by `app.security.mo
 
 | Mode | Behaviour |
 |---|---|
-| `dev` (default) | Every request is authenticated as the configured dev identity (`app.security.dev-user`, role `ANALYST`). Keeps local standalone runs and the header-less UI working without a login flow. |
+| `dev` (default) | Every request is authenticated as the configured dev identity (`app.security.dev-user`, roles `ANALYST,SERVICE` — SERVICE included so header-less service callers like pe-sub-jobs work locally; DEV mode cannot distinguish callers). Keeps local standalone runs and the header-less UI working without a login flow. |
 | `gateway` | Identity is taken from the SSO reverse-proxy headers `X-Auth-User` / `X-Auth-Roles`. A request without a valid user header is rejected `401`. Set this in any shared/production environment. |
 
 Roles mirror `pe-sub-docs/RBAC_ROLES.md`: **ANALYST** (day-to-day operator + configurator) and
 **ATM** (Account/Transaction Manager). Authorization highlights:
 
 - Configuration surfaces (`PUT /api/config/**`, `/api/field-mapping/**` mutations, `/api/bb-templates/**`) require `ANALYST`.
-- `POST /api/lpRecords/ingest` is service-to-service only and requires the `SERVICE` role — it is never reachable by an operator.
+- Service-to-service endpoints require the `SERVICE` role and are never reachable by an operator (in gateway mode): `POST /api/lpRecords/ingest`, `POST /api/lpRecords/seed`, `POST /api/facilities/ingest`, `POST /api/lp-master/ingest`, `PATCH /api/config/cls-conc-limit-defaults`.
 - Public (no auth): `GET /api/ping`, `GET /health`, `GET /api/notifications/**`, and CORS preflight.
 
 Audit entries now record the **authenticated principal** (previously a hardcoded operator name);

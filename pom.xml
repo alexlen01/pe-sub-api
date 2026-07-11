@@ -47,6 +47,15 @@
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
     </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-thymeleaf</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.openhtmltopdf</groupId>
+      <artifactId>openhtmltopdf-pdfbox</artifactId>
+      <version>1.0.10</version>
+    </dependency>
     <!-- Boot 4.x modularized auto-configuration: Flyway migrations only run when this
          starter is present; a bare flyway-core dependency is no longer auto-configured. -->
     <dependency>

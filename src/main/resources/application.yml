@@ -1,4 +1,6 @@
 spring:
+  profiles:
+    default: local
   threads:
     virtual:
       enabled: true
@@ -8,7 +10,7 @@ spring:
       # Keep the pre-Boot-4 API contract: absent/null booleans in request bodies must not 500.
       fail-on-null-for-primitives: false
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/pesub}
+    url: ${SPRING_DATASOURCE_URL}
     username: ${SPRING_DATASOURCE_USERNAME:pesub}
     password: ${SPRING_DATASOURCE_PASSWORD:password}
     driver-class-name: org.postgresql.Driver
@@ -34,10 +36,10 @@ spring:
     locations: classpath:db/migration
 
 server:
-  port: ${PORT:3001}
+  port: ${PORT}
 
 pe-sub-extraction:
-  base-url: ${PE_SUB_EXTRACTION_URL:http://localhost:3002}
+  base-url: ${PE_SUB_EXTRACTION_URL}
 
 # Authentication. mode=dev (default) authenticates every request as the dev identity below, so
 # local runs and the header-less UI work without a login flow. In production set mode=gateway:
@@ -48,7 +50,10 @@ app:
     user-header: X-Auth-User
     roles-header: X-Auth-Roles
     dev-user: ${APP_SECURITY_DEV_USER:local.analyst@ubs.dev}
-    dev-roles: ANALYST
+    # SERVICE is included in dev so header-less service callers (pe-sub-jobs seed feeds) work
+    # locally — DEV mode gives every request the same identity and cannot distinguish callers.
+    # In gateway mode service identities come from the proxy headers and operators never hold SERVICE.
+    dev-roles: ANALYST,SERVICE
 
 logging:
   file:

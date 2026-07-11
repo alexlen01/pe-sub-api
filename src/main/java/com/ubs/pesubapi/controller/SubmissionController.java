@@ -697,7 +697,17 @@ public class SubmissionController {
 
         Optional<SubmissionExtraction> extOpt = extractionRepo.findBySubmissionId(id);
 
-        if (templateRepo.findAllByTemplateNameIgnoreCase(agentBank).isEmpty()) {
+        boolean recognizedRegistryTemplate = extOpt
+            .map(SubmissionExtraction::getTemplateVersion)
+            .filter(version -> version != null && !version.isBlank())
+            .map(version -> !templateRepo.findAllByTemplateNameIgnoreCase(version).isEmpty()
+                || templateRepo.findByTemplateSlug(version).isPresent())
+            .orElse(false);
+
+        // Auto-learn only when upload recognition did not resolve an existing registry template.
+        // The previous agent-name-only gate created a duplicate agent-named row even when the
+        // workbook had already matched a preloaded fund template such as AEP VII or Audax VII.
+        if (!recognizedRegistryTemplate && templateRepo.findAllByTemplateNameIgnoreCase(agentBank).isEmpty()) {
             if (extOpt.isPresent() && extOpt.get().getSheetName() != null) {
                 SubmissionExtraction ext = extOpt.get();
                 BbTemplate t = new BbTemplate();

@@ -1,7 +1,10 @@
 package com.ubs.pesubapi.controller;
 
+import com.ubs.pesubapi.dto.IngestSummary;
 import com.ubs.pesubapi.dto.LpMasterDto;
+import com.ubs.pesubapi.dto.LpMasterIngestRow;
 import com.ubs.pesubapi.repository.LpMasterRepository;
+import com.ubs.pesubapi.service.LpMasterIngestService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Sort;
@@ -19,9 +22,24 @@ public class LpMasterController {
     private static final Logger log = LoggerFactory.getLogger(LpMasterController.class);
 
     private final LpMasterRepository repo;
+    private final LpMasterIngestService ingestService;
 
-    public LpMasterController(LpMasterRepository repo) {
+    public LpMasterController(LpMasterRepository repo, LpMasterIngestService ingestService) {
         this.repo = repo;
+        this.ingestService = ingestService;
+    }
+
+    /**
+     * Bulk upsert from the pe-sub-jobs LP Master feed, keyed by investor name.
+     * Replaces the batch job's direct {@code INSERT ... ON CONFLICT (investor_name)} against
+     * the lp_master table — pe-sub-api owns the schema, so all writes route through here.
+     */
+    @PostMapping("/ingest")
+    public IngestSummary ingest(@RequestBody List<LpMasterIngestRow> rows) {
+        IngestSummary result = ingestService.ingest(rows);
+        log.info("LP Master ingest completed rows={} created={} updated={} skipped={}",
+            rows.size(), result.created(), result.updated(), result.skipped());
+        return result;
     }
 
     @GetMapping

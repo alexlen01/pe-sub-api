@@ -1,0 +1,10 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/pesub
+server:
+  port: 3001
+pe-sub-extraction:
+  base-url: http://localhost:3002
+app:
+  cors:
+    allowed-origin-patterns: http://localhost:*,http://127.0.0.1:*

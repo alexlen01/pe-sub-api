@@ -2,14 +2,17 @@ package com.ubs.pesubapi.controller;
 
 import com.ubs.pesubapi.dto.IngestRequest;
 import com.ubs.pesubapi.dto.IngestResult;
+import com.ubs.pesubapi.dto.IngestSummary;
 import com.ubs.pesubapi.dto.LpClassificationRequest;
 import com.ubs.pesubapi.dto.LpRecordDto;
+import com.ubs.pesubapi.dto.LpRecordSeedRow;
 import com.ubs.pesubapi.entity.LpRecord;
 import com.ubs.pesubapi.repository.LpRecordRepository;
 import com.ubs.pesubapi.security.CurrentUserService;
 import com.ubs.pesubapi.service.AuditLogService;
 import com.ubs.pesubapi.service.LpClassificationService;
 import com.ubs.pesubapi.service.LpIngestService;
+import com.ubs.pesubapi.service.LpRecordSeedService;
 import com.ubs.pesubapi.service.NotificationService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -33,18 +36,35 @@ public class LpRecordController {
     private final AuditLogService        auditService;
     private final LpIngestService        ingestService;
     private final LpClassificationService classificationService;
+    private final LpRecordSeedService    seedService;
     private final CurrentUserService     currentUser;
 
     public LpRecordController(LpRecordRepository repo, NotificationService notifier,
                         AuditLogService auditService, LpIngestService ingestService,
                         LpClassificationService classificationService,
+                        LpRecordSeedService seedService,
                         CurrentUserService currentUser) {
         this.repo                  = repo;
         this.notifier              = notifier;
         this.auditService          = auditService;
         this.ingestService         = ingestService;
         this.classificationService = classificationService;
+        this.seedService           = seedService;
         this.currentUser           = currentUser;
+    }
+
+    /**
+     * Seeds facility LP records from the pe-sub-jobs feed (facility + LP Master resolved by
+     * name server-side, LP Master profile merged). Existing (facility, investor) pairs are
+     * skipped, never overwritten — lp_records intentionally has no unique constraint on that
+     * pair (multi-sleeve), so idempotency lives here rather than in an ON CONFLICT clause.
+     */
+    @PostMapping("/seed")
+    public IngestSummary seed(@RequestBody List<LpRecordSeedRow> rows) {
+        IngestSummary result = seedService.seed(rows);
+        log.info("LP record seed completed rows={} created={} skipped={}",
+            rows.size(), result.created(), result.skipped());
+        return result;
     }
 
     @PostMapping("/ingest")

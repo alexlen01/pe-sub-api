@@ -9,6 +9,7 @@ import org.springframework.web.client.RestClient;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.Objects;
 
 @Configuration
 public class ExtractionClientConfig {
@@ -18,12 +19,12 @@ public class ExtractionClientConfig {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration READ_TIMEOUT    = Duration.ofSeconds(120);
 
-    @Value("${pe-sub-extraction.base-url:http://localhost:3002}")
+    @Value("${pe-sub-extraction.base-url}")
     private String extractionBaseUrl;
 
     @Bean
     public RestClient peSubExtractionClient() {
-        String url = extractionBaseUrl != null ? extractionBaseUrl : "http://localhost:3002";
+        String url = Objects.requireNonNull(extractionBaseUrl, "pe-sub-extraction.base-url must be set");
         // Pooled java.net.http.HttpClient: connection reuse and streaming request bodies,
         // unlike SimpleClientHttpRequestFactory (HttpURLConnection) which buffers multipart
         // forwards fully in memory and re-handshakes every call.

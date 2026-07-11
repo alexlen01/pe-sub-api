@@ -43,8 +43,14 @@ public class SecurityConfig {
                 // Public: liveness/health and the SSE stream (EventSource cannot send headers).
                 .requestMatchers("/api/ping", "/health", "/api/notifications/**").permitAll()
                 .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
-                // Service-to-service ingest — never a user-facing endpoint.
+                // Service-to-service ingest — never user-facing endpoints. The /ingest + /seed
+                // feeds are pe-sub-jobs' startup loads; the cls-conc PATCH is its config feed
+                // (operators edit the same map via PUT /api/config/eligibility instead).
                 .requestMatchers(HttpMethod.POST, "/api/lpRecords/ingest").hasRole("SERVICE")
+                .requestMatchers(HttpMethod.POST, "/api/lpRecords/seed").hasRole("SERVICE")
+                .requestMatchers(HttpMethod.POST, "/api/facilities/ingest").hasRole("SERVICE")
+                .requestMatchers(HttpMethod.POST, "/api/lp-master/ingest").hasRole("SERVICE")
+                .requestMatchers(HttpMethod.PATCH, "/api/config/cls-conc-limit-defaults").hasRole("SERVICE")
                 // Configuration surfaces are ANALYST-only (RBAC matrix: ATM does not configure).
                 .requestMatchers(HttpMethod.PUT,    "/api/config/**").hasRole("ANALYST")
                 .requestMatchers(HttpMethod.POST,   "/api/field-mapping/**").hasRole("ANALYST")

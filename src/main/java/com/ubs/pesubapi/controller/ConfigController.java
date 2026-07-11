@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -100,14 +101,36 @@ public class ConfigController {
         "global_settings",   "Global Settings"
     );
 
-    /** Re-reads the config table into the in-memory cache. Called by pe-sub-jobs after a
-     *  config feed (e.g. cls-conc-limits-ingest) writes the shared DB directly — without
-     *  this, feed values would only surface on the next application restart. */
+    /** Re-reads the config table into the in-memory cache — recovery hook for any
+     *  out-of-band change to the config table. */
     @PostMapping("/reload")
     public ResponseEntity<Void> reload() {
         configService.load();
         log.info("Config cache reloaded from database");
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Merges per-classification default concentration limits (percent of total uncalled
+     * capital) into the {@code cls_conc_limit_defaults} map. Fed classes overwrite their
+     * entries; unmentioned classes are preserved. Replaces the pe-sub-jobs batch job's direct
+     * {@code jsonb ||} upsert against the config table — and because the merge goes through
+     * ConfigService, the in-memory cache is current immediately, with no follow-up reload.
+     */
+    @PatchMapping("/cls-conc-limit-defaults")
+    public ResponseEntity<JsonNode> mergeClsConcLimitDefaults(
+            @RequestBody Map<String, BigDecimal> limits,
+            HttpServletRequest req) {
+        if (limits == null || limits.isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        JsonNode merged = configService.mergeIntoMap("cls_conc_limit_defaults", limits);
+        log.info("Cls conc limit defaults merged classes={}", limits.keySet());
+        auditService.log("Config Change",
+            "Per-LP Concentration Limit Defaults updated (" + limits.size() + " class"
+                + (limits.size() != 1 ? "es" : "") + " fed)",
+            null, currentUser.displayName(), auditService.extractIp(req));
+        return ResponseEntity.ok(merged);
     }
 
     @PutMapping("/eligibility")

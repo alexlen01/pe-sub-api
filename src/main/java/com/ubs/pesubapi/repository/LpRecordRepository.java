@@ -22,6 +22,9 @@ public interface LpRecordRepository extends JpaRepository<LpRecord, Integer> {
 
     long countByFacilityId(Integer facilityId);
 
+    /** Seed-ingest guard: (facility, investor) pairs already present are left untouched. */
+    boolean existsByFacilityIdAndInvestorName(Integer facilityId, String investorName);
+
     /** LP record counts per facility — [facilityId, count] rows — for the facility list. */
     @Query("SELECT l.facilityId, COUNT(l) FROM LpRecord l GROUP BY l.facilityId")
     List<Object[]> countGroupedByFacilityId();

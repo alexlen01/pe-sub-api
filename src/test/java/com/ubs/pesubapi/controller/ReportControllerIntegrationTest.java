@@ -73,6 +73,18 @@ class ReportControllerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void collateralPdf_returnsStyledPdfDownload() throws Exception {
+        runBb(facilityId);
+        byte[] body = mvc.perform(get("/api/reports/collateral/{id}/pdf", facilityId).param("watermark", "FINAL"))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+            .andExpect(header().string("Content-Disposition", containsString("bb-certificate-apex-growth-fund-iv.pdf")))
+            .andReturn().getResponse().getContentAsByteArray();
+        assertThat(body).startsWith("%PDF-".getBytes());
+        assertThat(body.length).isGreaterThan(1_000);
+    }
+
+    @Test
     void collateral_returns404WhenNoSnapshotExists() throws Exception {
         mvc.perform(get("/api/reports/collateral/{id}", facilityId))
             .andExpect(status().isNotFound());

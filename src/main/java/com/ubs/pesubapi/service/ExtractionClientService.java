@@ -7,6 +7,7 @@ import com.ubs.pesubapi.dto.ResolvedTemplate;
 import com.ubs.pesubapi.dto.WorkbookSignals;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -48,6 +49,7 @@ public class ExtractionClientService {
             body.add("file", new FileSystemResource(Objects.requireNonNull(filePath)));
             return extractionClient.post()
                 .uri("/api/inspect")
+                .headers(this::addLogContextHeaders)
                 .contentType(Objects.requireNonNull(MediaType.MULTIPART_FORM_DATA))
                 .body(body)
                 .retrieve()
@@ -69,6 +71,7 @@ public class ExtractionClientService {
             body.add("file", file.getResource());
             return extractionClient.post()
                 .uri("/api/inspect?rows={rows}", rows)
+                .headers(this::addLogContextHeaders)
                 .contentType(Objects.requireNonNull(MediaType.MULTIPART_FORM_DATA))
                 .body(body)
                 .retrieve()
@@ -119,6 +122,7 @@ public class ExtractionClientService {
 
             return extractionClient.post()
                 .uri("/api/extract?forward=false")
+                .headers(headers -> { addLogContextHeaders(headers); headers.set("X-Facility-Id", facilityId); })
                 .contentType(Objects.requireNonNull(MediaType.MULTIPART_FORM_DATA))
                 .body(body)
                 .retrieve()
@@ -127,6 +131,20 @@ public class ExtractionClientService {
             log.warn("pe-sub-extraction /extract unreachable for facility {}: {}", facilityId, e.getMessage());
             return null;
         }
+    }
+
+    private void addLogContextHeaders(org.springframework.http.HttpHeaders headers) {
+        copyMdc(headers, "correlation_id", "X-Correlation-Id");
+        copyMdc(headers, "session_id", "X-Session-Id");
+        copyMdc(headers, "user_id", "X-User-Id");
+        copyMdc(headers, "user_role", "X-User-Role");
+        copyMdc(headers, "tenant_id", "X-Tenant-Id");
+        copyMdc(headers, "fund_id", "X-Fund-Id");
+    }
+
+    private void copyMdc(org.springframework.http.HttpHeaders headers, String key, String header) {
+        String value = MDC.get(key);
+        if (value != null && !value.isBlank()) headers.set(header, value);
     }
 
     private String classificationJson(Map<String, String> groupMap) {

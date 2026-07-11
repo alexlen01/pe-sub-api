@@ -1,5 +1,8 @@
 package com.ubs.pesubapi.service;
 
+import com.ubs.pesubapi.dto.FacilityIngestRow;
+import com.ubs.pesubapi.dto.IngestSummary;
+import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.entity.Submission;
 import com.ubs.pesubapi.exception.ResourceNotFoundException;
 import com.ubs.pesubapi.repository.AuditLogRepository;
@@ -13,6 +16,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.util.List;
 
 @Service
 public class FacilityService {
@@ -39,6 +44,46 @@ public class FacilityService {
         this.matchQueueRepo = matchQueueRepo;
         this.snapshotRepo   = snapshotRepo;
         this.auditLogRepo   = auditLogRepo;
+    }
+
+    /**
+     * Bulk upsert from the pe-sub-jobs facility feed, keyed by facility name.
+     * New facilities are created with the platform defaults (status 'Not Started', 25M conc limit);
+     * existing ones have their agent-reported fields overwritten in place — including with nulls,
+     * matching the feed's replace semantics — while platform-owned fields (status, concLimitM,
+     * facilitySize, lastRunAt) are never touched. Rows without a name or agent bank are skipped.
+     */
+    @Transactional
+    public IngestSummary ingest(List<FacilityIngestRow> rows) {
+        int created = 0, updated = 0, skipped = 0;
+        for (FacilityIngestRow row : rows) {
+            if (row == null
+                    || row.name() == null || row.name().isBlank()
+                    || row.agentBank() == null || row.agentBank().isBlank()) {
+                skipped++;
+                continue;
+            }
+            String name = row.name().trim();
+            // orElseGet keeps the variable provably non-null for static analysis; a new
+            // (unsaved) entity is recognised by its not-yet-generated id.
+            Facility facility = facilityRepo.findByName(name).orElseGet(() -> {
+                Facility fresh = new Facility();
+                fresh.setName(name);
+                return fresh;
+            });
+            boolean isNew = facility.getId() == null;
+            facility.setAgentBank(row.agentBank().trim());
+            facility.setAccountNumber(row.accountNumber());
+            facility.setLoanAmount(row.loanAmount());
+            facility.setMaturityDate(row.maturityDate());
+            facility.setBankStatus(row.bankStatus());
+            facility.setBankStatusDate(row.bankStatusDate());
+            facility.setUbsParticipation(row.ubsParticipation());
+            facility.setCollateralDate(row.collateralDate());
+            facilityRepo.save(facility);
+            if (isNew) created++; else updated++;
+        }
+        return new IngestSummary(created, updated, skipped);
     }
 
     /**

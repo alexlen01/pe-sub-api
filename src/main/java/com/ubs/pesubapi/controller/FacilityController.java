@@ -2,6 +2,8 @@ package com.ubs.pesubapi.controller;
 
 import com.ubs.pesubapi.dto.BbSummary;
 import com.ubs.pesubapi.dto.FacilityDto;
+import com.ubs.pesubapi.dto.FacilityIngestRow;
+import com.ubs.pesubapi.dto.IngestSummary;
 import com.ubs.pesubapi.entity.BbSnapshot;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.repository.BbSnapshotRepository;
@@ -88,6 +90,19 @@ public class FacilityController {
             .map(f -> FacilityDto.from(f, (int) lpRecordRepo.countByFacilityId(id), summary))
             .map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Bulk upsert from the pe-sub-jobs facility feed (Agent Bank Summary CSV), keyed by name.
+     * Replaces the batch job's direct {@code INSERT ... ON CONFLICT (name)} against the
+     * facilities table — pe-sub-api owns the schema, so all writes route through here.
+     */
+    @PostMapping("/ingest")
+    public IngestSummary ingest(@RequestBody List<FacilityIngestRow> rows) {
+        IngestSummary result = facilityService.ingest(rows);
+        log.info("Facility ingest completed rows={} created={} updated={} skipped={}",
+            rows.size(), result.created(), result.updated(), result.skipped());
+        return result;
     }
 
     @PostMapping

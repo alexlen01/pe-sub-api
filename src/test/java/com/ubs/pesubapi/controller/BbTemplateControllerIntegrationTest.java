@@ -42,55 +42,55 @@ class BbTemplateControllerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void importTemplate_petershillWorkbookCreatesTemplateAndVersionsDuplicateSlug() throws Exception {
-        MockMultipartFile file = templateWorkbook("BB-Template-Import-petershill-iv.xlsx");
+    void importTemplate_groupedWorkbookCreatesTemplateAndVersionsDuplicateSlug() throws Exception {
+        MockMultipartFile file = templateWorkbook("BB-Template-Import-grouped.xlsx");
 
         mvc.perform(multipart("/api/bb-templates/import").file(file))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.templateSlug").value("petershill-iv"))
-            .andExpect(jsonPath("$.templateName").value("petershill-iv"))
-            .andExpect(jsonPath("$.agentName").value("Petershill IV"))
+            .andExpect(jsonPath("$.templateSlug").value("grouped-sample"))
+            .andExpect(jsonPath("$.templateName").value("grouped-sample"))
+            .andExpect(jsonPath("$.agentName").value("Northbank Agent"))
             .andExpect(jsonPath("$.tabs[0].headerRowIndex").value(10))
             .andExpect(jsonPath("$.tabs[0].groups.length()").value(5))
-            .andExpect(jsonPath("$.tabs[0].groups[1].headerText").value("Inlcuded Investors (Non-Rated)"));
+            .andExpect(jsonPath("$.tabs[0].groups[1].headerText").value("Included Investors (Non-Rated)"));
 
-        MockMultipartFile duplicate = templateWorkbook("BB-Template-Import-petershill-iv.xlsx");
+        MockMultipartFile duplicate = templateWorkbook("BB-Template-Import-grouped.xlsx");
 
         mvc.perform(multipart("/api/bb-templates/import").file(duplicate))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.templateSlug").value("petershill-iv-1"))
-            .andExpect(jsonPath("$.templateName").value("petershill-iv-1"));
+            .andExpect(jsonPath("$.templateSlug").value("grouped-sample-1"))
+            .andExpect(jsonPath("$.templateName").value("grouped-sample-1"));
     }
 
     @Test
     void importTemplate_upsertModeReplacesExistingSlugWithoutVersioning() throws Exception {
         String created = mvc.perform(multipart("/api/bb-templates/import")
-                .file(templateWorkbook("BB-Template-Import-kkr-ascendant.xlsx"))
+                .file(templateWorkbook("BB-Template-Import-upsert.xlsx"))
                 .param("mode", "upsert"))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.templateSlug").value("kkr-ascendant"))
+            .andExpect(jsonPath("$.templateSlug").value("upsert-sample"))
             .andReturn().getResponse().getContentAsString();
 
         int templateId = JsonPath.read(created, "$.id");
 
         mvc.perform(multipart("/api/bb-templates/import")
-                .file(templateWorkbook("BB-Template-Import-kkr-ascendant.xlsx"))
+                .file(templateWorkbook("BB-Template-Import-upsert.xlsx"))
                 .param("mode", "upsert"))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.id").value(templateId))
-            .andExpect(jsonPath("$.templateSlug").value("kkr-ascendant"))
-            .andExpect(jsonPath("$.templateName").value("kkr-ascendant"));
+            .andExpect(jsonPath("$.templateSlug").value("upsert-sample"))
+            .andExpect(jsonPath("$.templateName").value("upsert-sample"));
 
-        assertThat(templateRepo.findByTemplateSlug("kkr-ascendant")).isPresent();
-        assertThat(templateRepo.findByTemplateSlug("kkr-ascendant-1")).isEmpty();
+        assertThat(templateRepo.findByTemplateSlug("upsert-sample")).isPresent();
+        assertThat(templateRepo.findByTemplateSlug("upsert-sample-1")).isEmpty();
     }
 
     @Test
     void importTemplate_multiTabSamplesPreserveSleeveTabSemantics() throws Exception {
         mvc.perform(multipart("/api/bb-templates/import")
-                .file(templateWorkbook("BB-Template-Import-audax-vii.xlsx")))
+                .file(templateWorkbook("BB-Template-Import-autodiscover-single.xlsx")))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.templateSlug").value("audax-vii"))
+            .andExpect(jsonPath("$.templateSlug").value("autodiscover-single"))
             .andExpect(jsonPath("$.autoDiscoverTabs").value(true))
             .andExpect(jsonPath("$.tabs.length()").value(1))
             .andExpect(jsonPath("$.tabs[0].sheetName").isEmpty())
@@ -98,17 +98,17 @@ class BbTemplateControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.tabs[0].groups.length()").value(0));
 
         mvc.perform(multipart("/api/bb-templates/import")
-                .file(templateWorkbook("BB-Template-Import-ccp-vii-lev.xlsx")))
+                .file(templateWorkbook("BB-Template-Import-autodiscover-nogroups.xlsx")))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.templateSlug").value("ccp-vii-lev"))
+            .andExpect(jsonPath("$.templateSlug").value("autodiscover-nogroups"))
             .andExpect(jsonPath("$.autoDiscoverTabs").value(true))
             .andExpect(jsonPath("$.hasGroupingRows").value(false))
             .andExpect(jsonPath("$.tabs[0].groups.length()").value(0));
 
         mvc.perform(multipart("/api/bb-templates/import")
-                .file(templateWorkbook("BB-Template-Import-cp-vii.xlsx")))
+                .file(templateWorkbook("BB-Template-Import-two-tab.xlsx")))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.templateSlug").value("cp-vii"))
+            .andExpect(jsonPath("$.templateSlug").value("two-tab-sample"))
             .andExpect(jsonPath("$.autoDiscoverTabs").value(false))
             .andExpect(jsonPath("$.tabs.length()").value(2))
             .andExpect(jsonPath("$.tabs[0].sheetName").value("BB - Onshore"))
@@ -117,9 +117,9 @@ class BbTemplateControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.tabs[0].headerRowSpan").value(2));
 
         mvc.perform(multipart("/api/bb-templates/import")
-                .file(templateWorkbook("BB-Template-Import-aep-vii.xlsx")))
+                .file(templateWorkbook("BB-Template-Import-single-group.xlsx")))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.templateSlug").value("aep-vii"))
+            .andExpect(jsonPath("$.templateSlug").value("single-group-sample"))
             .andExpect(jsonPath("$.headerRowIndex").value(9))
             .andExpect(jsonPath("$.tabs[0].headerRowIndex").value(9))
             .andExpect(jsonPath("$.tabs[0].groups.length()").value(4));
