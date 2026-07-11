@@ -538,11 +538,11 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         List<LpRecord> stored = lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
         assertThat(stored).hasSize(2);
         assertThat(stored).allMatch(lp -> "Blackstone Strategic Partners".equals(lp.getInvestorName()));
-        assertThat(stored.stream().map(LpRecord::getFundSleeve).toList())
+        assertThat(stored.stream().map(r -> r.getFundSleeve()).toList())
             .containsExactly("Fund IX", "Fund X");
-        assertThat(stored.stream().map(LpRecord::getUc).toList())
+        assertThat(stored.stream().map(r -> r.getUc()).toList())
             .containsExactly("$18.0M", "$11.0M");
-        assertThat(stored.stream().map(LpRecord::getSourceSeq).toList())
+        assertThat(stored.stream().map(r -> r.getSourceSeq()).toList())
             .containsExactly(1, 2);
     }
 

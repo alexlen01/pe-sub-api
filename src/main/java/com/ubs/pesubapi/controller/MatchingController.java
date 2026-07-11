@@ -128,7 +128,7 @@ public class MatchingController {
 
         // Last decision for a given id wins if the client repeats one; preserve request order.
         Map<Integer, BatchDecisionRequest.Decision> byId = request.decisions().stream()
-            .collect(Collectors.toMap(BatchDecisionRequest.Decision::id, d -> d,
+            .collect(Collectors.toMap(d -> Objects.requireNonNull(d).id(), d -> d,
                 (a, b) -> b, LinkedHashMap::new));
 
         List<MatchQueueEntry> entries = matchQueueRepo.findAllById(byId.keySet());
@@ -144,8 +144,13 @@ public class MatchingController {
         List<MatchQueueEntry> saved = matchQueueRepo.saveAll(entries);
 
         Map<Integer, String> facilityNames = new HashMap<>();
-        saved.stream().map(MatchQueueEntry::getFacilityId).filter(Objects::nonNull).distinct()
-            .forEach(fid -> facilityRepo.findById(fid).ifPresent(f -> facilityNames.put(fid, f.getName())));
+        saved.stream().map(entry -> entry.getFacilityId())
+            .filter(Objects::nonNull).distinct()
+            .forEach(fid -> {
+                Integer nonNullFacilityId = Objects.requireNonNull(fid);
+                facilityRepo.findById(nonNullFacilityId)
+                    .ifPresent(f -> facilityNames.put(nonNullFacilityId, f.getName()));
+            });
 
         List<MatchQueueItemDto> dtos = saved.stream()
             .map(e -> toDto(e, facilityNames.getOrDefault(e.getFacilityId(), "—")))
