@@ -26,8 +26,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Round-trip coverage for the precise numeric money columns (C2: uncalled_capital_num,
  * cap_commit_num, aum_num, agent_bb_num on lp_records). The columns are internal to the BB
  * engine — never exposed on a DTO — so the round trip is asserted at both boundaries: the write
- * paths (service ingest, Shadow BB commit) must persist exact dollars alongside the rounded
- * display strings, and the engine must compute from the exact value, not the "$12.3M" re-parse.
+ * paths (service ingest, Shadow BB commit) must persist exact dollars alongside full-precision
+ * display strings (dollar amounts are never rounded or abbreviated: "$12,345,678.9", not
+ * "$12.3M"), and the engine must compute from the exact numeric value.
  */
 class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
 
@@ -55,11 +56,11 @@ class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
         return lpRecordRepo.save(lpRecord);
     }
 
-    // ── Extraction ingest: exact decimals persist; display strings stay rounded ─────
+    // ── Extraction ingest: exact decimals persist; display strings keep every digit ─────
 
     @Test
     @WithMockUser(username = "extraction-svc", roles = {"SERVICE"})
-    void ingest_dualWritesExactNumericAndRoundedDisplay() throws Exception {
+    void ingest_dualWritesExactNumericAndFullPrecisionDisplay() throws Exception {
         seedLp("Acme Pension Fund", "Rated Investor");
 
         String body = """
@@ -85,21 +86,22 @@ class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.updated").value(1));
 
-        // Numeric columns carry the exact extracted dollars; strings are the rounded display form.
+        // Numeric columns carry the exact extracted dollars; display strings keep every
+        // digit — never rounded or abbreviated ($12,345,678.9 is not $12.3M).
         LpRecord lpRecord = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).getFirst();
         assertThat(lpRecord.getUcNum()).isEqualByComparingTo(new BigDecimal("12345678.90"));
         assertThat(lpRecord.getCapCommitNum()).isEqualByComparingTo(new BigDecimal("20000000.55"));
         assertThat(lpRecord.getAumNum()).isEqualByComparingTo(new BigDecimal("4250000000"));
-        assertThat(lpRecord.getUc()).isEqualTo("$12.3M");
-        assertThat(lpRecord.getCapCommit()).isEqualTo("$20.0M");
-        assertThat(lpRecord.getAum()).isEqualTo("$4.3B");
+        assertThat(lpRecord.getUc()).isEqualTo("$12,345,678.9");
+        assertThat(lpRecord.getCapCommit()).isEqualTo("$20,000,000.55");
+        assertThat(lpRecord.getAum()).isEqualTo("$4,250,000,000");
 
         // GET still serves the display strings the UI renders.
         mvc.perform(get("/api/lpRecords").param("facilityId", String.valueOf(facilityId)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$[0].uc").value("$12.3M"))
-            .andExpect(jsonPath("$[0].capCommit").value("$20.0M"))
-            .andExpect(jsonPath("$[0].aum").value("$4.3B"));
+            .andExpect(jsonPath("$[0].uc").value("$12,345,678.9"))
+            .andExpect(jsonPath("$[0].capCommit").value("$20,000,000.55"))
+            .andExpect(jsonPath("$[0].aum").value("$4,250,000,000"));
     }
 
     // ── Shadow BB commit: numeric re-derived from the submitted strings, stale cleared ──

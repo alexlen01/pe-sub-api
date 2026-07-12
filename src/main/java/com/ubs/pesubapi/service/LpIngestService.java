@@ -16,7 +16,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -199,6 +200,11 @@ public class LpIngestService {
 
             lpRecord.setSourceSeq(rowIndex);
             applyExtractedJsonRow(lpRecord, row);
+            // DEBUG carries the full extracted row so a per-record persistence failure
+            // (e.g. "value too long for character varying(N)") is attributable to a specific
+            // LP in lower environments; INFO+ (higher environments) logs nothing per record.
+            log.debug("Committing LP record: facility={} rowIndex={} name='{}' accepted={} extractedRow={}",
+                facilityId, rowIndex, name, isAccepted, row);
             toSave.add(lpRecord);
         }
 
@@ -511,20 +517,23 @@ public class LpIngestService {
             ? f.value() : null;
     }
 
+    // Full-precision dollar display: thousands grouping, every digit kept, no unit
+    // abbreviation — "$1,999,999" must never render (or persist) as "$2.0M".
     private String formatMoney(BigDecimal v) {
-        BigDecimal abs = v.abs();
-        if (abs.compareTo(new BigDecimal("1000000000")) >= 0)
-            return String.format("$%.1fB", v.divide(new BigDecimal("1000000000"), 1, RoundingMode.HALF_UP));
-        if (abs.compareTo(new BigDecimal("1000000")) >= 0)
-            return String.format("$%.1fM", v.divide(new BigDecimal("1000000"), 1, RoundingMode.HALF_UP));
-        return String.format("$%.0f", v);
+        DecimalFormat money = new DecimalFormat("#,##0.##", DecimalFormatSymbols.getInstance(Locale.US));
+        money.setMaximumFractionDigits(20);
+        return "$" + money.format(v);
     }
 
+    // Percent display: minimum 1 decimal ("75" → "75.0%"), all extracted digits kept —
+    // "11.7907197854%" is never rounded to "11.8%".
     private String formatRate(BigDecimal v) {
         BigDecimal pct = v.compareTo(BigDecimal.ONE) < 0
             ? v.multiply(BigDecimal.valueOf(100))
             : v;
-        return String.format("%.1f%%", pct);
+        BigDecimal exact = pct.stripTrailingZeros();
+        if (exact.scale() < 1) exact = exact.setScale(1);
+        return exact.toPlainString() + "%";
     }
 
     private List<String> reviewReasons(IngestRequest.ExtractedLpRow row,

@@ -209,6 +209,11 @@ public class TemplateProfiler {
             .replaceAll("[^a-z0-9]+", "-")
             .replaceFirst("^(agent-bb|bb-template-import|bb-template)-", "")
             .replaceAll("(^-+|-+$)", "");
+        // bb_templates.template_slug is VARCHAR(50); long real-world filenames must not
+        // overflow it. Trim at a word boundary rather than mid-token.
+        if (slug.length() > 50) {
+            slug = slug.substring(0, 50).replaceAll("-+[^-]*$", "");
+        }
         return slug;
     }
 

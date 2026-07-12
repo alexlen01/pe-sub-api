@@ -3,6 +3,8 @@ package com.ubs.pesubapi.service;
 import com.ubs.pesubapi.dto.CommitBbRequest.CommitLpRow;
 import com.ubs.pesubapi.entity.LpRecord;
 import com.ubs.pesubapi.repository.LpRecordRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,6 +17,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class LpMasterService {
+
+    private static final Logger log = LoggerFactory.getLogger(LpMasterService.class);
 
     private final LpRecordRepository lpRecordRepo;
 
@@ -39,11 +43,18 @@ public class LpMasterService {
         int seq = 0;
         for (CommitLpRow row : rows) {
             String name = row.name() != null ? row.name() : "";
+            // DEBUG carries the full record payload so a per-record persistence failure
+            // (e.g. "value too long for character varying(N)") is attributable to a specific
+            // LP in lower environments; INFO+ (higher environments) logs nothing per record.
+            log.debug("Upserting LP record: facilityId={} seq={} name='{}' row={}",
+                facilityId, seq, name, row);
             LpRecord lpRecord = byName.computeIfAbsent(name, n -> new LpRecord());
             apply(lpRecord, facilityId, row);
             lpRecord.setSourceSeq(seq++);   // preserve the submitted (source-file) order
             toSave.put(name, lpRecord);
         }
+        log.debug("Upsert complete: facilityId={} submittedRows={} distinctRecords={}",
+            facilityId, rows.size(), toSave.size());
         return lpRecordRepo.saveAll(new ArrayList<>(toSave.values()));
     }
 

@@ -189,7 +189,49 @@ class BbRunIntegrationTest extends IntegrationTestBase {
             .forEach(lpRecord -> ranks.put(lpRecord.getInvestorName(), lpRecord.getRank()));
         assertThat(ranks.get("CalPERS")).isEqualTo(1);
         assertThat(ranks.get("Stanford Endowment")).isEqualTo(2);
-        assertThat(ranks.get("Tiny Fund LLC")).isNull();
+        // Excluded LPs are ranked too: Rank reflects size position in the full population.
+        assertThat(ranks.get("Tiny Fund LLC")).isEqualTo(3);
+    }
+
+    @Test
+    void run_persistsLongExtractedTextValuesVerbatim() throws Exception {
+        // Real Agent BB workbooks carry investor names, type labels and full-precision
+        // percent strings well past the original VARCHAR(50)/VARCHAR(20) widths; they must
+        // round-trip unrounded and untruncated (V1_4 widening).
+        String longName = "AXA Fund Platform Private Equity S.C.A., SICAV-RAIF - Vintage 2025 Feeder";
+        String longType = "Public Pension Fund - Governmental Plan (ERISA-exempt, non-US regulated)";
+        String body = """
+            {
+              "lps": [{
+                "name": "%s",
+                "parent": null, "spv": false, "hq": true,
+                "type": "%s", "investor_type": "%s", "region": "North America",
+                "ig": true, "cls": "Rated Investor",
+                "sp": "AAA", "mdy": "Aaa", "fitch": "",
+                "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
+                "capCommit": "$12,102,000,000", "pctCapCommit": "0.000448047260586146%%",
+                "calledCap": "$7,013,456,789",
+                "uc": "$12,372,297,594", "pctUncalled": "0.000467723939985676%%",
+                "pctCalled": "-0.0340027768476706%%",
+                "agentConc": "7.5%%", "ubsConc": "$25.0M",
+                "agentRate": "95.0%%", "abb": "$10,728,067,501",
+                "inc": true, "rcl": false, "notes": null
+              }]
+            }
+            """.formatted(longName, longType, longType);
+
+        mvc.perform(post("/api/bb/run/{id}", facilityId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+            .andExpect(status().isCreated());
+
+        var lp = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).getFirst();
+        assertThat(lp.getInvestorName()).isEqualTo(longName);
+        assertThat(lp.getInvestorType()).isEqualTo(longType);
+        assertThat(lp.getInstVsHnw()).isEqualTo(longType);   // JSON "type" aliases inst_vs_hnw
+        assertThat(lp.getCapCommit()).isEqualTo("$12,102,000,000");
+        assertThat(lp.getPctCapCommit()).isEqualTo("0.000448047260586146%");
+        assertThat(lp.getPctCalled()).isEqualTo("-0.0340027768476706%");
     }
 
     @Test

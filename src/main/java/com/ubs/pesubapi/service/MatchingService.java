@@ -4,6 +4,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import com.ubs.pesubapi.entity.MatchQueueEntry;
 import com.ubs.pesubapi.repository.LpMasterRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -12,6 +14,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class MatchingService {
+
+    private static final Logger log = LoggerFactory.getLogger(MatchingService.class);
 
     private final LpMasterRepository lpMasterRepo;
     private final ConfigService      configService;
@@ -266,6 +270,11 @@ public class MatchingService {
                 entry.setDecision(decision);
                 entry.setReasons(queueReasons(band, matchScore, cfg));
                 if (analysis != null) entry.setMatchDetails(mapper.valueToTree(analysis));
+                // DEBUG identifies each queue entry so a persistence failure on save is
+                // attributable to a specific extracted row in lower environments.
+                log.debug("Match queue entry built: submission={} rowIndex={} extractedName='{}' "
+                        + "matchedName='{}' score={} band={} decision={}",
+                    submissionId, row.rowIndex(), row.agentName(), matchedName, matchScore, band, decision);
                 return entry;
             })
             .toList());

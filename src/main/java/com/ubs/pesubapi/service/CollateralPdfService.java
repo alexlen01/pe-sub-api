@@ -77,6 +77,15 @@ public class CollateralPdfService {
             return String.format(Locale.US, "%s$%,.0f", value >= 0 ? "+" : "-", dollars);
         }
 
+        public String signedAmount(String value) {
+            return signedMillions(BbCalculationService.parseMoney(value));
+        }
+
+        public String signedPercent(double value) {
+            if (value == 0) return "0.0%";
+            return String.format(Locale.US, "%+.1f%%", value * 100);
+        }
+
         public boolean isNegativeAmount(String value) {
             return BbCalculationService.parseMoney(value) < 0;
         }

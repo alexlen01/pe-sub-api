@@ -82,26 +82,20 @@ public class ShadowBbService {
         return new RunResult(saved, facility.getName(), lps.size());
     }
 
+    // Ranks are computed here only — the UI never derives them — and every LP record is ranked
+    // by uncalled capital, Excluded / not-included LPs too, so the Rank column reflects the LP's
+    // size position within the full facility population.
     private void refreshRanks(List<LpRecord> lps) {
-        List<LpRecord> rankable = lps.stream()
-            .filter(ShadowBbService::isRankable)
+        List<LpRecord> ordered = lps.stream()
             .sorted(Comparator
                 .comparingDouble((LpRecord lpRecord) -> BbCalculationService.moneyM(lpRecord.getUcNum(), lpRecord.getUc())).reversed()
                 .thenComparing(lpRecord -> lpRecord.getInvestorName() == null ? "" : lpRecord.getInvestorName()))
             .toList();
 
-        Map<Integer, Integer> ranksById = competitionRanks(rankable);
+        Map<Integer, Integer> ranksById = competitionRanks(ordered);
         for (LpRecord lpRecord : lps) {
             lpRecord.setRank(lpRecord.getId() == null ? null : ranksById.get(lpRecord.getId()));
         }
-    }
-
-    private static boolean isRankable(LpRecord lpRecord) {
-        String cls = lpRecord.getCls();
-        String agentCls = lpRecord.getAgentCls() == null ? "" : lpRecord.getAgentCls().trim();
-        return lpRecord.isInc()
-            && !"Excluded".equals(cls)
-            && !agentCls.toLowerCase().startsWith("ineligible investor");
     }
 
     private static Map<Integer, Integer> competitionRanks(List<LpRecord> rankable) {

@@ -42,6 +42,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -347,10 +349,12 @@ public class SubmissionController {
                 BigDecimal rateNorm    = rateDec != null
                     ? (rateDec.compareTo(BigDecimal.ONE) < 0
                         ? rateDec
-                        : rateDec.divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP))
+                        : rateDec.divide(BigDecimal.valueOf(100), 20, RoundingMode.HALF_UP))
                     : null;
+                // Keep the full product — clipping the computed BB proxy to whole dollars
+                // discards cents the agent's own column reports (e.g. "77334798.45").
                 BigDecimal bbRaw = (uncalledDec != null && rateNorm != null)
-                    ? uncalledDec.multiply(rateNorm).setScale(0, RoundingMode.HALF_UP)
+                    ? uncalledDec.multiply(rateNorm)
                     : BigDecimal.ZERO;
                 bbRaws.add(bbRaw);
 
@@ -372,13 +376,16 @@ public class SubmissionController {
             for (int i = 0; i < rows.size(); i++) {
                 ObjectNode row = rows.get(i);
                 BigDecimal bb  = bbRaws.get(i);
-                row.put("agentBBFmt", bb.compareTo(BigDecimal.ZERO) > 0
-                    ? "$" + String.format("%,.0f", bb) : "");
+                row.put("agentBBFmt", bb.compareTo(BigDecimal.ZERO) > 0 ? fmtMoney(bb) : "");
                 String pct = "";
                 if (totalBB.compareTo(BigDecimal.ZERO) > 0 && bb.compareTo(BigDecimal.ZERO) > 0) {
-                    pct = bb.multiply(BigDecimal.valueOf(100))
-                             .divide(totalBB, 2, RoundingMode.HALF_UP)
-                             .toPlainString() + "%";
+                    // Already a percent value (may legitimately be < 1%) — format directly
+                    // rather than via fmtRate, whose <1 branch would re-multiply by 100.
+                    BigDecimal share = bb.multiply(BigDecimal.valueOf(100))
+                        .divide(totalBB, 20, RoundingMode.HALF_UP)
+                        .stripTrailingZeros();
+                    if (share.scale() < 1) share = share.setScale(1);
+                    pct = share.toPlainString() + "%";
                 }
                 row.put("pctBBFmt", pct);
                 lpArray.add(row);
@@ -1012,22 +1019,24 @@ public class SubmissionController {
         return raw.isBlank() ? "" : raw;
     }
 
+    // Full-precision dollar display: thousands grouping, every digit kept, no unit
+    // abbreviation — "$1,999,999" must never render (or persist) as "$2.0M".
     private String fmtMoney(BigDecimal v) {
-        if (v == null) return "";
-        BigDecimal abs = v.abs();
-        if (abs.compareTo(new BigDecimal("1000000000")) >= 0)
-            return String.format("$%.1fB", v.divide(new BigDecimal("1000000000"), 1, RoundingMode.HALF_UP));
-        if (abs.compareTo(new BigDecimal("1000000")) >= 0)
-            return String.format("$%.1fM", v.divide(new BigDecimal("1000000"), 1, RoundingMode.HALF_UP));
-        if (abs.compareTo(BigDecimal.ZERO) == 0) return "";
-        return String.format("$%,.0f", v);
+        if (v == null || v.compareTo(BigDecimal.ZERO) == 0) return "";
+        DecimalFormat money = new DecimalFormat("#,##0.##", DecimalFormatSymbols.getInstance(Locale.US));
+        money.setMaximumFractionDigits(20);
+        return "$" + money.format(v);
     }
 
+    // Percent display: minimum 1 decimal ("75" → "75.0%"), all extracted digits kept —
+    // "11.7907197854%" is never rounded to "11.8%".
     private String fmtRate(BigDecimal v) {
         if (v == null) return "";
         BigDecimal pct = v.compareTo(BigDecimal.ONE) < 0
             ? v.multiply(BigDecimal.valueOf(100)) : v;
-        return String.format("%.1f%%", pct);
+        BigDecimal exact = pct.stripTrailingZeros();
+        if (exact.scale() < 1) exact = exact.setScale(1);
+        return exact.toPlainString() + "%";
     }
 
     private String confidenceNote(double confidence) {

@@ -178,11 +178,18 @@ public class TemplateRecognitionService {
         }
 
         if (tabs.size() > 1) {
+            // Distinct: a template that lists the same sheet under several tab rows (e.g. sleeves
+            // declared for a workbook that has a single physical tab) must not extract it twice.
             List<String> sheetNames = tabs.stream()
-                .map(tab -> tab.getSheetName()).filter(Objects::nonNull).toList();
-            return new ResolvedTemplate(true, t.getTemplateSlug(), t.getTemplateName(), t.getAgentName(),
-                sheetNames.isEmpty() ? null : sheetNames.getFirst(), header, span, sheetNames,
-                false, groupMap, skip, columns, matchedBy);
+                .map(tab -> tab.getSheetName()).filter(Objects::nonNull).distinct().toList();
+            if (sheetNames.size() > 1) {
+                return new ResolvedTemplate(true, t.getTemplateSlug(), t.getTemplateName(), t.getAgentName(),
+                    sheetNames.getFirst(), header, span, sheetNames,
+                    false, groupMap, skip, columns, matchedBy);
+            }
+            log.warn("Recognition: template '{}' declares {} LP_GRID tabs but only {} distinct sheet name(s); "
+                    + "resolving as single-tab to avoid duplicate LP extraction",
+                t.getTemplateSlug(), tabs.size(), sheetNames.size());
         }
         if (t.isAutoDiscoverTabs()) {
             return new ResolvedTemplate(true, t.getTemplateSlug(), t.getTemplateName(), t.getAgentName(),
