@@ -267,7 +267,9 @@ class BbRunIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.busaBreakdown[0].count").isNumber())
             // Agent breakdown (Table 4)
             .andExpect(jsonPath("$.agentBreakdown", not(empty())))
-            .andExpect(jsonPath("$.agentBreakdown[0].rate").isString())
+            .andExpect(jsonPath("$.agentBreakdown[0].rate").value("90%"))
+            .andExpect(jsonPath("$.agentBreakdown[*].rate", not(hasItem("95%"))))
+            .andExpect(jsonPath("$.agentBreakdown[*].rate", not(hasItem("60%"))))
             // LP Category breakdown (Table 5)
             .andExpect(jsonPath("$.clsBreakdown", not(empty())))
             .andExpect(jsonPath("$.clsBreakdown[0].label").isString());

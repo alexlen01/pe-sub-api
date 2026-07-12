@@ -178,10 +178,10 @@ public class BbController {
 
         // ── Table 4: Agent breakdown — group by agent rate ────────────────────────
         Map<String, double[]> agentMap = new LinkedHashMap<>();
-        for (String key : List.of("90%", "75%", "60%", "50%", "0%"))
+        for (String key : List.of("90%", "75%", "65%", "50%", "0%"))
             agentMap.put(key, new double[]{0, 0});   // [count, dollars]
         for (var lpRecord : lps) {
-            String rateKey = formatRatePct(lpRecord.getAgentRate());
+            String rateKey = normalizeAgentSummaryRate(lpRecord.getAgentRate());
             agentMap.computeIfAbsent(rateKey, k -> new double[]{0, 0});
             agentMap.get(rateKey)[0]++;
             agentMap.get(rateKey)[1] += ucM(lpRecord);
@@ -291,6 +291,15 @@ public class BbController {
 
     private static String formatRatePct(String rate) {
         return String.format("%.0f%%", parseRatePct(rate));
+    }
+
+    private static String normalizeAgentSummaryRate(String rate) {
+        double value = parseRatePct(rate);
+        if (value == 90 || value == 95) return "90%";
+        if (value >= 70 && value <= 80) return "75%";
+        if (value == 60 || value == 65) return "65%";
+        if (value >= 20 && value <= 55) return "50%";
+        return "0%";
     }
 
     private Map<String, Object> emptySummaryExt() {
