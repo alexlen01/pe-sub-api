@@ -205,9 +205,9 @@ stored extraction JSON (`canonicalFields`) for the review screens.
 
 **Display precision.** Dollar display strings are full precision with thousands grouping,
 never rounded or unit-abbreviated (`$12,345,678.9`, not `$12.3M`); exact values also persist
-in the `*_num NUMERIC(20,2)` columns the BB engine reads first. Percent strings carry a
-minimum of one decimal (`75.0%`) and keep every extracted digit (`11.7907197854%` is never
-rounded to `11.8%`). `V1_4__widen_extracted_text_columns.sql` widens the workbook-derived
+in the `*_num NUMERIC(20,2)` columns the BB engine reads first. Percent/rate strings carry
+**exactly one decimal** (`75.0%`, `5.6%`) — never a bare integer percent and never more than
+one decimal. `V1_4__widen_extracted_text_columns.sql` widens the workbook-derived
 `lp_records`/`lp_master`/`submission_extractions` string columns accordingly (free text 255,
 money display 64, percents/ratings 50).
 

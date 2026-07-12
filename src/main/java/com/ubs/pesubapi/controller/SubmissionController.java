@@ -381,11 +381,10 @@ public class SubmissionController {
                 if (totalBB.compareTo(BigDecimal.ZERO) > 0 && bb.compareTo(BigDecimal.ZERO) > 0) {
                     // Already a percent value (may legitimately be < 1%) — format directly
                     // rather than via fmtRate, whose <1 branch would re-multiply by 100.
-                    BigDecimal share = bb.multiply(BigDecimal.valueOf(100))
-                        .divide(totalBB, 20, RoundingMode.HALF_UP)
-                        .stripTrailingZeros();
-                    if (share.scale() < 1) share = share.setScale(1);
-                    pct = share.toPlainString() + "%";
+                    // Rate convention: exactly one decimal.
+                    pct = bb.multiply(BigDecimal.valueOf(100))
+                        .divide(totalBB, 1, RoundingMode.HALF_UP)
+                        .toPlainString() + "%";
                 }
                 row.put("pctBBFmt", pct);
                 lpArray.add(row);
@@ -1028,15 +1027,13 @@ public class SubmissionController {
         return "$" + money.format(v);
     }
 
-    // Percent display: minimum 1 decimal ("75" → "75.0%"), all extracted digits kept —
-    // "11.7907197854%" is never rounded to "11.8%".
+    // Rate display convention: exactly one decimal ("75.0%", "5.6%") — never a bare
+    // integer percent and never more than one decimal.
     private String fmtRate(BigDecimal v) {
         if (v == null) return "";
         BigDecimal pct = v.compareTo(BigDecimal.ONE) < 0
             ? v.multiply(BigDecimal.valueOf(100)) : v;
-        BigDecimal exact = pct.stripTrailingZeros();
-        if (exact.scale() < 1) exact = exact.setScale(1);
-        return exact.toPlainString() + "%";
+        return pct.setScale(1, RoundingMode.HALF_UP).toPlainString() + "%";
     }
 
     private String confidenceNote(double confidence) {

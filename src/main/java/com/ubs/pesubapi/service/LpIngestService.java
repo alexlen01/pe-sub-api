@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.time.LocalDateTime;
@@ -525,15 +526,13 @@ public class LpIngestService {
         return "$" + money.format(v);
     }
 
-    // Percent display: minimum 1 decimal ("75" → "75.0%"), all extracted digits kept —
-    // "11.7907197854%" is never rounded to "11.8%".
+    // Rate display convention: exactly one decimal ("75.0%", "5.6%") — never a bare
+    // integer percent and never more than one decimal.
     private String formatRate(BigDecimal v) {
         BigDecimal pct = v.compareTo(BigDecimal.ONE) < 0
             ? v.multiply(BigDecimal.valueOf(100))
             : v;
-        BigDecimal exact = pct.stripTrailingZeros();
-        if (exact.scale() < 1) exact = exact.setScale(1);
-        return exact.toPlainString() + "%";
+        return pct.setScale(1, RoundingMode.HALF_UP).toPlainString() + "%";
     }
 
     private List<String> reviewReasons(IngestRequest.ExtractedLpRow row,

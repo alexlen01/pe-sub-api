@@ -1,11 +1,12 @@
 -- Real Agent BB workbooks carry values that exceed the original column widths, failing
 -- Match Queue submission / Shadow BB commit with "value too long for character varying(N)".
--- Extracted values must be stored verbatim — never truncated or rounded — so widen every
--- column that receives workbook-derived data, sized by content type:
+-- Extracted values must be stored verbatim — never truncated, dollar amounts never
+-- rounded — so widen every column that receives workbook-derived data, sized by type:
 --   * free-text labels (types, classifications, ranges, regions)       -> VARCHAR(255)
 --   * formatted dollar display strings ("$12,102,000,000")             -> VARCHAR(64)
 --     (calculations read the exact *_num NUMERIC(20,2) columns first; the string is display-only)
---   * full-precision percent/rate strings ("0.000448047260586146%")    -> VARCHAR(50)
+--   * percent/rate strings (convention: exactly 1 decimal, "5.6%";
+--     width is defensive headroom for legacy/pass-through values)      -> VARCHAR(50)
 --   * agency ratings incl. outlook qualifiers                          -> VARCHAR(50)
 -- Enum-like app-controlled columns (status, decision, tab_role, agent_cls_source,
 -- template_class) keep their widths.

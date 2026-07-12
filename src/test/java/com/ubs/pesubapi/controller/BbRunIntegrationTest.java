@@ -195,9 +195,10 @@ class BbRunIntegrationTest extends IntegrationTestBase {
 
     @Test
     void run_persistsLongExtractedTextValuesVerbatim() throws Exception {
-        // Real Agent BB workbooks carry investor names, type labels and full-precision
-        // percent strings well past the original VARCHAR(50)/VARCHAR(20) widths; they must
-        // round-trip unrounded and untruncated (V1_4 widening).
+        // Real Agent BB workbooks carry investor names, type labels and full dollar
+        // amounts well past the original VARCHAR(50)/VARCHAR(30) widths; they must
+        // round-trip untruncated and dollars unrounded (V1_4 widening). Rates follow
+        // the platform convention of exactly one decimal ("71.1%").
         String longName = "AXA Fund Platform Private Equity S.C.A., SICAV-RAIF - Vintage 2025 Feeder";
         String longType = "Public Pension Fund - Governmental Plan (ERISA-exempt, non-US regulated)";
         String body = """
@@ -209,10 +210,10 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                 "ig": true, "cls": "Rated Investor",
                 "sp": "AAA", "mdy": "Aaa", "fitch": "",
                 "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
-                "capCommit": "$12,102,000,000", "pctCapCommit": "0.000448047260586146%%",
+                "capCommit": "$12,102,000,000", "pctCapCommit": "48.8%%",
                 "calledCap": "$7,013,456,789",
-                "uc": "$12,372,297,594", "pctUncalled": "0.000467723939985676%%",
-                "pctCalled": "-0.0340027768476706%%",
+                "uc": "$12,372,297,594", "pctUncalled": "49.9%%",
+                "pctCalled": "71.1%%",
                 "agentConc": "7.5%%", "ubsConc": "$25.0M",
                 "agentRate": "95.0%%", "abb": "$10,728,067,501",
                 "inc": true, "rcl": false, "notes": null
@@ -230,8 +231,8 @@ class BbRunIntegrationTest extends IntegrationTestBase {
         assertThat(lp.getInvestorType()).isEqualTo(longType);
         assertThat(lp.getInstVsHnw()).isEqualTo(longType);   // JSON "type" aliases inst_vs_hnw
         assertThat(lp.getCapCommit()).isEqualTo("$12,102,000,000");
-        assertThat(lp.getPctCapCommit()).isEqualTo("0.000448047260586146%");
-        assertThat(lp.getPctCalled()).isEqualTo("-0.0340027768476706%");
+        assertThat(lp.getPctCapCommit()).isEqualTo("48.8%");
+        assertThat(lp.getPctCalled()).isEqualTo("71.1%");
     }
 
     @Test
