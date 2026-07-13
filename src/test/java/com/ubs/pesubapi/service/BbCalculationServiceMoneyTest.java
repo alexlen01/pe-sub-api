@@ -40,4 +40,20 @@ class BbCalculationServiceMoneyTest {
         assertThat(BbCalculationService.parseMoney("$25.0M")).isEqualTo(25.0, within(1e-9));
         assertThat(BbCalculationService.parseMoney("$1.4B")).isEqualTo(1400.0, within(1e-9));
     }
+
+    @Test
+    void parseMoney_recognizesAccountingAndTrailingMinus_notation() {
+        assertThat(BbCalculationService.parseMoney("($1,250,000)"))
+            .isEqualTo(-1.25, within(1e-9));
+        assertThat(BbCalculationService.parseMoney("$1,250,000-"))
+            .isEqualTo(-1.25, within(1e-9));
+    }
+
+    @Test
+    void moneyM_keepsPositiveOnlyCalculationInputsUnsigned() {
+        assertThat(BbCalculationService.moneyM(new BigDecimal("-1250000"), null))
+            .isEqualTo(1.25, within(1e-9));
+        assertThat(BbCalculationService.moneyM(null, "($1,250,000)"))
+            .isEqualTo(1.25, within(1e-9));
+    }
 }

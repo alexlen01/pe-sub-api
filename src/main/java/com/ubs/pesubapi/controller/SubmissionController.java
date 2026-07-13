@@ -1185,7 +1185,12 @@ public class SubmissionController {
     private BigDecimal parseNumericSafe(String raw) {
         if (raw == null || raw.isBlank()) return null;
         try {
-            String cleaned = raw.trim().replaceAll("[,$%]", "").replaceAll("\\s+", "");
+            String cleaned = raw.trim();
+            boolean accountingNegative = cleaned.startsWith("(") && cleaned.endsWith(")");
+            if (accountingNegative) cleaned = cleaned.substring(1, cleaned.length() - 1);
+            boolean trailingMinus = cleaned.endsWith("-");
+            if (trailingMinus) cleaned = cleaned.substring(0, cleaned.length() - 1);
+            cleaned = cleaned.replaceAll("[,$%]", "").replaceAll("\\s+", "");
             if (cleaned.isEmpty()) return null;
             char suffix = Character.toUpperCase(cleaned.charAt(cleaned.length() - 1));
             BigDecimal multiplier = switch (suffix) {
@@ -1196,9 +1201,11 @@ public class SubmissionController {
             };
             if (multiplier != null) {
                 String numeric = cleaned.substring(0, cleaned.length() - 1);
-                return new BigDecimal(numeric).multiply(multiplier);
+                BigDecimal value = new BigDecimal(numeric).multiply(multiplier);
+                return accountingNegative || trailingMinus ? value.negate() : value;
             }
-            return new BigDecimal(cleaned);
+            BigDecimal value = new BigDecimal(cleaned);
+            return accountingNegative || trailingMinus ? value.negate() : value;
         } catch (NumberFormatException e) {
             return null;
         }

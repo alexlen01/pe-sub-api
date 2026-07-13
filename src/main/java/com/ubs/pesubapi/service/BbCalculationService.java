@@ -249,8 +249,8 @@ public class BbCalculationService {
      * for rows written after the numeric migration while staying correct for pre-migration rows.
      */
     public static double moneyM(BigDecimal numericDollars, String display) {
-        if (numericDollars != null) return numericDollars.doubleValue() / 1_000_000.0;
-        return parseMoney(display);
+        if (numericDollars != null) return numericDollars.abs().doubleValue() / 1_000_000.0;
+        return Math.abs(parseMoney(display));
     }
 
     /**
@@ -261,6 +261,7 @@ public class BbCalculationService {
      * diverge by six orders of magnitude on sub-$1M amounts.
      */
     public static double parseMoney(String s) {
+        s = normalizeSignedMoneyNotation(s);
         if (s == null || s.isBlank() || "N/A".equals(s) || "—".equals(s)) return 0;
         String clean = s.replaceAll("[$,]", "").replace("–", "-");
         double mult = 1;
@@ -278,5 +279,16 @@ public class BbCalculationService {
             return value;
         }
         catch (NumberFormatException e) { return 0; }
+    }
+
+    private static String normalizeSignedMoneyNotation(String raw) {
+        if (raw == null) return null;
+        String value = raw.trim();
+        boolean accountingNegative = value.startsWith("(") && value.endsWith(")");
+        if (accountingNegative) value = value.substring(1, value.length() - 1).trim();
+        boolean trailingMinus = value.endsWith("-");
+        if (trailingMinus) value = value.substring(0, value.length() - 1).trim();
+        value = value.replaceAll("\\s+", "");
+        return accountingNegative || trailingMinus ? "-" + value.replaceFirst("^-", "") : value;
     }
 }
