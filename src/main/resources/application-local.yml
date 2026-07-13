@@ -6,5 +6,10 @@ server:
 pe-sub-extraction:
   base-url: http://localhost:3002
 app:
+  security:
+    dev-user: ${LOCAL_SECURITY_DEV_USER:js25029}
+    dev-first-name: ${LOCAL_SECURITY_DEV_FIRST_NAME:John}
+    dev-last-name: ${LOCAL_SECURITY_DEV_LAST_NAME:Smith}
+    dev-email: ${LOCAL_SECURITY_DEV_EMAIL:john.smith@ubs.com}
   cors:
     allowed-origin-patterns: http://localhost:*,http://127.0.0.1:*

@@ -87,7 +87,8 @@ public class ConfigController {
         JsonNode saved = configService.put("matching_config", body).getValue();
         String label = SECTION_LABELS.getOrDefault(section, "Matching config");
         log.info("Matching config updated section='{}' label='{}'", section, label);
-        auditService.log("Match Config Change", label + " updated", null, currentUser.displayName(), auditService.extractIp(req));
+        auditService.log("Match Config Change", label + " updated", null, currentUser.uuName(),
+            currentUser.auditDisplayName(), auditService.extractIp(req));
         return ResponseEntity.ok(saved);
     }
 
@@ -129,7 +130,7 @@ public class ConfigController {
         auditService.log("Config Change",
             "Per-LP Concentration Limit Defaults updated (" + limits.size() + " class"
                 + (limits.size() != 1 ? "es" : "") + " fed)",
-            null, currentUser.displayName(), auditService.extractIp(req));
+            null, currentUser.uuName(), currentUser.auditDisplayName(), auditService.extractIp(req));
         return ResponseEntity.ok(merged);
     }
 
@@ -141,7 +142,8 @@ public class ConfigController {
         configService.put(section, body);
         String label = ELIGIBILITY_LABELS.getOrDefault(section, section);
         log.info("Eligibility config updated section='{}' label='{}'", section, label);
-        auditService.log("Config Change", label + " updated", null, currentUser.displayName(), auditService.extractIp(req));
+        auditService.log("Config Change", label + " updated", null, currentUser.uuName(),
+            currentUser.auditDisplayName(), auditService.extractIp(req));
         return ResponseEntity.ok(body);
     }
 

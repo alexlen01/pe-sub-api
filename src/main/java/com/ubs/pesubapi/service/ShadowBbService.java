@@ -9,6 +9,7 @@ import com.ubs.pesubapi.exception.ResourceNotFoundException;
 import com.ubs.pesubapi.repository.BbSnapshotRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.LpRecordRepository;
+import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,16 +38,19 @@ public class ShadowBbService {
     private final BbCalculationService calculator;
     private final LpMasterService      lpMasterService;
     private final LpMasterWriteBackService lpMasterWriteBack;
+    private final MatchQueueEntryRepository matchQueueRepo;
 
     public ShadowBbService(FacilityRepository facilityRepo, LpRecordRepository lpRecordRepo,
                            BbSnapshotRepository snapshotRepo, BbCalculationService calculator,
-                           LpMasterService lpMasterService, LpMasterWriteBackService lpMasterWriteBack) {
+                           LpMasterService lpMasterService, LpMasterWriteBackService lpMasterWriteBack,
+                           MatchQueueEntryRepository matchQueueRepo) {
         this.facilityRepo    = facilityRepo;
         this.lpRecordRepo          = lpRecordRepo;
         this.snapshotRepo    = snapshotRepo;
         this.calculator      = calculator;
         this.lpMasterService = lpMasterService;
         this.lpMasterWriteBack = lpMasterWriteBack;
+        this.matchQueueRepo  = matchQueueRepo;
     }
 
     /** The outcome of a run, carrying everything the controller needs for audit + notification. */
@@ -80,6 +84,32 @@ public class ShadowBbService {
         lpMasterWriteBack.writeBack(facilityId);
 
         return new RunResult(saved, facility.getName(), lps.size());
+    }
+
+    /** Outcome of a facility LP record deletion, for audit/notification messaging. */
+    public record LpRecordDeletion(int facilityId, String investorName) {}
+
+    /**
+     * Hard-deletes a single facility LP record — the manual correction path for a row that
+     * slipped through extraction review. Match-queue entries pointing at the record are detached
+     * (decision history kept), lp_rates rows cascade in the schema, and the facility's ranks are
+     * recomputed over the remaining population in the same transaction so the persisted Rank
+     * column never carries the deleted LP. The current BB snapshot is untouched — totals refresh
+     * on the next Run / Re-run Shadow BB.
+     */
+    @Transactional
+    public LpRecordDeletion deleteLpRecord(int lpRecordId) {
+        LpRecord record = lpRecordRepo.findById(lpRecordId)
+            .orElseThrow(() -> new ResourceNotFoundException("LP record " + lpRecordId + " not found"));
+        int facilityId = record.getFacilityId();
+        matchQueueRepo.clearMatchedLpRef(lpRecordId);
+        lpRecordRepo.delete(record);
+        lpRecordRepo.flush();   // the rank pass below must see the post-delete population
+
+        List<LpRecord> remaining = lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
+        refreshRanks(remaining);
+        lpRecordRepo.saveAll(remaining);
+        return new LpRecordDeletion(facilityId, record.getInvestorName());
     }
 
     // Ranks are computed here only — the UI never derives them — and every LP record is ranked

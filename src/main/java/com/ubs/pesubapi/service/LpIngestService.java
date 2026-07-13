@@ -189,7 +189,9 @@ public class LpIngestService {
             lpRecord.setInvestorName(name);
             lpRecord.setInvestorType("");
             lpRecord.setInstVsHnw("Institutional");
-            lpRecord.setRegion("US");
+            // Missing source geography must remain missing. Do not synthesize a US domicile;
+            // an accepted LP Master match or an extracted Region / Location may populate it.
+            lpRecord.setRegion("");
             lpRecord.setCls("Eligible");
 
             // For accepted LP Master matches: pre-populate empty fields from LP Master
@@ -386,7 +388,7 @@ public class LpIngestService {
             lpRecord.setInstVsHnw(master.getInstVsHnw());
         }
         if (master.getRegion() != null && !master.getRegion().isBlank()
-                && "US".equals(lpRecord.getRegion())) {
+                && (lpRecord.getRegion() == null || lpRecord.getRegion().isBlank())) {
             lpRecord.setRegion(master.getRegion());
         }
         lpRecord.setSpv(master.isSpv());

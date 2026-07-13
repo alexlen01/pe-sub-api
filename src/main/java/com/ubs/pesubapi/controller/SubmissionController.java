@@ -7,7 +7,6 @@ import com.ubs.pesubapi.dto.ExtractionResponse;
 import com.ubs.pesubapi.dto.IngestRequest;
 import com.ubs.pesubapi.dto.ResolvedTemplate;
 import com.ubs.pesubapi.dto.WorkbookSignals;
-import com.ubs.pesubapi.entity.BbTemplate;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.entity.Submission;
 import com.ubs.pesubapi.entity.SubmissionExtraction;
@@ -21,12 +20,15 @@ import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
 import com.ubs.pesubapi.repository.SubmissionExtractionRepository;
 import com.ubs.pesubapi.repository.SubmissionRepository;
 import com.ubs.pesubapi.security.CurrentUserService;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import com.ubs.pesubapi.service.AsyncTaskRunner;
 import com.ubs.pesubapi.service.AuditLogService;
 import com.ubs.pesubapi.service.ExtractionClientService;
 import com.ubs.pesubapi.service.LpIngestService;
 import com.ubs.pesubapi.service.LpMasterWriteBackService;
 import com.ubs.pesubapi.service.MatchingService;
+import com.ubs.pesubapi.service.NotificationService;
 import com.ubs.pesubapi.service.TemplateRecognitionService;
 import com.ubs.pesubapi.util.InvestorTypeDeriver;
 import jakarta.servlet.http.HttpServletRequest;
@@ -35,6 +37,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -58,11 +62,16 @@ public class SubmissionController {
 
     private static final Logger log = LoggerFactory.getLogger(SubmissionController.class);
 
+    /** Submission awaiting independent (Manager) review after the maker submitted it. */
+    private static final String STATUS_PENDING_REVIEW = "Pending Review";
+
     record SubmissionDto(
         Integer id, Integer facilityId, String facilityName,
         String agentBank, String periodMonth, String status,
         String fileName, Integer uploadedBy, String notes,
-        int wizardStep, tools.jackson.databind.JsonNode shadowBbOverrides,
+        int wizardStep, Long version, tools.jackson.databind.JsonNode shadowBbOverrides,
+        String ownerUuName, String ownerName,
+        String submittedBy, String reviewedBy, String reviewNote,
         LocalDateTime createdAt, LocalDateTime updatedAt
     ) {}
 
@@ -83,6 +92,7 @@ public class SubmissionController {
     private final AsyncTaskRunner                asyncTaskRunner;
     private final ObjectMapper                   mapper;
     private final CurrentUserService             currentUser;
+    private final NotificationService            notifier;
 
     @Value("${app.uploads.path:uploads}")
     private String uploadsPath;
@@ -102,7 +112,8 @@ public class SubmissionController {
                                 TemplateRecognitionService recognitionService,
                                 AsyncTaskRunner asyncTaskRunner,
                                 ObjectMapper mapper,
-                                CurrentUserService currentUser) {
+                                CurrentUserService currentUser,
+                                NotificationService notifier) {
         this.submissions        = submissions;
         this.facilities         = facilities;
         this.auditService       = auditService;
@@ -119,6 +130,7 @@ public class SubmissionController {
         this.asyncTaskRunner    = asyncTaskRunner;
         this.mapper             = mapper;
         this.currentUser        = currentUser;
+        this.notifier           = notifier;
     }
 
     // ── POST /api/submissions ────────────────────────────────────────────────
@@ -161,24 +173,30 @@ public class SubmissionController {
         sub.setFileName(original);
         sub.setFilePath(storedPath.toString());
         if (notes != null && !notes.isBlank()) sub.setNotes(notes.trim());
+        // Ownership is established at upload from the authenticated identity (RBAC_ROLES.md). The
+        // uuName is the ownership key; the display name is captured so "Submitted By" can render
+        // without a user directory.
+        sub.setOwnerUuName(currentUser.uuName());
+        sub.setOwnerName(currentUser.displayName());
         Submission saved = submissions.save(sub);
         log.info("Submission uploaded id={} facilityId={} agentBank='{}' periodMonth='{}' file='{}' storedPath='{}' forcedTemplate='{}'",
             saved.getId(), facilityId, agentBank, periodMonth, original, storedPath, forceTemplate);
 
         // Resolve identity + IP on the request thread: the SecurityContext is thread-local and
         // is not visible from the async extraction worker, so both are captured here and passed in.
-        String actor = currentUser.displayName();
+        String actor = currentUser.uuName();
+        String actorDisplay = currentUser.auditDisplayName();
         String ip = auditService.extractIp(request);
 
         String detail = periodMonth + " · " + original + " · " + agentBank;
-        auditService.log("Upload", detail, facilityId, actor, ip);
+        auditService.log("Upload", detail, facilityId, actor, actorDisplay, ip);
 
         // Heavy Excel parsing must not block the UI thread: persist as Processing, hand the
         // pipeline to the bounded extraction executor, and return immediately (202 Accepted).
         // The client polls the submission until its status flips to Review (or Error).
         asyncTaskRunner.run(() -> {
             try {
-                runExtractionPipeline(saved, facilityId, storedPath, forceTemplate, actor, ip);
+                runExtractionPipeline(saved, facilityId, storedPath, forceTemplate, actor, actorDisplay, ip);
             } catch (Exception e) {
                 log.error("Extraction pipeline failed for submission {}", saved.getId(), e);
                 submissions.findById(saved.getId()).ifPresent(s -> {
@@ -215,7 +233,7 @@ public class SubmissionController {
     }
 
     private void runExtractionPipeline(Submission sub, int facilityId, Path filePath, String forceTemplate,
-                                       String userName, String ip) {
+                                       String userName, String userDisplay, String ip) {
         String forcedTemplate = normalizeForcedTemplate(forceTemplate);
         log.info("Starting extraction submission={} facilityId={} agentBank='{}' file='{}' forcedTemplate='{}'",
             sub.getId(), facilityId, sub.getAgentBank(), sub.getFileName(), forcedTemplate);
@@ -227,7 +245,7 @@ public class SubmissionController {
             log.warn("Extraction skipped for submission {} — pe-sub-extraction unreachable", sub.getId());
             auditService.log("Extraction Failed",
                 "Submission #" + sub.getId() + " extraction failed: pe-sub-extraction unreachable",
-                facilityId, userName, ip);
+                facilityId, userName, userDisplay, ip);
             sub.setStatus("Error");
             submissions.save(sub);
             return;
@@ -243,7 +261,7 @@ public class SubmissionController {
             forcedTemplate);
         auditService.log("Extraction Completed",
             extractionAuditDetail("Submission #" + sub.getId() + " extracted", extraction, forcedTemplate),
-            facilityId, userName, ip);
+            facilityId, userName, userDisplay, ip);
 
         IngestRequest ingestRequest = toIngestRequest(facilityId, extraction);
         ingestService.ingest(sub.getId(), ingestRequest);
@@ -252,8 +270,11 @@ public class SubmissionController {
         sub.setWizardStep(3);
         submissions.save(sub);
 
+        // The owner is actively working the submission (extraction → matches → classification →
+        // run) — that is 'In Progress', not 'Needs Review'. 'Needs Review' is reserved for a
+        // submission a manager sent back (see reject()).
         facilities.findById(facilityId).ifPresent(f -> {
-            f.setStatus("Needs Review");
+            f.setStatus("In Progress");
             facilities.save(f);
         });
     }
@@ -433,8 +454,11 @@ public class SubmissionController {
     // ── DELETE /api/submissions/:id/extracted-lps/:rowId ────────────────────
 
     @DeleteMapping("/{id}/extracted-lps/{rowId}")
-    public ResponseEntity<Void> discardExtractedLp(@PathVariable int id, @PathVariable int rowId) {
-        return extractionRepo.findBySubmissionId(id).<ResponseEntity<Void>>map(e -> {
+    public ResponseEntity<?> discardExtractedLp(@PathVariable int id, @PathVariable int rowId) {
+        Optional<Submission> subOpt = submissions.findById(id);
+        if (subOpt.isEmpty()) return ResponseEntity.notFound().build();
+        if (!canModify(subOpt.get())) return notOwner();
+        return extractionRepo.findBySubmissionId(id).<ResponseEntity<?>>map(e -> {
             if (!(e.getExtractedLps() instanceof ArrayNode arr)) return ResponseEntity.notFound().build();
             ArrayNode updated = mapper.createArrayNode();
             arr.forEach(node -> { if (node.path("id").asInt(-1) != rowId) updated.add(node); });
@@ -515,6 +539,7 @@ public class SubmissionController {
         Optional<Submission> subOpt = submissions.findById(id);
         if (subOpt.isEmpty()) return ResponseEntity.notFound().build();
         Submission sub = subOpt.get();
+        if (!canModify(sub)) return notOwner();
         if (sub.getFilePath() == null) {
             return ResponseEntity.badRequest().body("No stored file for this submission.");
         }
@@ -532,7 +557,7 @@ public class SubmissionController {
         if (extraction == null) {
             auditService.log("Re-extraction Failed",
                 "Submission #" + id + " re-extraction failed: pe-sub-extraction unreachable",
-                sub.getFacilityId(), currentUser.displayName(), auditService.extractIp(request));
+                sub.getFacilityId(), currentUser.uuName(), currentUser.auditDisplayName(), auditService.extractIp(request));
             return ResponseEntity.status(502).body("pe-sub-extraction unreachable.");
         }
 
@@ -547,7 +572,7 @@ public class SubmissionController {
             forcedTemplate);
         auditService.log("Re-extraction",
             extractionAuditDetail("Submission #" + id + " re-extracted", extraction, forcedTemplate),
-            sub.getFacilityId(), currentUser.displayName(), auditService.extractIp(request));
+            sub.getFacilityId(), currentUser.uuName(), currentUser.auditDisplayName(), auditService.extractIp(request));
         return ResponseEntity.noContent().build();
     }
 
@@ -616,6 +641,7 @@ public class SubmissionController {
         Optional<Submission> subOpt = submissions.findById(id);
         if (subOpt.isEmpty()) return ResponseEntity.notFound().build();
         Submission sub = subOpt.get();
+        if (!canModify(sub)) return notOwner();
         if (sub.getFilePath() == null) {
             return ResponseEntity.badRequest().body("No stored file for this submission.");
         }
@@ -641,7 +667,7 @@ public class SubmissionController {
             auditService.log("Field Mapping Change",
                 "FM Alias Added: \"" + body.extractedHeader() + "\" → " + body.canonical()
                     + " (" + sub.getAgentBank() + ")",
-                sub.getFacilityId(), currentUser.displayName(), auditService.extractIp(request));
+                sub.getFacilityId(), currentUser.uuName(), currentUser.auditDisplayName(), auditService.extractIp(request));
         }
 
         String forcedTemplate = resolveForcedTemplate(id, null);
@@ -697,34 +723,13 @@ public class SubmissionController {
         Optional<Submission> subOpt = submissions.findById(id);
         if (subOpt.isEmpty()) return ResponseEntity.notFound().build();
         Submission sub = subOpt.get();
+        if (!canModify(sub)) return notOwner();
 
         String agentBank = sub.getAgentBank();
-        boolean templateSaved = false;
-
         Optional<SubmissionExtraction> extOpt = extractionRepo.findBySubmissionId(id);
 
-        boolean recognizedRegistryTemplate = extOpt
-            .map(ext -> ext.getTemplateVersion())
-            .filter(version -> version != null && !version.isBlank())
-            .map(version -> !templateRepo.findAllByTemplateNameIgnoreCase(version).isEmpty()
-                || templateRepo.findByTemplateSlug(version).isPresent())
-            .orElse(false);
-
-        // Auto-learn only when upload recognition did not resolve an existing registry template.
-        // The previous agent-name-only gate created a duplicate agent-named row even when the
-        // workbook had already matched a preloaded fund template such as AEP VII or Audax VII.
-        if (!recognizedRegistryTemplate && templateRepo.findAllByTemplateNameIgnoreCase(agentBank).isEmpty()) {
-            if (extOpt.isPresent() && extOpt.get().getSheetName() != null) {
-                SubmissionExtraction ext = extOpt.get();
-                BbTemplate t = new BbTemplate();
-                t.setTemplateName(agentBank);
-                t.setSheetName(ext.getSheetName());
-                t.setHeaderRowIndex(ext.getHeaderRowIndex());
-                t.setAutoLearned(true);
-                templateRepo.save(t);
-                templateSaved = true;
-            }
-        }
+        // Confirmation must not mutate the controlled BB-template registry. Templates are added
+        // only through the explicit /api/bb-templates create/import administration workflows.
 
         if (extOpt.isPresent()) {
             var entries = matchingService.buildMatchQueueEntries(
@@ -737,8 +742,8 @@ public class SubmissionController {
         submissions.save(sub);
 
         auditService.log("Extraction Confirmed", "Submission #" + id + " extraction confirmed",
-            sub.getFacilityId(), currentUser.displayName(), auditService.extractIp(request));
-        return ResponseEntity.ok(new ConfirmResponse(templateSaved, agentBank));
+            sub.getFacilityId(), currentUser.uuName(), currentUser.auditDisplayName(), auditService.extractIp(request));
+        return ResponseEntity.ok(new ConfirmResponse(false, agentBank));
     }
 
     // ── PATCH /api/submissions/:id/shadow-bb-state ───────────────────────────
@@ -750,10 +755,13 @@ public class SubmissionController {
 
     @Transactional
     @PatchMapping("/{id}/shadow-bb-state")
-    public ResponseEntity<SubmissionDto> saveShadowBbState(
+    public ResponseEntity<?> saveShadowBbState(
             @PathVariable int id,
+            @RequestParam(value = "expectedVersion", required = false) Long expectedVersion,
             @RequestBody ShadowBbStateRequest req) {
-        return submissions.findById(id).map(sub -> {
+        return submissions.findById(id).<ResponseEntity<?>>map(sub -> {
+            if (!canModify(sub)) return notOwner();
+            if (isStale(sub, expectedVersion)) return stale();
             // On first transition to step 5, commit accepted matches and rejected-as-new rows.
             if (sub.getWizardStep() < 5) {
                 extractionRepo.findBySubmissionId(id).ifPresent(ext ->
@@ -773,19 +781,82 @@ public class SubmissionController {
     }
 
     // ── POST /api/submissions/:id/complete ──────────────────────────────────
-    // Marks the Shadow BB calculation as accepted: submission → Processed (step 6),
-    // facility → Active, lastRunAt stamped.  Idempotent: calling it twice is safe.
+    // Maker step: the operator submits the completed Shadow BB for independent review.
+    // The facility does NOT go Active here — status → 'Pending Review' (step 6) and the maker's
+    // identity is recorded. Only a Manager may accept or reject (see /accept, /reject).
+    // Idempotent while already pending: re-submitting keeps the original maker identity.
 
     @Transactional
     @PostMapping("/{id}/complete")
-    public ResponseEntity<SubmissionDto> complete(
-            @PathVariable int id, HttpServletRequest request) {
+    public ResponseEntity<?> complete(
+            @PathVariable int id,
+            @RequestParam(value = "expectedVersion", required = false) Long expectedVersion,
+            HttpServletRequest request) {
         Optional<Submission> opt = submissions.findById(id);
         if (opt.isEmpty()) return ResponseEntity.notFound().build();
 
         Submission sub = opt.get();
+        if (!canModify(sub)) return notOwner();
+        if (isStale(sub, expectedVersion)) return stale();
+        sub.setStatus(STATUS_PENDING_REVIEW);
+        sub.setWizardStep(6);
+        // Record the maker as the stable uuName (never a display name — RBAC_ROLES.md: names are
+        // not authorization keys). reject() clears submitted_by, so on a re-submit after changes
+        // this correctly re-stamps the current submitter rather than a stale original author.
+        if (sub.getSubmittedBy() == null || sub.getSubmittedBy().isBlank()) {
+            sub.setSubmittedBy(currentUser.uuName());
+        }
+        // A fresh review cycle: drop any prior rejection note/checker so the pending submission is
+        // not shown as "Changes Requested" while it now again awaits review.
+        sub.setReviewNote(null);
+        sub.setReviewedBy(null);
+        submissions.save(sub);
+
+        Integer facilityId = sub.getFacilityId();
+        // Facility rolls up to 'Pending Review' so the Dashboard can route a Manager to review it
+        // and show the maker an "awaiting approval" state. Accept → Active; reject → Needs Review.
+        String facilityName = "—";
+        if (facilityId != null) {
+            Optional<Facility> fOpt = facilities.findById(facilityId);
+            if (fOpt.isPresent()) {
+                Facility f = fOpt.get();
+                f.setStatus("Pending Review");
+                facilities.save(f);
+                facilityName = f.getName();
+            }
+        }
+
+        auditService.log("Shadow BB Submitted",
+            "Submission #" + id + " submitted for independent review",
+            facilityId, currentUser.uuName(), currentUser.auditDisplayName(), auditService.extractIp(request));
+
+        return ResponseEntity.ok(toDto(sub, facilityName));
+    }
+
+    // ── POST /api/submissions/:id/accept ────────────────────────────────────
+    // Checker step (Manager-only, enforced in SecurityConfig). Completes independent review:
+    // submission → Processed (step 6), facility → Active, lastRunAt stamped, credit profile
+    // written back to LP Master. The accepting manager must NOT be the maker (maker ≠ checker).
+
+    @Transactional
+    @PostMapping("/{id}/accept")
+    public ResponseEntity<?> accept(@PathVariable int id, HttpServletRequest request) {
+        Optional<Submission> opt = submissions.findById(id);
+        if (opt.isEmpty()) return ResponseEntity.notFound().build();
+
+        Submission sub = opt.get();
+        if (!STATUS_PENDING_REVIEW.equals(sub.getStatus())) {
+            return ResponseEntity.status(409).body("Submission is not pending review.");
+        }
+        // Maker-checker separation keyed on the STABLE uuName, never a display name.
+        String checkerId = currentUser.uuName();
+        if (checkerId != null && checkerId.equals(sub.getSubmittedBy())) {
+            return ResponseEntity.status(403).body("The reviewer may not accept their own work.");
+        }
+
         sub.setStatus("Processed");
         sub.setWizardStep(6);
+        sub.setReviewedBy(checkerId);
         submissions.save(sub);
 
         Integer facilityId = sub.getFacilityId();
@@ -804,10 +875,120 @@ public class SubmissionController {
             lpMasterWriteBack.writeBack(facilityId);
         }
 
-        auditService.log("Shadow BB Completed", "Submission #" + id + " Shadow BB accepted",
-            facilityId, currentUser.displayName(), auditService.extractIp(request));
+        auditService.log("Shadow BB Accepted",
+            "Submission #" + id + " accepted by independent review",
+            facilityId, currentUser.uuName(), currentUser.auditDisplayName(), auditService.extractIp(request));
+        // Close the loop for the maker: the analyst learns their run was approved.
+        notifier.broadcast("Shadow BB for " + facilityName + " was approved — the facility is now Active.");
 
         return ResponseEntity.ok(toDto(sub, facilityName));
+    }
+
+    // ── POST /api/submissions/:id/reject ────────────────────────────────────
+    // Checker step (Manager-only). Returns the submission to an actionable state (step 5) with a
+    // required reviewer rationale; the facility is left unchanged. Maker ≠ checker still applies.
+
+    record RejectRequest(String reason) {}
+
+    @Transactional
+    @PostMapping("/{id}/reject")
+    public ResponseEntity<?> reject(@PathVariable int id,
+                                    @RequestBody(required = false) RejectRequest body,
+                                    HttpServletRequest request) {
+        Optional<Submission> opt = submissions.findById(id);
+        if (opt.isEmpty()) return ResponseEntity.notFound().build();
+
+        Submission sub = opt.get();
+        if (!STATUS_PENDING_REVIEW.equals(sub.getStatus())) {
+            return ResponseEntity.status(409).body("Submission is not pending review.");
+        }
+        String reason = body != null && body.reason() != null ? body.reason().trim() : "";
+        if (reason.isEmpty()) {
+            return ResponseEntity.badRequest().body("A rejection reason is required.");
+        }
+        String checkerId = currentUser.uuName();
+        if (checkerId != null && checkerId.equals(sub.getSubmittedBy())) {
+            return ResponseEntity.status(403).body("The reviewer may not reject their own work.");
+        }
+
+        // Return to the actionable step. reviewNote present (with the submission back at step 5)
+        // is the "Changes Requested" signal the analyst sees; submitted_by is cleared so the next
+        // /complete re-stamps whoever actually re-submits (maker-checker stays correct on re-run).
+        sub.setStatus("Review");
+        sub.setWizardStep(5);
+        sub.setReviewedBy(checkerId);
+        sub.setReviewNote(reason);
+        sub.setSubmittedBy(null);
+        submissions.save(sub);
+
+        Integer facilityId = sub.getFacilityId();
+        // Facility returns to 'Needs Review' — the analyst must revise and re-run this cycle.
+        String facilityName = "—";
+        if (facilityId != null) {
+            Optional<Facility> fOpt = facilities.findById(facilityId);
+            if (fOpt.isPresent()) {
+                Facility f = fOpt.get();
+                f.setStatus("Needs Review");
+                facilities.save(f);
+                facilityName = f.getName();
+            }
+        }
+        auditService.log("Shadow BB Rejected",
+            "Submission #" + id + " rejected by independent review: " + reason,
+            facilityId, currentUser.uuName(), currentUser.auditDisplayName(), auditService.extractIp(request));
+        // Close the loop for the maker: the analyst learns changes were requested, and why.
+        notifier.broadcast("Changes requested on " + facilityName + ": " + reason);
+
+        return ResponseEntity.ok(toDto(sub, facilityName));
+    }
+
+    // ── POST /api/submissions/:id/take-over ──────────────────────────────────
+    // Ownership handoff: another analyst (or a Manager reassigning) claims an in-flight submission
+    // so they can edit it. This is the *controlled* alternative to two analysts silently clobbering
+    // the same work — after takeover the previous owner is read-only (their writes 403) and is
+    // notified. Terminal submissions (Processed / Aborted) cannot be taken over.
+
+    @Transactional
+    @PostMapping("/{id}/take-over")
+    public ResponseEntity<?> takeOver(@PathVariable int id, HttpServletRequest request) {
+        Optional<Submission> opt = submissions.findById(id);
+        if (opt.isEmpty()) return ResponseEntity.notFound().build();
+
+        Submission sub = opt.get();
+        if ("Processed".equals(sub.getStatus()) || "Aborted".equals(sub.getStatus())) {
+            return ResponseEntity.status(409).body("A completed or aborted submission cannot be taken over.");
+        }
+
+        String newOwnerUuName = currentUser.uuName();
+        String previousOwner  = sub.getOwnerUuName();
+        String previousName   = sub.getOwnerName();
+        if (newOwnerUuName != null && newOwnerUuName.equals(previousOwner)) {
+            // Already the owner — nothing to do.
+            return ResponseEntity.ok(toDto(sub, facilityNameOf(sub.getFacilityId())));
+        }
+
+        sub.setOwnerUuName(newOwnerUuName);
+        sub.setOwnerName(currentUser.displayName());
+        submissions.save(sub);
+
+        String facilityName = facilityNameOf(sub.getFacilityId());
+        auditService.log("Submission Taken Over",
+            "Submission #" + id + " ownership taken over from " + (previousName != null ? previousName : "—")
+                + " (" + (previousOwner != null ? previousOwner : "unassigned") + ")",
+            sub.getFacilityId(), currentUser.uuName(), currentUser.auditDisplayName(), auditService.extractIp(request));
+        // Notify the previous owner: their in-flight edits can no longer be saved.
+        if (previousOwner != null && !previousOwner.isBlank()) {
+            notifier.broadcast(currentUser.displayName() + " has taken over the "
+                + facilityName + " submission. Your unsaved changes there can no longer be saved.");
+        }
+
+        return ResponseEntity.ok(toDto(sub, facilityName));
+    }
+
+    private String facilityNameOf(Integer facilityId) {
+        return facilityId != null
+            ? facilities.findById(facilityId).map(f -> f != null ? f.getName() : "—").orElse("—")
+            : "—";
     }
 
     // ── POST /api/submissions/:id/abort ──────────────────────────────────────
@@ -819,6 +1000,13 @@ public class SubmissionController {
         if (opt.isEmpty()) return ResponseEntity.notFound().build();
 
         Submission sub = opt.get();
+        // Ownership: only the owner (uploader) or a Manager may abort; other analysts have
+        // read-only access to a colleague's submission (RBAC_ROLES.md). Legacy rows without a
+        // recorded owner are not blocked.
+        String owner = sub.getOwnerUuName();
+        if (owner != null && !owner.isBlank() && !owner.equals(currentUser.uuName()) && !isManager()) {
+            return ResponseEntity.status(403).body("Only the submission owner or a Manager may abort it.");
+        }
         if ("Processed".equals(sub.getStatus())) {
             return ResponseEntity.status(409).body("Cannot abort a processed submission.");
         }
@@ -852,19 +1040,65 @@ public class SubmissionController {
             });
         }
 
-        auditService.log("Abort", "Submission #" + id + " aborted", facilityId, currentUser.displayName(), auditService.extractIp(request));
+        auditService.log("Abort", "Submission #" + id + " aborted", facilityId, currentUser.uuName(),
+            currentUser.auditDisplayName(), auditService.extractIp(request));
 
         return ResponseEntity.noContent().build();
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
+    /** True when the authenticated principal holds the Manager authority. */
+    private boolean isManager() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getAuthorities().stream()
+            .anyMatch(a -> "ROLE_MANAGER".equals(a.getAuthority()));
+    }
+
+    /**
+     * True when the caller may mutate this submission: the current owner, a Manager, or a legacy
+     * submission with no recorded owner. This is the concurrency guard — a non-owner analyst has
+     * read-only access and must take the submission over before editing it, which prevents two
+     * analysts from clobbering the same work.
+     */
+    private boolean canModify(Submission sub) {
+        String owner = sub.getOwnerUuName();
+        return owner == null || owner.isBlank() || owner.equals(currentUser.uuName()) || isManager();
+    }
+
+    /** 403 (as ProblemDetail, so the SPA surfaces a friendly message) when a non-owner mutates. */
+    private ResponseEntity<ProblemDetail> notOwner() {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN,
+            "This submission is owned by another analyst. Take it over before editing.");
+        pd.setTitle("Read-only");
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(pd);
+    }
+
+    /**
+     * Optimistic-concurrency check: true when the caller's expected version is stale (the submission
+     * was changed since they loaded it — e.g. the same submission edited in another tab). The caller
+     * returns {@link #stale()} on true.
+     */
+    private boolean isStale(Submission sub, Long expectedVersion) {
+        return expectedVersion != null && !expectedVersion.equals(sub.getVersion());
+    }
+
+    /** 409 (as ProblemDetail) when a write is based on a stale version. */
+    private ResponseEntity<ProblemDetail> stale() {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
+            "This submission was changed elsewhere since you loaded it. Reload it before saving to avoid overwriting newer work.");
+        pd.setTitle("Conflict");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(pd);
+    }
+
     private SubmissionDto toDto(Submission s, String facilityName) {
         return new SubmissionDto(
             s.getId(), s.getFacilityId(), facilityName,
             s.getAgentBank(), s.getPeriodMonth(), s.getStatus(),
             s.getFileName(), s.getUploadedBy(), s.getNotes(),
-            s.getWizardStep(), s.getShadowBbOverrides(),
+            s.getWizardStep(), s.getVersion(), s.getShadowBbOverrides(),
+            s.getOwnerUuName(), s.getOwnerName(),
+            s.getSubmittedBy(), s.getReviewedBy(), s.getReviewNote(),
             s.getCreatedAt(), s.getUpdatedAt()
         );
     }

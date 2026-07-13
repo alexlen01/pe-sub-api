@@ -1,6 +1,8 @@
 package com.ubs.pesubapi.controller;
 
 import com.ubs.pesubapi.IntegrationTestBase;
+import com.ubs.pesubapi.dto.BbResult;
+import com.ubs.pesubapi.entity.BbSnapshot;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.repository.BbSnapshotRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
@@ -10,6 +12,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -82,6 +86,25 @@ class ReportControllerIntegrationTest extends IntegrationTestBase {
             .andReturn().getResponse().getContentAsByteArray();
         assertThat(body).startsWith("%PDF-".getBytes());
         assertThat(body.length).isGreaterThan(1_000);
+    }
+
+    @Test
+    void collateralPdf_ignoresSnapshotsWithoutSummaryInTrend() throws Exception {
+        runBb(facilityId);
+
+        BbSnapshot incomplete = new BbSnapshot();
+        incomplete.setFacilityId(facilityId);
+        incomplete.setResult(new BbResult(List.of(), null, List.of()));
+        snapshotRepo.save(incomplete);
+
+        byte[] body = mvc.perform(get("/api/reports/collateral/{id}/pdf", facilityId)
+                .param("snapshotId", String.valueOf(incomplete.getId()))
+                .param("coverageTrend", "true"))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+            .andReturn().getResponse().getContentAsByteArray();
+
+        assertThat(body).startsWith("%PDF-".getBytes());
     }
 
     @Test
@@ -188,9 +211,11 @@ class ReportControllerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void concentration_returns404WhenNoSnapshotExists() throws Exception {
+    void concentration_returnsEmptyBreachesWhenNoSnapshotExists() throws Exception {
         mvc.perform(get("/api/reports/concentration/{id}", facilityId))
-            .andExpect(status().isNotFound());
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.breaches").isArray())
+            .andExpect(jsonPath("$.breaches", empty()));
     }
 
     // ── Report history ────────────────────────────────────────────────────────────

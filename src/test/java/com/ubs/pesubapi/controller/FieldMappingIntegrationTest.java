@@ -195,15 +195,17 @@ class FieldMappingIntegrationTest extends IntegrationTestBase {
 
     @Test
     void submitSuggestion_roundTripThroughApi() throws Exception {
+        // suggestedBy is server-attributed to the authenticated principal (the dev identity's
+        // uuName), never taken from the request body — identity is never trusted from the client.
         String created = mvc.perform(post("/api/field-mapping/suggestions")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"extractedHeader": "ZZ Total AUM", "canonicalField": "AUM", "suggestedBy": "analyst@ubs.com"}
+                    {"extractedHeader": "ZZ Total AUM", "canonicalField": "AUM", "suggestedBy": "spoofed@ubs.com"}
                     """))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.extractedHeader").value("ZZ Total AUM"))
             .andExpect(jsonPath("$.canonicalField").value("AUM"))
-            .andExpect(jsonPath("$.suggestedBy").value("analyst@ubs.com"))
+            .andExpect(jsonPath("$.suggestedBy").value("js25029"))
             .andExpect(jsonPath("$.id").isNumber())
             .andReturn().getResponse().getContentAsString();
         int suggestionId = (int) JsonPath.read(created, "$.id");

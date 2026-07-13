@@ -50,6 +50,17 @@ CREATE TABLE facilities (
 -- recallable_dist : dollar value behind the `rcl` flag.
 -- source_seq      : LP's row position in the originating Agent BB (extraction row index);
 --                   nullable — legacy / manually-created LPs sort last (NULL LAST).
+--
+-- Column widths for workbook-derived data (real Agent BB values must be stored verbatim,
+-- never truncated; dollar amounts never rounded):
+--   * free-text labels (types, classifications, ranges, regions)  -> VARCHAR(255)
+--   * formatted dollar display strings ("$12,102,000,000")        -> VARCHAR(64)
+--     (calculations read the exact *_num NUMERIC(20,2) columns first; the string is display-only)
+--   * percent/rate strings (convention: exactly 1 decimal, "5.6%";
+--     width is defensive headroom for legacy/pass-through values)
+--     and agency ratings incl. outlook qualifiers                 -> VARCHAR(50)
+-- Enum-like app-controlled columns (status, decision, tab_role, agent_cls_source,
+-- template_class) keep tighter widths.
 -- *_num columns   : precise money in absolute dollars (uncalled_capital_num, cap_commit_num,
 --                   aum_num, agent_bb_num) stored alongside the formatted display strings. The BB
 --                   engine (BbCalculationService.moneyM) reads these first and falls back to
@@ -64,20 +75,20 @@ CREATE TABLE lp_master (
     parent                   VARCHAR(255),
     spv                      BOOLEAN       NOT NULL DEFAULT FALSE,
     high_qty                 BOOLEAN       NOT NULL DEFAULT TRUE,
-    investor_type            VARCHAR(50),
-    inst_vs_hnw              VARCHAR(30),
-    region_location          VARCHAR(100),
+    investor_type            VARCHAR(255),
+    inst_vs_hnw              VARCHAR(255),
+    region_location          VARCHAR(255),
     investment_grade         BOOLEAN       NOT NULL DEFAULT FALSE,
-    sp                       VARCHAR(20)   NOT NULL DEFAULT '',
-    mdy                      VARCHAR(20)   NOT NULL DEFAULT '',
-    fitch                    VARCHAR(20)   NOT NULL DEFAULT '',
-    aum                      VARCHAR(50),
-    nav                      VARCHAR(50),
-    pension                  VARCHAR(50),
-    pension_funded           VARCHAR(50),
-    ubs_classification       VARCHAR(50),
-    ubs_default_adv_rate     VARCHAR(20),
-    ubs_default_conc_limit   VARCHAR(20),
+    sp                       VARCHAR(50)   NOT NULL DEFAULT '',
+    mdy                      VARCHAR(50)   NOT NULL DEFAULT '',
+    fitch                    VARCHAR(50)   NOT NULL DEFAULT '',
+    aum                      VARCHAR(255),
+    nav                      VARCHAR(255),
+    pension                  VARCHAR(255),
+    pension_funded           VARCHAR(255),
+    ubs_classification       VARCHAR(255),
+    ubs_default_adv_rate     VARCHAR(50),
+    ubs_default_conc_limit   VARCHAR(50),
     notes                    TEXT,
     created_at               TIMESTAMP     NOT NULL DEFAULT NOW(),
     updated_at               TIMESTAMP     NOT NULL DEFAULT NOW()
@@ -91,42 +102,42 @@ CREATE TABLE lp_records (
     parent            VARCHAR(255),
     spv               BOOLEAN      NOT NULL DEFAULT FALSE,
     high_qty          BOOLEAN      NOT NULL DEFAULT TRUE,
-    investor_type      VARCHAR(50)  NOT NULL,
-    inst_vs_hnw        VARCHAR(30)  NOT NULL DEFAULT 'Institutional',
-    region_location    VARCHAR(100) NOT NULL,
+    investor_type      VARCHAR(255) NOT NULL,
+    inst_vs_hnw        VARCHAR(255) NOT NULL DEFAULT 'Institutional',
+    region_location    VARCHAR(255) NOT NULL,
     investment_grade   BOOLEAN      NOT NULL DEFAULT FALSE,
-    classification     VARCHAR(50)  NOT NULL,
-    classification_tag VARCHAR(50),
-    agent_cls          VARCHAR(80),
+    classification     VARCHAR(255) NOT NULL,
+    classification_tag VARCHAR(255),
+    agent_cls          VARCHAR(255),
     agent_cls_source   VARCHAR(20),
-    sp                 VARCHAR(20)  NOT NULL DEFAULT '',
-    mdy                VARCHAR(20)  NOT NULL DEFAULT '',
-    fitch              VARCHAR(20)  NOT NULL DEFAULT '',
-    aum                VARCHAR(50),
+    sp                 VARCHAR(50)  NOT NULL DEFAULT '',
+    mdy                VARCHAR(50)  NOT NULL DEFAULT '',
+    fitch              VARCHAR(50)  NOT NULL DEFAULT '',
+    aum                VARCHAR(255),
     aum_num            NUMERIC(20, 2),
-    nav                VARCHAR(50),
-    pension            VARCHAR(50),
-    pension_funded     VARCHAR(50),
-    cap_commit         VARCHAR(50),
+    nav                VARCHAR(255),
+    pension            VARCHAR(255),
+    pension_funded     VARCHAR(255),
+    cap_commit         VARCHAR(64),
     cap_commit_num     NUMERIC(20, 2),
-    pct_cap_commit     VARCHAR(20),
-    called_cap         VARCHAR(50),
-    uncalled_capital   VARCHAR(50),
+    pct_cap_commit     VARCHAR(50),
+    called_cap         VARCHAR(64),
+    uncalled_capital   VARCHAR(64),
     uncalled_capital_num NUMERIC(20, 2),
-    pct_uncalled       VARCHAR(20),
-    pct_called         VARCHAR(20),
-    agent_conc         VARCHAR(20),
-    ubs_conc           VARCHAR(20),
-    agent_excess_conc  VARCHAR(50),
-    ubs_excess_conc    VARCHAR(50),
-    agent_rate         VARCHAR(20),
-    ubs_rate           VARCHAR(20),
-    agent_bb           VARCHAR(50),
+    pct_uncalled       VARCHAR(50),
+    pct_called         VARCHAR(50),
+    agent_conc         VARCHAR(50),
+    ubs_conc           VARCHAR(50),
+    agent_excess_conc  VARCHAR(64),
+    ubs_excess_conc    VARCHAR(64),
+    agent_rate         VARCHAR(50),
+    ubs_rate           VARCHAR(50),
+    agent_bb           VARCHAR(64),
     agent_bb_num       NUMERIC(20, 2),
-    ubs_bb             VARCHAR(50),
+    ubs_bb             VARCHAR(64),
     included           BOOLEAN      NOT NULL DEFAULT TRUE,
     rcl                BOOLEAN      NOT NULL DEFAULT FALSE,
-    recallable_dist    VARCHAR(50),
+    recallable_dist    VARCHAR(64),
     transferee         BOOLEAN      NOT NULL DEFAULT FALSE,
     lp_rank            INTEGER,
     source_seq         INTEGER,
@@ -177,6 +188,16 @@ CREATE TABLE config (
 --   4 = Review Matches   (after POST /{id}/confirm)
 --   5 = LP Category & Rate Assignment (after PATCH /{id}/shadow-bb-state)
 -- shadow_bb_overrides: JSONB map of LP key → {cls, rate} overrides committed on Step 5
+--
+-- Independent-review (maker-checker) workflow for Shadow BB acceptance: a completed Shadow BB
+-- no longer transitions the facility straight to Active. The operator (Analyst) submits it for
+-- independent review (status='Pending Review'), and only an Account/Transaction Manager may
+-- accept or reject it. The accepting manager must not be the maker: submitted_by (maker) and
+-- reviewed_by (checker) are recorded as stable authentication identities, never as foreign keys
+-- to the deprecated local users table (see RBAC_ROLES.md).
+--   submitted_by  — uuName/identity of the operator who submitted the run for review (maker)
+--   reviewed_by   — uuName/identity of the manager who accepted or rejected it (checker)
+--   review_note   — reviewer rationale, required on rejection
 CREATE TABLE submissions (
     id                  SERIAL PRIMARY KEY,
     facility_id         INTEGER      NOT NULL REFERENCES facilities(id),
@@ -186,9 +207,20 @@ CREATE TABLE submissions (
     file_name           VARCHAR(255) NOT NULL,
     file_path           VARCHAR(512),
     uploaded_by         INTEGER REFERENCES users(id),
+    -- Ownership captured at upload (RBAC_ROLES.md: "Upload establishes ownership from authenticated
+    -- uuName"). owner_uu_name is the stable ownership key; owner_name is the display name captured
+    -- at upload so "Submitted By" can render without a user directory.
+    owner_uu_name       VARCHAR(255),
+    owner_name          VARCHAR(255),
     notes               TEXT,
     wizard_step         INTEGER      NOT NULL DEFAULT 1,
+    -- Optimistic-concurrency token (JPA @Version): bumped on every write so a stale writer (e.g.
+    -- the same submission edited in two tabs) is rejected with 409 instead of overwriting newer work.
+    version             BIGINT       NOT NULL DEFAULT 0,
     shadow_bb_overrides JSONB,
+    submitted_by        VARCHAR(255),
+    reviewed_by         VARCHAR(255),
+    review_note         TEXT,
     created_at          TIMESTAMP    NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMP    NOT NULL DEFAULT NOW()
 );
@@ -200,6 +232,7 @@ CREATE TABLE audit_log (
     facility_id INTEGER REFERENCES facilities(id),
     user_id     INTEGER REFERENCES users(id),
     user_name   VARCHAR(100),
+    user_display VARCHAR(255),
     ip          VARCHAR(45),
     created_at  TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -231,11 +264,13 @@ CREATE INDEX idx_lp_rates_lp_id          ON lp_rates (lp_id);
 -- forced_template: operator-forced Agent BB template; null = auto-detect.
 -- When auto-detection picks the wrong fund template the operator picks the correct
 -- format from the dropdown; persisted here so every re-extraction re-applies it.
+-- template_version stores the recognised fund template name (bb_templates.template_name
+-- is VARCHAR(255)); template_format mirrors it for structural fallbacks.
 CREATE TABLE submission_extractions (
     id                   SERIAL PRIMARY KEY,
     submission_id        INTEGER NOT NULL REFERENCES submissions(id),
-    template_format      VARCHAR(50),
-    template_version     VARCHAR(50),
+    template_format      VARCHAR(255),
+    template_version     VARCHAR(255),
     sheet_name           VARCHAR(255),
     header_row_index     INTEGER,
     total_rows           INTEGER NOT NULL DEFAULT 0,

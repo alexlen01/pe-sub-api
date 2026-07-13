@@ -1,7 +1,10 @@
 package com.ubs.pesubapi.service;
 
 import com.ubs.pesubapi.dto.CommitBbRequest.CommitLpRow;
+import com.ubs.pesubapi.entity.LpMaster;
 import com.ubs.pesubapi.entity.LpRecord;
+import com.ubs.pesubapi.exception.ResourceNotFoundException;
+import com.ubs.pesubapi.repository.LpMasterRepository;
 import com.ubs.pesubapi.repository.LpRecordRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,9 +24,33 @@ public class LpMasterService {
     private static final Logger log = LoggerFactory.getLogger(LpMasterService.class);
 
     private final LpRecordRepository lpRecordRepo;
+    private final LpMasterRepository lpMasterRepo;
 
-    public LpMasterService(LpRecordRepository lpRecordRepo) {
+    public LpMasterService(LpRecordRepository lpRecordRepo, LpMasterRepository lpMasterRepo) {
         this.lpRecordRepo = lpRecordRepo;
+        this.lpMasterRepo = lpMasterRepo;
+    }
+
+    /** Outcome of an LP Master row deletion, for audit/notification messaging. */
+    public record LpMasterDeletion(String investorName, int detachedRecords) {}
+
+    /**
+     * Hard-deletes an LP Master row — the manual correction path for erroneously ingested LPs
+     * that slipped past analyst/reviewer checks. Facility LP records that reference the row are
+     * detached (lp_master_id nulled), never deleted: they are per-facility credit data and remain
+     * authoritative for their facility. Note that if the same investor name still exists in a
+     * facility's records, the next accepted Shadow BB cycle's write-back will re-create a master
+     * row from that facility's data.
+     */
+    @Transactional
+    public LpMasterDeletion delete(int id) {
+        LpMaster master = lpMasterRepo.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("LP Master " + id + " not found"));
+        int detached = lpRecordRepo.clearLpMasterRef(id);
+        lpMasterRepo.delete(master);
+        log.info("LP Master deleted id={} investor='{}' detachedFacilityRecords={}",
+            id, master.getInvestorName(), detached);
+        return new LpMasterDeletion(master.getInvestorName(), detached);
     }
 
     /**

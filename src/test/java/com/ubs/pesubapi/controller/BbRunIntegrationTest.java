@@ -196,9 +196,9 @@ class BbRunIntegrationTest extends IntegrationTestBase {
     @Test
     void run_persistsLongExtractedTextValuesVerbatim() throws Exception {
         // Real Agent BB workbooks carry investor names, type labels and full dollar
-        // amounts well past the original VARCHAR(50)/VARCHAR(30) widths; they must
-        // round-trip untruncated and dollars unrounded (V1_4 widening). Rates follow
-        // the platform convention of exactly one decimal ("71.1%").
+        // amounts well past 50 characters; the schema's typed widths (free text 255,
+        // money display 64, percents 50) must round-trip them untruncated and dollars
+        // unrounded. Rates follow the platform convention of exactly one decimal ("71.1%").
         String longName = "AXA Fund Platform Private Equity S.C.A., SICAV-RAIF - Vintage 2025 Feeder";
         String longType = "Public Pension Fund - Governmental Plan (ERISA-exempt, non-US regulated)";
         String body = """

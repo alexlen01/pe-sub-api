@@ -14,6 +14,7 @@ import com.ubs.pesubapi.service.LpClassificationService;
 import com.ubs.pesubapi.service.LpIngestService;
 import com.ubs.pesubapi.service.LpRecordSeedService;
 import com.ubs.pesubapi.service.NotificationService;
+import com.ubs.pesubapi.service.ShadowBbService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,12 +39,14 @@ public class LpRecordController {
     private final LpClassificationService classificationService;
     private final LpRecordSeedService    seedService;
     private final CurrentUserService     currentUser;
+    private final ShadowBbService        shadowBbService;
 
     public LpRecordController(LpRecordRepository repo, NotificationService notifier,
                         AuditLogService auditService, LpIngestService ingestService,
                         LpClassificationService classificationService,
                         LpRecordSeedService seedService,
-                        CurrentUserService currentUser) {
+                        CurrentUserService currentUser,
+                        ShadowBbService shadowBbService) {
         this.repo                  = repo;
         this.notifier              = notifier;
         this.auditService          = auditService;
@@ -51,6 +54,7 @@ public class LpRecordController {
         this.classificationService = classificationService;
         this.seedService           = seedService;
         this.currentUser           = currentUser;
+        this.shadowBbService       = shadowBbService;
     }
 
     /**
@@ -75,7 +79,7 @@ public class LpRecordController {
         if (result.updated() > 0) {
             auditService.log("LP Data Updated",
                 result.updated() + " LP records updated from " + result.templateFormat() + " extraction",
-                request.facilityId(), currentUser.displayName(), auditService.extractIp(httpRequest));
+                request.facilityId(), currentUser.uuName(), currentUser.auditDisplayName(), auditService.extractIp(httpRequest));
         }
         return result;
     }
@@ -116,7 +120,7 @@ public class LpRecordController {
             auditService.log("LP Category Saved",
                 updated + " LP record" + (updated != 1 ? "s" : "")
                     + " updated from Shadow BB classification",
-                req.facilityId(), currentUser.displayName(), auditService.extractIp(request));
+                req.facilityId(), currentUser.uuName(), currentUser.auditDisplayName(), auditService.extractIp(request));
         }
         return Map.of("updated", updated);
     }
@@ -163,9 +167,27 @@ public class LpRecordController {
                 String detail = lpRecord.getInvestorName() + " → " + lpRecord.getCls()
                     + (prevCls != null ? " (was " + prevCls + ")" : "");
                 auditService.log("LpRecord Reclassified", detail, lpRecord.getFacilityId(),
-                    currentUser.displayName(), auditService.extractIp(request));
+                    currentUser.uuName(), currentUser.auditDisplayName(), auditService.extractIp(request));
             }
             return ResponseEntity.ok(LpRecordDto.from(saved));
         }).orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Hard-delete a facility LP record — the manual correction path for a row that slipped
+     * through extraction review and reviewer checks. Ranks for the facility's remaining LPs are
+     * recomputed in the same transaction; the current BB snapshot refreshes on the next
+     * Run / Re-run Shadow BB. 404 if the record does not exist.
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable int id, HttpServletRequest request) {
+        ShadowBbService.LpRecordDeletion result = shadowBbService.deleteLpRecord(id);
+        auditService.log("LP Record Deleted",
+            "'" + result.investorName() + "' deleted from facility LP records; ranks recomputed",
+            result.facilityId(), currentUser.uuName(), currentUser.auditDisplayName(), auditService.extractIp(request));
+        notifier.broadcast(result.investorName() + " deleted from LP records");
+        log.info("LP record deleted id={} facilityId={} investor='{}'",
+            id, result.facilityId(), result.investorName());
+        return ResponseEntity.noContent().build();
     }
 }

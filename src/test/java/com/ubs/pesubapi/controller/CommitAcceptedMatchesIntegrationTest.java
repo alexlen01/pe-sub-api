@@ -168,6 +168,7 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         assertThat(stored).hasSize(N_ROWS);
         List<String> storedNames = stored.stream().map(lpRecord -> lpRecord.getInvestorName()).toList();
         assertThat(storedNames).containsExactlyElementsOf(NAMES);
+        assertThat(stored).allMatch(lpRecord -> lpRecord.getRegion().isBlank());
     }
 
     @Test

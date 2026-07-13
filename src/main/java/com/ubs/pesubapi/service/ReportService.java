@@ -8,6 +8,8 @@ import com.ubs.pesubapi.exception.ResourceNotFoundException;
 import com.ubs.pesubapi.repository.BbSnapshotRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.ReportHistoryRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -19,6 +21,8 @@ import java.util.stream.Collectors;
  *  and records/reads report-generation history. */
 @Service
 public class ReportService {
+
+    private static final Logger log = LoggerFactory.getLogger(ReportService.class);
 
     /** Fixed certificate ordering for the current UBS LP Classification tiers. */
     private static final List<String> TIER_ORDER =
@@ -52,8 +56,20 @@ public class ReportService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                     "Snapshot " + snapshotId + " not found for facility " + facilityId))
             : requireLatestSnapshot(facilityId);
+        log.info("collateral_report_selected_snapshot facilityId={} requestedSnapshotId={} resolvedSnapshotId={} calculatedAt={}",
+            facilityId, snapshotId, snap.getId(), snap.getCalculatedAt());
 
-        List<ComputedLpRecord> lps = snap.getResult().lps() != null ? snap.getResult().lps() : List.of();
+        BbResult result = snap.getResult();
+        List<ComputedLpRecord> lps = result != null && result.lps() != null ? result.lps() : List.of();
+        BbSummary snapshotSummary = result != null ? result.summary() : null;
+        boolean usedSummaryFallback = snapshotSummary == null;
+        BbSummary summary = usedSummaryFallback
+            ? new BbSummary(0, 0, 0, 0, 0, 0, 0, 0)
+            : snapshotSummary;
+        if (usedSummaryFallback) {
+            log.warn("collateral_report_summary_fallback facilityId={} snapshotId={} reason={}",
+                facilityId, snap.getId(), result == null ? "missing_result" : "missing_summary");
+        }
 
         Map<String, double[]> agg = new LinkedHashMap<>();          // [count, uncalledM, ubbM]
         Map<String, String>   rates = new HashMap<>();
@@ -75,10 +91,12 @@ public class ReportService {
             .toList();
 
         double totalEligibleUncalledM = lps.stream().mapToDouble(lp -> lp != null ? lp.uecM() : 0).sum();
+        log.info("collateral_report_ready facilityId={} snapshotId={} lpCount={} classRows={} totalEligibleUncalledM={}",
+            facilityId, snap.getId(), lps.size(), breakdown.size(), totalEligibleUncalledM);
 
         return new CollateralReportDto(
             facilityId, facility.getName(), facility.getAgentBank(),
-            snap.getId(), snap.getCalculatedAt(), snap.getResult().summary(),
+            snap.getId(), snap.getCalculatedAt(), summary,
             totalEligibleUncalledM, breakdown);
     }
 
@@ -127,8 +145,10 @@ public class ReportService {
 
     public List<BbBreach> concentrationBreaches(int facilityId) {
         requireFacility(facilityId);
-        BbSnapshot snap = requireLatestSnapshot(facilityId);
-        return snap.getResult().breaches() != null ? snap.getResult().breaches() : List.of();
+        return snapshotRepo.findTopByFacilityIdOrderByCalculatedAtDesc(facilityId)
+            .map(s -> s.getResult())
+            .map(r -> r != null ? r.breaches() : java.util.List.<BbBreach>of())
+            .orElseGet(java.util.List::of);
     }
 
     // ── Report history ────────────────────────────────────────────────────────────

@@ -49,7 +49,13 @@ app:
     mode: ${APP_SECURITY_MODE:dev}
     user-header: X-Auth-User
     roles-header: X-Auth-Roles
-    dev-user: ${APP_SECURITY_DEV_USER:local.analyst@ubs.dev}
+    first-name-header: X-Auth-First-Name
+    last-name-header: X-Auth-Last-Name
+    email-header: X-Auth-Email
+    dev-user: ${APP_SECURITY_DEV_USER:LOCAL_DEV_USER}
+    dev-first-name: ${APP_SECURITY_DEV_FIRST_NAME:Local}
+    dev-last-name: ${APP_SECURITY_DEV_LAST_NAME:Analyst}
+    dev-email: ${APP_SECURITY_DEV_EMAIL:local.analyst@ubs.dev}
     # SERVICE is included in dev so header-less service callers (pe-sub-jobs seed feeds) work
     # locally — DEV mode gives every request the same identity and cannot distinguish callers.
     # In gateway mode service identities come from the proxy headers and operators never hold SERVICE.

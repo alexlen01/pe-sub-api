@@ -26,11 +26,17 @@ public class SecurityProperties {
     /** Header carrying the authenticated user id/email (GATEWAY mode). */
     private String userHeader = "X-Auth-User";
 
-    /** Header carrying the comma-separated role list, e.g. "ANALYST,ATM" (GATEWAY mode). */
+    /** Header carrying the comma-separated role list, e.g. "ANALYST,MANAGER" (GATEWAY mode). */
     private String rolesHeader = "X-Auth-Roles";
+    private String firstNameHeader = "X-Auth-First-Name";
+    private String lastNameHeader = "X-Auth-Last-Name";
+    private String emailHeader = "X-Auth-Email";
 
     /** Identity used for every request in DEV mode. */
     private String devUser = "local.analyst@ubs.dev";
+    private String devFirstName = "Local";
+    private String devLastName = "Analyst";
+    private String devEmail = "local.analyst@ubs.dev";
 
     /** Roles granted to {@link #devUser} in DEV mode. */
     private List<String> devRoles = List.of("ANALYST");
@@ -43,9 +49,21 @@ public class SecurityProperties {
 
     public String getRolesHeader() { return rolesHeader; }
     public void setRolesHeader(String rolesHeader) { this.rolesHeader = rolesHeader; }
+    public String getFirstNameHeader() { return firstNameHeader; }
+    public void setFirstNameHeader(String value) { this.firstNameHeader = value; }
+    public String getLastNameHeader() { return lastNameHeader; }
+    public void setLastNameHeader(String value) { this.lastNameHeader = value; }
+    public String getEmailHeader() { return emailHeader; }
+    public void setEmailHeader(String value) { this.emailHeader = value; }
 
     public String getDevUser() { return devUser; }
     public void setDevUser(String devUser) { this.devUser = devUser; }
+    public String getDevFirstName() { return devFirstName; }
+    public void setDevFirstName(String value) { this.devFirstName = value; }
+    public String getDevLastName() { return devLastName; }
+    public void setDevLastName(String value) { this.devLastName = value; }
+    public String getDevEmail() { return devEmail; }
+    public void setDevEmail(String value) { this.devEmail = value; }
 
     public List<String> getDevRoles() { return devRoles; }
     public void setDevRoles(List<String> devRoles) { this.devRoles = devRoles; }

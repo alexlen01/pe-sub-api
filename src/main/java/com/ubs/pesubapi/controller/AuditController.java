@@ -28,7 +28,8 @@ public class AuditController {
 
     @PostMapping("/login")
     public ResponseEntity<Void> login(HttpServletRequest request) {
-        auditService.log("Login", "User login", null, currentUser.displayName(), auditService.extractIp(request));
+        auditService.log("Login", "User login", null, currentUser.uuName(), currentUser.auditDisplayName(),
+            auditService.extractIp(request));
         return ResponseEntity.ok().build();
     }
 }

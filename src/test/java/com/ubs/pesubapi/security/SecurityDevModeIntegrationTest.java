@@ -47,4 +47,16 @@ class SecurityDevModeIntegrationTest extends IntegrationTestBase {
         mvc.perform(post("/api/lpRecords/ingest").contentType(MediaType.APPLICATION_JSON).content(INGEST_BODY))
             .andExpect(status().isOk());
     }
+
+    @Test
+    void devMode_honorsSwitcherHeadersWhenPresent() throws Exception {
+        // The dev role switcher sends X-Auth-* headers; DEV mode must honor them (not fall back to
+        // the fixed ANALYST dev identity) so a selected VIEWER is correctly denied a write.
+        mvc.perform(post("/api/facilities")
+                .header("X-Auth-User", "lt09341")
+                .header("X-Auth-Roles", "VIEWER")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"X\",\"agentBank\":\"Y\"}"))
+            .andExpect(status().isForbidden());
+    }
 }

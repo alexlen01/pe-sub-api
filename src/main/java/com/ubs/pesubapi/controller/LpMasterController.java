@@ -4,7 +4,12 @@ import com.ubs.pesubapi.dto.IngestSummary;
 import com.ubs.pesubapi.dto.LpMasterDto;
 import com.ubs.pesubapi.dto.LpMasterIngestRow;
 import com.ubs.pesubapi.repository.LpMasterRepository;
+import com.ubs.pesubapi.security.CurrentUserService;
+import com.ubs.pesubapi.service.AuditLogService;
 import com.ubs.pesubapi.service.LpMasterIngestService;
+import com.ubs.pesubapi.service.LpMasterService;
+import com.ubs.pesubapi.service.NotificationService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Sort;
@@ -23,10 +28,20 @@ public class LpMasterController {
 
     private final LpMasterRepository repo;
     private final LpMasterIngestService ingestService;
+    private final LpMasterService lpMasterService;
+    private final AuditLogService auditService;
+    private final NotificationService notifier;
+    private final CurrentUserService currentUser;
 
-    public LpMasterController(LpMasterRepository repo, LpMasterIngestService ingestService) {
+    public LpMasterController(LpMasterRepository repo, LpMasterIngestService ingestService,
+                              LpMasterService lpMasterService, AuditLogService auditService,
+                              NotificationService notifier, CurrentUserService currentUser) {
         this.repo = repo;
         this.ingestService = ingestService;
+        this.lpMasterService = lpMasterService;
+        this.auditService = auditService;
+        this.notifier = notifier;
+        this.currentUser = currentUser;
     }
 
     /**
@@ -76,5 +91,21 @@ public class LpMasterController {
                 .map(LpMasterDto::from)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Hard-delete an LP Master row — the manual correction path for LPs erroneously ingested
+     * past analyst/reviewer checks. Facility LP records referencing the row are detached, not
+     * deleted. 404 if the row does not exist. ANALYST-gated (curation surface).
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable int id, HttpServletRequest request) {
+        LpMasterService.LpMasterDeletion result = lpMasterService.delete(id);
+        auditService.log("LP Master Deleted",
+            "'" + result.investorName() + "' removed from LP Master ("
+                + result.detachedRecords() + " facility LP record(s) detached)",
+            null, currentUser.uuName(), currentUser.auditDisplayName(), auditService.extractIp(request));
+        notifier.broadcast(result.investorName() + " deleted from LP Master");
+        return ResponseEntity.noContent().build();
     }
 }

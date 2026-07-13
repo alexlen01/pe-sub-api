@@ -50,15 +50,21 @@ public class LpMasterWriteBackService {
         List<LpRecord> facilityRecords = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId);
         if (facilityRecords.isEmpty()) return;
 
-        Map<String, LpMaster> mastersByName = lpMasterRepo.findByInvestorNameIn(
-            facilityRecords.stream()
-                .map(LpRecord::getInvestorName)
-                .filter(name -> name != null && !name.isBlank())
-                .distinct()
-                .toList())
-            .stream()
-            .filter(master -> master.getInvestorName() != null && !master.getInvestorName().isBlank())
-            .collect(java.util.stream.Collectors.toMap(LpMaster::getInvestorName, master -> master, (a, b) -> a, LinkedHashMap::new));
+        List<String> investorNames = new ArrayList<>();
+        for (LpRecord lpRecord : facilityRecords) {
+            String investorName = lpRecord.getInvestorName();
+            if (investorName != null && !investorName.isBlank() && !investorNames.contains(investorName)) {
+                investorNames.add(investorName);
+            }
+        }
+
+        Map<String, LpMaster> mastersByName = new LinkedHashMap<>();
+        for (LpMaster master : lpMasterRepo.findByInvestorNameIn(investorNames)) {
+            String investorName = master.getInvestorName();
+            if (investorName != null && !investorName.isBlank()) {
+                mastersByName.putIfAbsent(investorName, master);
+            }
+        }
 
         Map<String, LpMaster> stagedMasters = new LinkedHashMap<>();
         for (LpRecord lpRecord : facilityRecords) {
@@ -77,9 +83,14 @@ public class LpMasterWriteBackService {
         }
 
         List<LpMaster> savedMasters = lpMasterRepo.saveAll(new ArrayList<>(stagedMasters.values()));
-        Map<String, Integer> masterIdsByName = savedMasters.stream()
-            .filter(master -> master.getInvestorName() != null)
-            .collect(java.util.stream.Collectors.toMap(LpMaster::getInvestorName, LpMaster::getId, (a, b) -> a, LinkedHashMap::new));
+        Map<String, Integer> masterIdsByName = new LinkedHashMap<>();
+        for (LpMaster master : savedMasters) {
+            String investorName = master.getInvestorName();
+            Integer masterId = master.getId();
+            if (investorName != null && !investorName.isBlank() && masterId != null) {
+                masterIdsByName.putIfAbsent(investorName, masterId);
+            }
+        }
 
         List<LpRecord> recordsToUpdate = new ArrayList<>();
         for (LpRecord lpRecord : facilityRecords) {

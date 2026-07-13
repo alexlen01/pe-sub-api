@@ -47,7 +47,7 @@ fund label as the template key until the owning facility is onboarded with its r
 
 `facilities` carries the Agent Bank Summary inputs `account_number`, `loan_amount`,
 `maturity_date`, and `collateral_date` (plus the dormant `bank_status` / `bank_status_date` columns) and the Shadow BB
-Borrowing Base inputs `facility_size` / `ubs_participation` (`V1_4__facility_size_participation.sql`,
+Borrowing Base inputs `facility_size` / `ubs_participation` (consolidated schema `V1_1__schema.sql`,
 stored as full-dollar `NUMERIC`). `POST /api/facilities` only sets name + agent bank; all of these
 are populated afterwards via `PATCH /api/facilities/{id}` (partial update — only the fields present
 in the body are applied), which the UI's Facility Edit screen calls. `PATCH /api/facilities/{id}`
@@ -73,6 +73,23 @@ data is never silently destroyed.
   LP records. The delete cascades to the facility's non-LP dependents (submissions and their
   extractions, match-queue entries, Shadow BB snapshots); `audit_log` rows are **preserved** with
   their `facility_id` nulled so history survives the deletion.
+
+## Deleting LP rows (manual correction path)
+
+No matter how many analyst/reviewer checks the ingestion pipeline has, an erroneous row can slip
+through — both delete endpoints exist for that correction and are audited with the investor name:
+
+- **Facility LP record** — `DELETE /api/lpRecords/{id}` (`ShadowBbService.deleteLpRecord`,
+  `@Transactional`). Detaches match-queue entries pointing at the record (decision history kept;
+  `lp_rates` rows cascade), deletes the row, and **recomputes the facility's ranks** over the
+  remaining population in the same transaction. The current BB snapshot is untouched — totals
+  refresh on the next Run / Re-run Shadow BB. Surfaced in the UI as the Delete action in the
+  LP Master screen's record panel. Audit event: `LP Record Deleted`.
+- **Bank-wide LP Master row** — `DELETE /api/lp-master/{id}` (`LpMasterService.delete`,
+  ANALYST-gated). Facility LP records referencing the row are detached (`lp_master_id` nulled),
+  never deleted. Note: if the investor name still exists in a facility's records, the next
+  accepted Shadow BB cycle's write-back re-creates a master row from that facility's data — to
+  fully purge an erroneous LP, delete its facility record(s) first. Audit event: `LP Master Deleted`.
 
 ## Shadow BB summary (`GET /api/bb/summary-ext/{facilityId}`)
 
@@ -129,8 +146,8 @@ Money fields are in $millions; rate fields are decimal fractions (0.874 = 87.4%)
 - `POST /api/reports/history` — records a generated report:
   `{report, facilityId?, snapshotLabel?, format?}` → `201` with the stored entry. `report` is
   required (400); an unknown `facilityId` is a 404; omitting it marks a portfolio-wide report.
-  History lives in `report_history` (`V1_4__report_history.sql`); `facility_name` is denormalised
-  so entries survive facility deletion.
+  History lives in `report_history` (consolidated schema `V1_1__schema.sql`); `facility_name` is
+  denormalised so entries survive facility deletion.
 
 ## Per-LP concentration limit defaults
 
@@ -207,9 +224,9 @@ stored extraction JSON (`canonicalFields`) for the review screens.
 never rounded or unit-abbreviated (`$12,345,678.9`, not `$12.3M`); exact values also persist
 in the `*_num NUMERIC(20,2)` columns the BB engine reads first. Percent/rate strings carry
 **exactly one decimal** (`75.0%`, `5.6%`) — never a bare integer percent and never more than
-one decimal. `V1_4__widen_extracted_text_columns.sql` widens the workbook-derived
+one decimal. The consolidated schema (`V1_1__schema.sql`) sizes the workbook-derived
 `lp_records`/`lp_master`/`submission_extractions` string columns accordingly (free text 255,
-money display 64, percents/ratings 50).
+money display 64, percents/ratings 50) — extracted values are stored verbatim, never truncated.
 
 **Rank.** `lp_records.lp_rank` is computed **only** by the API (`ShadowBbService.refreshRanks`,
 on each Shadow BB run): competition ranking over **every** LP record in the facility —
@@ -240,16 +257,30 @@ by a security filter that runs in one of two modes, selected by `app.security.mo
 | `dev` (default) | Every request is authenticated as the configured dev identity (`app.security.dev-user`, roles `ANALYST,SERVICE` — SERVICE included so header-less service callers like pe-sub-jobs work locally; DEV mode cannot distinguish callers). Keeps local standalone runs and the header-less UI working without a login flow. |
 | `gateway` | Identity is taken from the SSO reverse-proxy headers `X-Auth-User` / `X-Auth-Roles`. A request without a valid user header is rejected `401`. Set this in any shared/production environment. |
 
-Roles mirror `pe-sub-docs/RBAC_ROLES.md`: **ANALYST** (day-to-day operator + configurator) and
-**ATM** (Account/Transaction Manager). Authorization highlights:
+Roles mirror `pe-sub-docs/RBAC_ROLES.md`: **ANALYST** (day-to-day operator + configurator),
+**MANAGER** (Account/Transaction Manager — independent review authority) and **VIEWER** (IT /
+read-only; Intra ID App Role `APP_VIEWER`). Authorization highlights:
 
-- Configuration surfaces (`PUT /api/config/**`, `/api/field-mapping/**` mutations, `/api/bb-templates/**`) require `ANALYST`.
+- Configuration surfaces (`PUT /api/config/**`, `/api/field-mapping/**` mutations, template
+  create/update/delete/import on `/api/bb-templates/**`) require `ANALYST`, as does the bank-wide
+  LP Master delete (`DELETE /api/lp-master/{id}`). Reading any of these (`GET`) is open to any operator.
+- Independent review (maker-checker) is **Manager-only**: `POST /api/submissions/{id}/accept` and
+  `/reject` require `MANAGER`, and the accepting/rejecting manager must not be the submitter (maker ≠
+  checker, enforced in `SubmissionController`).
+- **VIEWER is read-only**: every mutating verb (`POST`/`PUT`/`PATCH`/`DELETE`) under `/api` is denied
+  to it (`403`), while `GET`/download (including report exports) is allowed.
 - Service-to-service endpoints require the `SERVICE` role and are never reachable by an operator (in gateway mode): `POST /api/lpRecords/ingest`, `POST /api/lpRecords/seed`, `POST /api/facilities/ingest`, `POST /api/lp-master/ingest`, `PATCH /api/config/cls-conc-limit-defaults`.
 - Public (no auth): `GET /api/ping`, `GET /health`, `GET /api/notifications/**`, and CORS preflight.
 
-Audit entries now record the **authenticated principal** (previously a hardcoded operator name);
-in `dev` mode that is `app.security.dev-user`. The 4-eye separation on submission completion is a
-Phase-2 workflow control and is not yet enforced.
+Audit entries record the **authenticated principal** (previously a hardcoded operator name); in
+`dev` mode that is `app.security.dev-user`. Maker-checker review **is now enforced**: `POST
+/complete` submits a Shadow BB for review (status `Pending Review`, recording `submitted_by`);
+`accept` activates the facility and writes the credit profile back to LP Master (recording
+`reviewed_by`); `reject` returns it to an actionable state with a required `review_note`.
+
+To exercise all three roles locally end-to-end, run the API in `gateway` mode
+(`app.security.mode=gateway`) and use the pe-sub-ui dev role switcher, which sends the selected
+role's `X-Auth-User` / `X-Auth-Roles` headers on every request.
 
 ## Environment variables
 

@@ -17,4 +17,9 @@ public interface MatchQueueEntryRepository extends JpaRepository<MatchQueueEntry
     @Modifying
     @Query("UPDATE MatchQueueEntry m SET m.matchedLpId = null WHERE m.facilityId = :facilityId")
     int clearMatchedLpIdsForFacility(@Param("facilityId") Integer facilityId);
+
+    /** Detach match-queue entries from an LP record being deleted, keeping their decision history. */
+    @Modifying
+    @Query("UPDATE MatchQueueEntry m SET m.matchedLpId = null WHERE m.matchedLpId = :lpId")
+    int clearMatchedLpRef(@Param("lpId") Integer lpId);
 }

@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -41,9 +42,12 @@ public class LpClassificationService {
         if (req.facilityId() == null || req.rows() == null) return 0;
         LocalDate effectiveDate = parseMonth(req.effectiveDate());
 
-        Map<Integer, LpRecord> byId = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(req.facilityId()).stream()
-            .filter(lpRecord -> lpRecord.getId() != null)
-            .collect(Collectors.toMap(LpRecord::getId, lpRecord -> lpRecord, (a, b) -> a));
+        Map<Integer, LpRecord> byId = new HashMap<>();
+        lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(req.facilityId()).forEach(lpRecord -> {
+            if (lpRecord.getId() != null) {
+                byId.putIfAbsent(lpRecord.getId(), lpRecord);
+            }
+        });
         Map<String, LpRecord> byName = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(req.facilityId()).stream()
             .collect(Collectors.toMap(lpRecord -> lpRecord.getInvestorName(), lpRecord -> lpRecord, (a, b) -> a));
 

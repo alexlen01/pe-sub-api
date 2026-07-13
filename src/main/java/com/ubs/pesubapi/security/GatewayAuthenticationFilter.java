@@ -20,6 +20,12 @@ import java.util.List;
  *
  * <p>If the security context is already populated — e.g. by {@code @WithMockUser} in a test — this
  * filter defers to it and does nothing, so authorization tests can assert arbitrary roles.
+ *
+ * <p>DEV mode honors the dev role-switcher's {@code X-Auth-*} headers when they are present, so a
+ * local operator can exercise different identities/roles without running full gateway mode (which
+ * would 401 every header-less caller). When no headers are present it falls back to the fixed dev
+ * identity, so header-less callers (service jobs, direct curl, the reachability ping) still work.
+ * This convenience is DEV-only; production runs GATEWAY, which trusts only the proxy headers.
  */
 public class GatewayAuthenticationFilter extends OncePerRequestFilter {
 
@@ -40,7 +46,7 @@ public class GatewayAuthenticationFilter extends OncePerRequestFilter {
         }
 
         Authentication auth = switch (props.getMode()) {
-            case DEV     -> authentication(props.getDevUser(), props.getDevRoles());
+            case DEV     -> devAuthentication(request);
             case GATEWAY -> fromHeaders(request);
         };
         if (auth != null) {
@@ -51,6 +57,14 @@ public class GatewayAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
+    // DEV mode: prefer the dev switcher's headers when present, else the fixed dev identity.
+    private Authentication devAuthentication(HttpServletRequest request) {
+        Authentication fromHeaders = fromHeaders(request);
+        if (fromHeaders != null) return fromHeaders;
+        return authentication(new UserIdentity(props.getDevUser(), props.getDevFirstName(),
+            props.getDevLastName(), props.getDevEmail()), props.getDevRoles());
+    }
+
     private Authentication fromHeaders(HttpServletRequest request) {
         String user = request.getHeader(props.getUserHeader());
         if (user == null || user.isBlank()) return null;
@@ -58,10 +72,19 @@ public class GatewayAuthenticationFilter extends OncePerRequestFilter {
         List<String> roles = (rolesRaw == null || rolesRaw.isBlank())
             ? List.of()
             : Arrays.stream(rolesRaw.split(",")).map(s -> s.trim()).filter(s -> !s.isEmpty()).toList();
-        return authentication(user.trim(), roles);
+        String uuName = user.trim();
+        String email = header(request, props.getEmailHeader());
+        return authentication(new UserIdentity(uuName,
+            header(request, props.getFirstNameHeader()), header(request, props.getLastNameHeader()),
+            email.isBlank() ? uuName : email), roles);
     }
 
-    private Authentication authentication(String user, List<String> roles) {
+    private String header(HttpServletRequest request, String name) {
+        String value = request.getHeader(name);
+        return value == null ? "" : value.trim();
+    }
+
+    private Authentication authentication(UserIdentity user, List<String> roles) {
         List<SimpleGrantedAuthority> authorities = roles.stream()
             .map(r -> new SimpleGrantedAuthority("ROLE_" + r.toUpperCase()))
             .toList();

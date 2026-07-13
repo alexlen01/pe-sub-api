@@ -73,7 +73,7 @@ public class BbController {
         String detail = run.lpCount() + " LPs · UBS BB $" + String.format("%.1f", summary.totalUBB()) + "M";
         notifier.broadcast("Shadow BB calculated for " + run.facilityName()
             + " — UBS BB $" + String.format("%.1f", summary.totalUBB()) + "M");
-        auditService.log("BB Recalculated", detail, facilityId, currentUser.displayName(),
+        auditService.log("BB Recalculated", detail, facilityId, currentUser.uuName(), currentUser.auditDisplayName(),
             auditService.extractIp(httpRequest));
 
         return ResponseEntity.status(201).body(BbSnapshotDto.from(saved));
@@ -287,10 +287,6 @@ public class BbController {
         if (rate == null) return 0;
         try { return Double.parseDouble(rate.replace("%", "").trim()); }
         catch (NumberFormatException e) { return 0; }
-    }
-
-    private static String formatRatePct(String rate) {
-        return String.format("%.0f%%", parseRatePct(rate));
     }
 
     private static String normalizeAgentSummaryRate(String rate) {

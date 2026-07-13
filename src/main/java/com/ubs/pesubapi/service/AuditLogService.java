@@ -28,13 +28,22 @@ public class AuditLogService {
     }
 
     public void log(String event, String detail, Integer facilityId, String userName, String ip) {
+        log(event, detail, facilityId, userName, displayFallback(userName), ip);
+    }
+
+    public void log(String event, String detail, Integer facilityId, String userName, String userDisplay, String ip) {
         AuditLog entry = new AuditLog();
         entry.setEvent(event);
         entry.setDetail(detail);
         entry.setFacilityId(facilityId);
         entry.setUserName(userName);
+        entry.setUserDisplay(userDisplay);
         entry.setIp(ip);
         repo.save(entry);
+    }
+
+    private static String displayFallback(String userName) {
+        return userName == null ? "" : userName;
     }
 
     public String extractIp(HttpServletRequest req) {
@@ -80,6 +89,8 @@ public class AuditLogService {
             row.put("facility", e.getFacilityId() != null
                 ? facilityNames.getOrDefault(e.getFacilityId(), "—") : "—");
             row.put("user",     e.getUserName() != null ? e.getUserName() : "");
+            row.put("userDisplay", e.getUserDisplay() != null && !e.getUserDisplay().isBlank()
+                ? e.getUserDisplay() : displayFallback(e.getUserName()));
             row.put("ip",       e.getIp() != null ? e.getIp() : "");
             return row;
         }).collect(Collectors.toList());

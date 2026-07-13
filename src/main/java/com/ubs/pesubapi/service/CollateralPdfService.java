@@ -3,7 +3,10 @@ package com.ubs.pesubapi.service;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import com.ubs.pesubapi.dto.CollateralReportDto;
 import com.ubs.pesubapi.dto.ComputedLpRecord;
+import com.ubs.pesubapi.entity.BbSnapshot;
 import com.ubs.pesubapi.repository.BbSnapshotRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
@@ -15,6 +18,8 @@ import java.util.Locale;
 
 @Service
 public class CollateralPdfService {
+    private static final Logger log = LoggerFactory.getLogger(CollateralPdfService.class);
+
     private final TemplateEngine templates;
     private final BbSnapshotRepository snapshots;
 
@@ -28,12 +33,29 @@ public class CollateralPdfService {
 
     public byte[] create(CollateralReportDto report, String watermark, Options options) {
         var selected = snapshots.findById(report.snapshotId()).orElseThrow();
-        List<ComputedLpRecord> allLps = selected.getResult().lps() == null ? List.of() : selected.getResult().lps();
+        if (selected.getResult() == null) {
+            log.warn("collateral_pdf_selected_snapshot_missing_result facilityId={} snapshotId={}", report.facilityId(), report.snapshotId());
+        }
+        List<ComputedLpRecord> allLps = selected.getResult() == null || selected.getResult().lps() == null
+            ? List.of()
+            : selected.getResult().lps();
         List<ComputedLpRecord> shownLps = "all".equals(options.includeLps())
             ? allLps : allLps.stream().filter(lp -> lp != null && lp.inc()).toList();
         List<ComputedLpRecord> reclassified = allLps.stream().filter(lp -> lp != null && lp.rcl()).toList();
         double highQualityM = allLps.stream().filter(lp -> lp != null && lp.highQuality()).mapToDouble(lp -> lp.uecM()).sum();
         double otherQualityM = allLps.stream().filter(lp -> lp != null && !lp.highQuality()).mapToDouble(lp -> lp.uecM()).sum();
+        List<BbSnapshot> allTrend = snapshots.findByFacilityIdOrderByCalculatedAtAsc(report.facilityId());
+        List<BbSnapshot> trend = allTrend.stream()
+            .filter(s -> s.getResult() != null && s.getResult().summary() != null)
+            .toList();
+        int skippedTrend = allTrend.size() - trend.size();
+        if (skippedTrend > 0) {
+            log.warn("collateral_pdf_trend_filtered facilityId={} requestedSnapshotId={} skippedSnapshots={} totalSnapshots={}",
+                report.facilityId(), report.snapshotId(), skippedTrend, allTrend.size());
+        }
+        log.info("collateral_pdf_render_start facilityId={} snapshotId={} detail={} includeLps={} allLpCount={} shownLpCount={} trendPoints={} breaches={}",
+            report.facilityId(), report.snapshotId(), options.detail(), options.includeLps(), allLps.size(), shownLps.size(),
+            trend.size(), selected.getResult() == null || selected.getResult().breaches() == null ? 0 : selected.getResult().breaches().size());
 
         Context context = new Context(Locale.US);
         context.setVariable("report", report);
@@ -42,8 +64,8 @@ public class CollateralPdfService {
         context.setVariable("watermark", watermark);
         context.setVariable("lps", shownLps);
         context.setVariable("reclassified", reclassified);
-        context.setVariable("breaches", selected.getResult().breaches() == null ? List.of() : selected.getResult().breaches());
-        context.setVariable("trend", snapshots.findByFacilityIdOrderByCalculatedAtAsc(report.facilityId()));
+        context.setVariable("breaches", selected.getResult() == null || selected.getResult().breaches() == null ? List.of() : selected.getResult().breaches());
+        context.setVariable("trend", trend);
         context.setVariable("highQualityCount", allLps.stream().filter(lp -> lp != null && lp.highQuality()).count());
         context.setVariable("otherQualityCount", allLps.stream().filter(lp -> lp != null && !lp.highQuality()).count());
         context.setVariable("highQualityM", highQualityM);
@@ -54,8 +76,11 @@ public class CollateralPdfService {
         String html = templates.process("reports/collateral-certificate", context);
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             new PdfRendererBuilder().useFastMode().withHtmlContent(html, null).toStream(out).run();
+            log.info("collateral_pdf_render_success facilityId={} snapshotId={} bytes={}", report.facilityId(), report.snapshotId(), out.size());
             return out.toByteArray();
         } catch (Exception e) {
+            log.error("collateral_pdf_render_failure facilityId={} snapshotId={} message={}",
+                report.facilityId(), report.snapshotId(), e.getMessage(), e);
             throw new IllegalStateException("Unable to render collateral certificate PDF", e);
         }
     }

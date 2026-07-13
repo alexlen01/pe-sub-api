@@ -47,15 +47,16 @@ class SubmissionTemplateAutoLearningIntegrationTest extends IntegrationTestBase 
     }
 
     @Test
-    void confirm_unrecognizedTemplate_autoLearnsAgentPattern() throws Exception {
+    void confirm_unrecognizedTemplate_doesNotMutateTemplateRegistry() throws Exception {
+        long before = templates.count();
         int submissionId = submission("New Agent Bank", null);
 
         mvc.perform(post("/api/submissions/{id}/confirm", submissionId))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.templateSaved").value(true));
+            .andExpect(jsonPath("$.templateSaved").value(false));
 
-        assertThat(templates.findAllByTemplateNameIgnoreCase("New Agent Bank"))
-            .singleElement().satisfies(template -> assertThat(template.isAutoLearned()).isTrue());
+        assertThat(templates.findAllByTemplateNameIgnoreCase("New Agent Bank")).isEmpty();
+        assertThat(templates.count()).isEqualTo(before);
     }
 
     private int submission(String agentBank, String recognizedVersion) {

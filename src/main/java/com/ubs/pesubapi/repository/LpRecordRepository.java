@@ -2,7 +2,9 @@ package com.ubs.pesubapi.repository;
 
 import com.ubs.pesubapi.entity.LpRecord;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 
@@ -33,4 +35,10 @@ public interface LpRecordRepository extends JpaRepository<LpRecord, Integer> {
 
     @Query("SELECT DISTINCT l.investorName FROM LpRecord l ORDER BY l.investorName")
     List<String> findAllDistinctNames();
+
+    /** Detach facility LP records from an LP Master row being deleted, preserving the
+     *  facility-level data itself. Returns the number of records detached. */
+    @Modifying
+    @Query("UPDATE LpRecord l SET l.lpMasterId = null WHERE l.lpMasterId = :lpMasterId")
+    int clearLpMasterRef(@Param("lpMasterId") Integer lpMasterId);
 }

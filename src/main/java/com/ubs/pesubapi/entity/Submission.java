@@ -38,6 +38,31 @@ public class Submission {
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;
 
+    /** Stable uuName of the analyst who uploaded/owns the submission (ownership key, set at upload). */
+    @Column(name = "owner_uu_name")
+    private String ownerUuName;
+
+    /** Display name of the owner captured at upload (shown without needing a user directory). */
+    @Column(name = "owner_name")
+    private String ownerName;
+
+    /** Stable identity of the operator who submitted the Shadow BB for independent review (maker). */
+    @Column(name = "submitted_by")
+    private String submittedBy;
+
+    /** Stable identity of the manager who accepted or rejected the review (checker). */
+    @Column(name = "reviewed_by")
+    private String reviewedBy;
+
+    /** Reviewer rationale; required on rejection. */
+    @Column(name = "review_note", columnDefinition = "TEXT")
+    private String reviewNote;
+
+    /** Optimistic-lock token: Hibernate bumps it on every write; a stale writer is rejected. */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version = 0L;
+
     @Column(name = "wizard_step", nullable = false)
     private int wizardStep = 1;
 
@@ -66,6 +91,12 @@ public class Submission {
     public String        getFilePath()           { return filePath; }
     public Integer       getUploadedBy()         { return uploadedBy; }
     public String        getNotes()              { return notes; }
+    public String        getOwnerUuName()        { return ownerUuName; }
+    public String        getOwnerName()          { return ownerName; }
+    public String        getSubmittedBy()        { return submittedBy; }
+    public String        getReviewedBy()         { return reviewedBy; }
+    public String        getReviewNote()         { return reviewNote; }
+    public Long          getVersion()            { return version; }
     public int           getWizardStep()         { return wizardStep; }
     public JsonNode      getShadowBbOverrides()  { return shadowBbOverrides; }
     public LocalDateTime getCreatedAt()          { return createdAt; }
@@ -79,6 +110,11 @@ public class Submission {
     public void setFilePath(String v)           { this.filePath          = v; }
     public void setUploadedBy(Integer v)        { this.uploadedBy        = v; }
     public void setNotes(String v)              { this.notes             = v; }
+    public void setOwnerUuName(String v)        { this.ownerUuName       = v; }
+    public void setOwnerName(String v)          { this.ownerName         = v; }
+    public void setSubmittedBy(String v)        { this.submittedBy       = v; }
+    public void setReviewedBy(String v)         { this.reviewedBy        = v; }
+    public void setReviewNote(String v)         { this.reviewNote        = v; }
     public void setWizardStep(int v)            { this.wizardStep        = v; }
     public void setShadowBbOverrides(JsonNode v){ this.shadowBbOverrides = v; }
 }
