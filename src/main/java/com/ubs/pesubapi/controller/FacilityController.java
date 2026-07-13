@@ -15,7 +15,6 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -74,7 +73,7 @@ public class FacilityController {
             lpCounts.put((Integer) row[0], ((Long) row[1]).intValue());
         }
         Map<Integer, BbSummary> summaries = latestSummariesByFacility();
-        List<FacilityDto> result = repo.findAll(Sort.by("name")).stream()
+        List<FacilityDto> result = repo.findAllByOrderByNameAsc().stream()
             .map(f -> FacilityDto.from(f, lpCounts.getOrDefault(f.getId(), 0), summaries.get(f.getId())))
             .toList();
         log.info("Facilities listed count={}", result.size());
