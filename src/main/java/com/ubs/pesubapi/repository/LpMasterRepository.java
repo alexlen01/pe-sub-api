@@ -10,6 +10,8 @@ import java.util.Optional;
 
 public interface LpMasterRepository extends JpaRepository<LpMaster, Integer> {
 
+    List<LpMaster> findAllByOrderByUbsClassificationAscInvestorNameAsc();
+
     Optional<LpMaster> findByInvestorName(String investorName);
 
     List<LpMaster> findByInvestorNameIn(Collection<String> investorNames);

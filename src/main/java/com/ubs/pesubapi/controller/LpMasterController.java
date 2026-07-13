@@ -12,7 +12,6 @@ import com.ubs.pesubapi.service.NotificationService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -59,7 +58,7 @@ public class LpMasterController {
 
     @GetMapping
     public List<LpMasterDto> list() {
-        List<LpMasterDto> result = repo.findAll(Sort.by("ubsClassification").ascending().and(Sort.by("investorName").ascending()))
+        List<LpMasterDto> result = repo.findAllByOrderByUbsClassificationAscInvestorNameAsc()
                 .stream()
                 .map(LpMasterDto::from)
                 .toList();
