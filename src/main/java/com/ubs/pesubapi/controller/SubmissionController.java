@@ -87,7 +87,6 @@ public class SubmissionController {
     private final MatchQueueEntryRepository      matchQueueRepo;
     private final FmCanonicalFieldRepository     canonicalFieldRepo;
     private final FmAliasRepository              aliasRepo;
-    private final BbTemplateRepository           templateRepo;
     private final TemplateRecognitionService     recognitionService;
     private final AsyncTaskRunner                asyncTaskRunner;
     private final ObjectMapper                   mapper;
@@ -125,7 +124,6 @@ public class SubmissionController {
         this.matchQueueRepo     = matchQueueRepo;
         this.canonicalFieldRepo = canonicalFieldRepo;
         this.aliasRepo          = aliasRepo;
-        this.templateRepo       = templateRepo;
         this.recognitionService = recognitionService;
         this.asyncTaskRunner    = asyncTaskRunner;
         this.mapper             = mapper;
