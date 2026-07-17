@@ -41,4 +41,10 @@ public interface LpRecordRepository extends JpaRepository<LpRecord, Integer> {
     @Modifying
     @Query("UPDATE LpRecord l SET l.lpMasterId = null WHERE l.lpMasterId = :lpMasterId")
     int clearLpMasterRef(@Param("lpMasterId") Integer lpMasterId);
+
+    /** Detach every facility LP record from LP Master ahead of a full LP Master replace,
+     *  preserving the facility-level data. Returns the number of records detached. */
+    @Modifying
+    @Query("UPDATE LpRecord l SET l.lpMasterId = null WHERE l.lpMasterId IS NOT NULL")
+    int clearAllLpMasterRefs();
 }

@@ -5,10 +5,11 @@ import java.time.LocalDate;
 
 /**
  * One facility row from the pe-sub-jobs facility feed (Agent Bank Summary CSV).
- * Upserted by {@code name}: existing facilities are updated in place; new ones are created with
- * the schema defaults (status 'Not Started', 25M concentration limit). {@code status},
- * {@code concLimitM}, {@code facilitySize} and {@code lastRunAt} are deliberately not part of
- * the feed — they are owned by the platform, not the ingest.
+ * Upserted by {@code name}: existing facilities are updated in place; new ones are created with a
+ * platform status seeded from {@code bankStatus} (Active/Inactive, else 'Not Started') and a 25M
+ * concentration limit. The platform-owned {@code status} (after creation), {@code concLimitM},
+ * {@code facilitySize} and {@code lastRunAt} are deliberately not part of the feed — they are
+ * owned by the platform, not the ingest.
  */
 public record FacilityIngestRow(
         String name,

@@ -14,6 +14,7 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -83,10 +84,13 @@ class SeedIngestEndpointsIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.updated").value(0))
             .andExpect(jsonPath("$.skipped").value(1));
 
-        // Re-feed with a changed agent bank: updated in place, platform-owned fields untouched.
+        // Re-feed with a changed agent bank AND a flipped bank_status: the row is updated in place,
+        // its agent-reported bankStatus refreshes, but the platform-owned status is NOT touched on
+        // update — it keeps the "Active" value seeded from bank_status at creation.
         mvc.perform(post("/api/facilities/ingest")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("[" + FACILITY_ROW.replace("Northbank Agent", "Southbank Agent") + "]"))
+                .content("[" + FACILITY_ROW.replace("Northbank Agent", "Southbank Agent")
+                                            .replace("\"bankStatus\": \"Active\"", "\"bankStatus\": \"Inactive\"") + "]"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.created").value(0))
             .andExpect(jsonPath("$.updated").value(1));
@@ -95,8 +99,36 @@ class SeedIngestEndpointsIntegrationTest extends IntegrationTestBase {
         assertThat(saved.getAgentBank()).isEqualTo("Southbank Agent");
         assertThat(saved.getAccountNumber()).isEqualTo("AC-1001");
         assertThat(saved.getLoanAmount()).isEqualByComparingTo(new BigDecimal("250000000.00"));
-        assertThat(saved.getStatus()).isEqualTo("Not Started");
+        // Platform status was seeded "Active" from the create-time bank_status and survives the
+        // update, even though the update's bank_status was "Inactive".
+        assertThat(saved.getStatus()).isEqualTo("Active");
+        assertThat(saved.getBankStatus()).isEqualTo("Inactive");
         assertThat(saved.getConcLimitM()).isEqualByComparingTo(new BigDecimal("25"));
+        // collateral_date round-trips from the feed. The extract wires BBDate -> collateral_date
+        // (D7: label unchanged), so this is the column that carries "Last BB Run Date".
+        assertThat(saved.getCollateralDate()).isEqualTo(LocalDate.parse("2026-05-31"));
+    }
+
+    @Test
+    void facilityIngest_seedsPlatformStatusFromBankStatus_onCreate() throws Exception {
+        // The extract marks orphan "Unknown"-bank placeholder facilities bank_status = Inactive.
+        // Those must seed with platform status Inactive (LP Master shows them Inactive); a normal
+        // Active-bank facility seeds Active.
+        String inactiveRow = FACILITY_ROW
+                .replace("Seed Facility Alpha", "Unknown Placeholder Facility")
+                .replace("\"agentBank\": \"Northbank Agent\"", "\"agentBank\": \"Unknown\"")
+                .replace("\"bankStatus\": \"Active\"", "\"bankStatus\": \"Inactive\"");
+
+        mvc.perform(post("/api/facilities/ingest")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("[" + FACILITY_ROW + ", " + inactiveRow + "]"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.created").value(2));
+
+        assertThat(facilityRepo.findByName("Seed Facility Alpha").orElseThrow().getStatus())
+                .isEqualTo("Active");
+        assertThat(facilityRepo.findByName("Unknown Placeholder Facility").orElseThrow().getStatus())
+                .isEqualTo("Inactive");
     }
 
     @Test

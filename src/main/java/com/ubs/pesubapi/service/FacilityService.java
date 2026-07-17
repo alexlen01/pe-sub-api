@@ -48,10 +48,14 @@ public class FacilityService {
 
     /**
      * Bulk upsert from the pe-sub-jobs facility feed, keyed by facility name.
-     * New facilities are created with the platform defaults (status 'Not Started', 25M conc limit);
-     * existing ones have their agent-reported fields overwritten in place — including with nulls,
-     * matching the feed's replace semantics — while platform-owned fields (status, concLimitM,
-     * facilitySize, lastRunAt) are never touched. Rows without a name or agent bank are skipped.
+     * New facilities take their platform status from the agent-reported {@code bankStatus}
+     * (Active/Inactive; anything else -> 'Not Started') so a freshly-seeded book reflects each
+     * facility's real-world standing in LP Master; the concentration limit defaults to 25M.
+     * Existing facilities have their agent-reported fields overwritten in place — including with
+     * nulls, matching the feed's replace semantics — while platform-owned fields (status,
+     * concLimitM, facilitySize, lastRunAt) are never touched, so re-feeding never disturbs the
+     * Shadow BB workflow state of an already-onboarded facility. Rows without a name or agent
+     * bank are skipped.
      */
     @Transactional
     public IngestSummary ingest(List<FacilityIngestRow> rows) {
@@ -80,10 +84,30 @@ public class FacilityService {
             facility.setBankStatusDate(row.bankStatusDate());
             facility.setUbsParticipation(row.ubsParticipation());
             facility.setCollateralDate(row.collateralDate());
+            // Seed the platform status from the agent's bank_status on CREATE only; never on
+            // update, where platform-owned status is deliberately preserved.
+            if (isNew) {
+                facility.setStatus(seedStatusFromBankStatus(row.bankStatus()));
+            }
             facilityRepo.save(facility);
             if (isNew) created++; else updated++;
         }
         return new IngestSummary(created, updated, skipped);
+    }
+
+    /**
+     * Map an agent-reported {@code bank_status} to the platform facility status used when SEEDING a
+     * new facility from the feed. Only the two standing values the feed emits are recognised
+     * ("Active"/"Inactive", case-insensitive); anything else — including null/blank — falls back to
+     * the schema default "Not Started".
+     */
+    private static String seedStatusFromBankStatus(String bankStatus) {
+        if (bankStatus == null) return "Not Started";
+        return switch (bankStatus.trim().toLowerCase()) {
+            case "active"   -> "Active";
+            case "inactive" -> "Inactive";
+            default         -> "Not Started";
+        };
     }
 
     /**

@@ -56,6 +56,26 @@ public class LpMasterController {
         return result;
     }
 
+    /**
+     * Clears the entire LP Master table ahead of a full repopulate from the one-off LP DB
+     * extract feed ("override, do not preserve"). SERVICE-gated — invoked by the pe-sub-jobs
+     * lp-master ingest job as a pre-step, never a human surface. Facility LP records are
+     * detached, not deleted. Idempotent: a no-op on an already-empty table.
+     */
+    @PostMapping("/clear")
+    public Map<String, Long> clear(HttpServletRequest request) {
+        LpMasterService.LpMasterClear result = lpMasterService.clearAll();
+        auditService.log("LP Master Cleared",
+            result.deletedMasters() + " LP Master row(s) removed ahead of repopulate ("
+                + result.detachedRecords() + " facility LP record(s) detached)",
+            null, currentUser.uuName(), currentUser.auditDisplayName(), auditService.extractIp(request));
+        notifier.broadcast(result.deletedMasters() + " LP Master rows cleared for repopulate");
+        log.info("LP Master clear completed deletedMasters={} detachedRecords={}",
+            result.deletedMasters(), result.detachedRecords());
+        return Map.of("deletedMasters", result.deletedMasters(),
+                      "detachedRecords", (long) result.detachedRecords());
+    }
+
     @GetMapping
     public List<LpMasterDto> list() {
         List<LpMasterDto> result = repo.findAllByOrderByUbsClassificationAscInvestorNameAsc()

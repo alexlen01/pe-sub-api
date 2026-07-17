@@ -34,6 +34,25 @@ public class LpMasterService {
     /** Outcome of an LP Master row deletion, for audit/notification messaging. */
     public record LpMasterDeletion(String investorName, int detachedRecords) {}
 
+    /** Outcome of a full LP Master clear, for audit/notification messaging. */
+    public record LpMasterClear(long deletedMasters, int detachedRecords) {}
+
+    /**
+     * Clears the entire LP Master table ahead of a bootstrap repopulate (the one-off LP DB
+     * extract feed). Facility LP records that reference master rows are detached first
+     * (lp_master_id nulled) — never deleted, as they are per-facility credit data — satisfying
+     * the lp_records.lp_master_id foreign key before the master rows are removed. The next
+     * accepted Shadow BB write-back re-links records to the freshly seeded master by name.
+     */
+    @Transactional
+    public LpMasterClear clearAll() {
+        int detached = lpRecordRepo.clearAllLpMasterRefs();
+        long deleted = lpMasterRepo.count();
+        lpMasterRepo.deleteAllInBatch();
+        log.info("LP Master cleared deletedMasters={} detachedFacilityRecords={}", deleted, detached);
+        return new LpMasterClear(deleted, detached);
+    }
+
     /**
      * Hard-deletes an LP Master row — the manual correction path for erroneously ingested LPs
      * that slipped past analyst/reviewer checks. Facility LP records that reference the row are

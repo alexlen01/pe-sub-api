@@ -59,6 +59,10 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/lpRecords/seed").hasRole("SERVICE")
                 .requestMatchers(HttpMethod.POST, "/api/facilities/ingest").hasRole("SERVICE")
                 .requestMatchers(HttpMethod.POST, "/api/lp-master/ingest").hasRole("SERVICE")
+                // Full LP Master wipe ahead of the one-off extract repopulate — machine-only,
+                // run as the lp-master ingest job's pre-step. Kept SERVICE (not ANALYST like the
+                // per-id DELETE) so a human curation token can never trigger a table-wide clear.
+                .requestMatchers(HttpMethod.POST, "/api/lp-master/clear").hasRole("SERVICE")
                 .requestMatchers(HttpMethod.PATCH, "/api/config/cls-conc-limit-defaults").hasRole("SERVICE")
                 // Independent review (maker-checker) is Manager-only; maker ≠ checker is enforced
                 // in SubmissionController. Analysts submit for review via POST /complete (an
