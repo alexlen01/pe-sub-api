@@ -769,7 +769,9 @@ public class SubmissionController {
             if (req.overrides() != null) {
                 sub.setShadowBbOverrides(req.overrides());
             }
-            submissions.save(sub);
+            // Flush before building the DTO so Hibernate's @Version increment is included in the
+            // response. The UI passes this token to /complete immediately after saving Step 5.
+            submissions.saveAndFlush(sub);
             Integer facilityId = sub.getFacilityId();
             String facilityName = facilityId != null
                 ? facilities.findById(facilityId).map(facility -> facility.getName()).orElse("—")

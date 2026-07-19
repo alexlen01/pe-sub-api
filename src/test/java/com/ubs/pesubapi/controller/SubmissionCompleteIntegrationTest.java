@@ -119,6 +119,25 @@ class SubmissionCompleteIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void shadowBbState_returnsCurrentVersion_thatCanBeUsedToComplete() throws Exception {
+        mvc.perform(patch("/api/submissions/{id}/shadow-bb-state", submissionId)
+                .param("expectedVersion", "0")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"overrides":{"LPRecord-1":{"cls":"Rated Investor"}}}
+                    """)
+                .with(user("alice.analyst").roles("ANALYST")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.version").value(1));
+
+        mvc.perform(post("/api/submissions/{id}/complete", submissionId)
+                .param("expectedVersion", "1")
+                .with(user("alice.analyst").roles("ANALYST")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("Pending Review"));
+    }
+
+    @Test
     void manager_mayModifyAnothersSubmission() throws Exception {
         // Manager override (RBAC): a Manager may act on any submission without owning it.
         mvc.perform(post("/api/submissions/{id}/complete", submissionId)
