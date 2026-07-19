@@ -16,9 +16,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.tuple;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -36,6 +36,10 @@ class SeedIngestEndpointsIntegrationTest extends IntegrationTestBase {
     @Autowired FacilityRepository facilityRepo;
     @Autowired LpMasterRepository lpMasterRepo;
     @Autowired LpRecordRepository lpRecordRepo;
+
+    private static int persistedId(Facility facility) {
+        return Objects.requireNonNull(facility.getId(), "Persisted facility must have an id");
+    }
 
     private static final String FACILITY_ROW = """
         {
@@ -195,7 +199,8 @@ class SeedIngestEndpointsIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.skipped").value(2));
 
         Facility facility = facilityRepo.findByName("Seed Facility Alpha").orElseThrow();
-        List<LpRecord> records = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facility.getId());
+        int facilityId = persistedId(facility);
+        List<LpRecord> records = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId);
         assertThat(records).hasSize(1);
         LpRecord lp = records.getFirst();
         assertThat(lp.getLpMasterId()).isEqualTo(lpMasterRepo.findAll().getFirst().getId());
@@ -244,7 +249,7 @@ class SeedIngestEndpointsIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.created").value(0))
             .andExpect(jsonPath("$.skipped").value(1));
 
-        assertThat(lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facility.getId()))
+        assertThat(lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId))
             .hasSize(1)
             .first()
             .satisfies(unchanged -> assertThat(unchanged.getCapCommit()).isEqualTo("$300M"));
@@ -283,12 +288,21 @@ class SeedIngestEndpointsIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.created").value(3));
 
         Facility facility = facilityRepo.findByName("Seed Facility Alpha").orElseThrow();
-        List<LpRecord> records = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facility.getId());
-        assertThat(records).extracting(LpRecord::getInvestorName, LpRecord::getCls)
-            .containsExactly(
-                tuple("CP1 Pension Fund", "Corp Pension > $1Bn Assets"),
-                tuple("Feeder Family Office", "HNW Feeder (acceptable)"),
-                tuple("HNW Family Office", "HNW (acceptable)"));
+        int facilityId = persistedId(facility);
+        List<LpRecord> records = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId);
+        assertThat(records).satisfiesExactly(
+            cp1 -> {
+                assertThat(cp1.getInvestorName()).isEqualTo("CP1 Pension Fund");
+                assertThat(cp1.getCls()).isEqualTo("Corp Pension > $1Bn Assets");
+            },
+            feeder -> {
+                assertThat(feeder.getInvestorName()).isEqualTo("Feeder Family Office");
+                assertThat(feeder.getCls()).isEqualTo("HNW Feeder (acceptable)");
+            },
+            hnw -> {
+                assertThat(hnw.getInvestorName()).isEqualTo("HNW Family Office");
+                assertThat(hnw.getCls()).isEqualTo("HNW (acceptable)");
+            });
     }
 
     @Test
