@@ -47,4 +47,10 @@ public interface LpRecordRepository extends JpaRepository<LpRecord, Integer> {
     @Modifying
     @Query("UPDATE LpRecord l SET l.lpMasterId = null WHERE l.lpMasterId IS NOT NULL")
     int clearAllLpMasterRefs();
+
+    /** Finalize approved reclassifications. The accepted snapshot retains the historical flag,
+     * while live LP records return to their normal post-review state. */
+    @Modifying
+    @Query("UPDATE LpRecord l SET l.rcl = false WHERE l.facilityId = :facilityId AND l.rcl = true")
+    int clearReclassifiedByFacilityId(@Param("facilityId") Integer facilityId);
 }

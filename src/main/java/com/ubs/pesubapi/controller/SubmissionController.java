@@ -3,6 +3,7 @@ package com.ubs.pesubapi.controller;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
+import com.ubs.pesubapi.dto.BbSnapshotDto;
 import com.ubs.pesubapi.dto.ExtractionResponse;
 import com.ubs.pesubapi.dto.IngestRequest;
 import com.ubs.pesubapi.dto.ResolvedTemplate;
@@ -17,6 +18,7 @@ import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.FmAliasRepository;
 import com.ubs.pesubapi.repository.FmCanonicalFieldRepository;
 import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
+import com.ubs.pesubapi.repository.LpRecordRepository;
 import com.ubs.pesubapi.repository.SubmissionExtractionRepository;
 import com.ubs.pesubapi.repository.SubmissionRepository;
 import com.ubs.pesubapi.security.CurrentUserService;
@@ -29,6 +31,7 @@ import com.ubs.pesubapi.service.LpIngestService;
 import com.ubs.pesubapi.service.LpMasterWriteBackService;
 import com.ubs.pesubapi.service.MatchingService;
 import com.ubs.pesubapi.service.NotificationService;
+import com.ubs.pesubapi.service.ShadowBbService;
 import com.ubs.pesubapi.service.TemplateRecognitionService;
 import com.ubs.pesubapi.util.InvestorTypeDeriver;
 import jakarta.servlet.http.HttpServletRequest;
@@ -53,6 +56,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -75,6 +79,8 @@ public class SubmissionController {
         LocalDateTime createdAt, LocalDateTime updatedAt
     ) {}
 
+    record RerunForReviewDto(BbSnapshotDto snapshot, SubmissionDto submission) {}
+
 
     private final SubmissionRepository           submissions;
     private final FacilityRepository             facilities;
@@ -85,6 +91,7 @@ public class SubmissionController {
     private final MatchingService                matchingService;
     private final SubmissionExtractionRepository extractionRepo;
     private final MatchQueueEntryRepository      matchQueueRepo;
+    private final LpRecordRepository             lpRecordRepo;
     private final FmCanonicalFieldRepository     canonicalFieldRepo;
     private final FmAliasRepository              aliasRepo;
     private final TemplateRecognitionService     recognitionService;
@@ -92,6 +99,7 @@ public class SubmissionController {
     private final ObjectMapper                   mapper;
     private final CurrentUserService             currentUser;
     private final NotificationService            notifier;
+    private final ShadowBbService                 shadowBbService;
 
     @Value("${app.uploads.path:uploads}")
     private String uploadsPath;
@@ -105,6 +113,7 @@ public class SubmissionController {
                                 MatchingService matchingService,
                                 SubmissionExtractionRepository extractionRepo,
                                 MatchQueueEntryRepository matchQueueRepo,
+                                LpRecordRepository lpRecordRepo,
                                 FmCanonicalFieldRepository canonicalFieldRepo,
                                 FmAliasRepository aliasRepo,
                                 BbTemplateRepository templateRepo,
@@ -112,7 +121,8 @@ public class SubmissionController {
                                 AsyncTaskRunner asyncTaskRunner,
                                 ObjectMapper mapper,
                                 CurrentUserService currentUser,
-                                NotificationService notifier) {
+                                NotificationService notifier,
+                                ShadowBbService shadowBbService) {
         this.submissions        = submissions;
         this.facilities         = facilities;
         this.auditService       = auditService;
@@ -122,6 +132,7 @@ public class SubmissionController {
         this.matchingService    = matchingService;
         this.extractionRepo     = extractionRepo;
         this.matchQueueRepo     = matchQueueRepo;
+        this.lpRecordRepo       = lpRecordRepo;
         this.canonicalFieldRepo = canonicalFieldRepo;
         this.aliasRepo          = aliasRepo;
         this.recognitionService = recognitionService;
@@ -129,6 +140,7 @@ public class SubmissionController {
         this.mapper             = mapper;
         this.currentUser        = currentUser;
         this.notifier           = notifier;
+        this.shadowBbService    = shadowBbService;
     }
 
     // ── POST /api/submissions ────────────────────────────────────────────────
@@ -698,6 +710,49 @@ public class SubmissionController {
         return subs.stream().map(s -> toDto(s, nameById.getOrDefault(s.getFacilityId(), "—"))).toList();
     }
 
+    // Re-runs started from the Shadow BB results screen do not necessarily have an upload-backed
+    // submission (seeded facilities are the common case). Calculate and create the maker/checker
+    // review item atomically so every successful re-run can be handed to a Manager.
+    @Transactional
+    @PostMapping("/facilities/{facilityId}/rerun-for-review")
+    public ResponseEntity<?> rerunForReview(@PathVariable int facilityId,
+                                            HttpServletRequest request) {
+        Optional<Facility> facilityOpt = facilities.findById(facilityId);
+        if (facilityOpt.isEmpty()) return ResponseEntity.notFound().build();
+
+        Facility facility = facilityOpt.get();
+        ShadowBbService.RunResult run = shadowBbService.runAndSnapshot(facilityId, null);
+
+        Submission sub = new Submission();
+        sub.setFacilityId(facilityId);
+        sub.setAgentBank(facility.getAgentBank());
+        sub.setPeriodMonth(YearMonth.now().toString());
+        sub.setFileName("LP classification re-run");
+        sub.setNotes("Shadow BB re-run after LP classification changes");
+        sub.setStatus(STATUS_PENDING_REVIEW);
+        sub.setWizardStep(6);
+        sub.setOwnerUuName(currentUser.uuName());
+        sub.setOwnerName(currentUser.displayName());
+        sub.setSubmittedBy(currentUser.uuName());
+        Submission saved = submissions.saveAndFlush(sub);
+
+        facility.setStatus(STATUS_PENDING_REVIEW);
+        facilities.save(facility);
+
+        var summary = run.snapshot().getResult().summary();
+        String detail = run.lpCount() + " LPs · UBS BB $" + String.format("%.1f", summary.totalUBB()) + "M";
+        auditService.log("BB Recalculated", detail, facilityId, currentUser.uuName(),
+            currentUser.auditDisplayName(), auditService.extractIp(request));
+        auditService.log("Shadow BB Submitted",
+            "Submission #" + saved.getId() + " submitted for independent review",
+            facilityId, currentUser.uuName(), currentUser.auditDisplayName(), auditService.extractIp(request));
+        notifier.broadcast("Shadow BB calculated for " + facility.getName()
+            + " — UBS BB $" + String.format("%.1f", summary.totalUBB()) + "M");
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(new RerunForReviewDto(
+            BbSnapshotDto.from(run.snapshot()), toDto(saved, facility.getName())));
+    }
+
     // ── GET /api/submissions/:id ─────────────────────────────────────────────
 
     @GetMapping("/{id}")
@@ -870,6 +925,9 @@ public class SubmissionController {
             // Write finalized UBS classification / rate / conc decisions back to LP Master
             // so future submissions for any facility benefit from this cycle's credit profile.
             lpMasterWriteBack.writeBack(facilityId);
+            // The approved snapshot keeps rcl=true as historical evidence. Clear only the live
+            // LP-record workflow flag so the badge/banner disappear after Manager approval.
+            lpRecordRepo.clearReclassifiedByFacilityId(facilityId);
         }
 
         auditService.log("Shadow BB Accepted",

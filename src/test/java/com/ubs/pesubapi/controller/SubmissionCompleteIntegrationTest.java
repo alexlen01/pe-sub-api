@@ -2,9 +2,11 @@ package com.ubs.pesubapi.controller;
 
 import com.ubs.pesubapi.IntegrationTestBase;
 import com.ubs.pesubapi.entity.Facility;
+import com.ubs.pesubapi.entity.LpRecord;
 import com.ubs.pesubapi.entity.Submission;
 
 import com.ubs.pesubapi.repository.FacilityRepository;
+import com.ubs.pesubapi.repository.LpRecordRepository;
 
 import com.ubs.pesubapi.repository.SubmissionRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,6 +31,7 @@ class SubmissionCompleteIntegrationTest extends IntegrationTestBase {
     @Autowired MockMvc                        mvc;
     @Autowired SubmissionRepository           submissionRepo;
     @Autowired FacilityRepository             facilityRepo;
+    @Autowired LpRecordRepository             lpRecordRepo;
 
     private int facilityId;
     private int submissionId;
@@ -178,6 +181,28 @@ class SubmissionCompleteIntegrationTest extends IntegrationTestBase {
         Facility f = facilityRepo.findById(facilityId).orElseThrow();
         assert "Active".equals(f.getStatus()) : "Expected Active, got: " + f.getStatus();
         assert f.getLastRunAt() != null : "lastRunAt must be stamped on acceptance";
+    }
+
+    @Test
+    void accept_clearsLiveReclassifiedFlagAfterApproval() throws Exception {
+        LpRecord lp = new LpRecord();
+        lp.setFacilityId(facilityId);
+        lp.setInvestorName("Reclassified Pension");
+        lp.setRegion("North America");
+        lp.setCls("Rated Investor");
+        lp.setRcl(true);
+        int lpId = lpRecordRepo.save(lp).getId();
+
+        mvc.perform(post("/api/submissions/{id}/complete", submissionId)
+                .with(user("alice.analyst").roles("ANALYST")))
+            .andExpect(status().isOk());
+
+        mvc.perform(post("/api/submissions/{id}/accept", submissionId)
+                .with(user("mgr.checker").roles("MANAGER")))
+            .andExpect(status().isOk());
+
+        assert !lpRecordRepo.findById(lpId).orElseThrow().isRcl()
+            : "Approved reclassification must no longer be shown as pending";
     }
 
     @Test

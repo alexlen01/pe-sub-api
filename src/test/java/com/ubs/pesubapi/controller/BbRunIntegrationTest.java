@@ -5,6 +5,7 @@ import com.ubs.pesubapi.entity.Facility;
 
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.LpRecordRepository;
+import com.ubs.pesubapi.repository.SubmissionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,6 +22,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
     @Autowired MockMvc              mvc;
     @Autowired FacilityRepository   facilityRepo;
     @Autowired LpRecordRepository   lpRecordRepo;
+    @Autowired SubmissionRepository submissionRepo;
     @Autowired org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     private int facilityId;
@@ -106,6 +108,60 @@ class BbRunIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isCreated());
 
         assertThat(lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)).hasSize(3);
+    }
+
+    @Test
+    void rerunForReview_createsReviewSubmissionWhenFacilityHasNoSubmissionHistory() throws Exception {
+        mvc.perform(post("/api/bb/run/{id}", facilityId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(lpPayload(facilityId)))
+            .andExpect(status().isCreated());
+
+        assertThat(submissionRepo.findByFacilityIdOrderByCreatedAtDesc(facilityId)).isEmpty();
+
+        mvc.perform(post("/api/submissions/facilities/{id}/rerun-for-review", facilityId))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.snapshot.facilityId").value(facilityId))
+            .andExpect(jsonPath("$.snapshot.result.summary.reclassCount").isNumber())
+            .andExpect(jsonPath("$.submission.facilityId").value(facilityId))
+            .andExpect(jsonPath("$.submission.status").value("Pending Review"))
+            .andExpect(jsonPath("$.submission.wizardStep").value(6));
+
+        assertThat(submissionRepo.findByFacilityIdOrderByCreatedAtDesc(facilityId))
+            .singleElement()
+            .satisfies(submission -> {
+                assertThat(submission.getFileName()).isEqualTo("LP classification re-run");
+                assertThat(submission.getSubmittedBy()).isNotBlank();
+            });
+        assertThat(facilityRepo.findById(facilityId).orElseThrow().getStatus())
+            .isEqualTo("Pending Review");
+    }
+
+    @Test
+    void run_doesNotClearStickyReclassifiedFlagFromStalePayload() throws Exception {
+        String currentPayload = lpPayload(facilityId)
+            .replaceFirst("\\\"rcl\\\": false", "\\\"rcl\\\": true");
+
+        mvc.perform(post("/api/bb/run/{id}", facilityId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(currentPayload))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.result.summary.reclassCount").value(1));
+
+        // A stale screen still carrying rcl=false must not erase the persisted status or the
+        // status embedded in the new report/snapshot result.
+        mvc.perform(post("/api/bb/run/{id}", facilityId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(lpPayload(facilityId)))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.result.summary.reclassCount").value(1))
+            .andExpect(jsonPath("$.result.lps[?(@.name == 'CalPERS')].rcl").value(true));
+
+        assertThat(lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).stream()
+            .filter(lp -> "CalPERS".equals(lp.getInvestorName()))
+            .findFirst()
+            .orElseThrow()
+            .isRcl()).isTrue();
     }
 
     @Test

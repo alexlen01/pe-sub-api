@@ -151,7 +151,10 @@ public class LpMasterService {
         // payload: abb stays whatever ingest wrote (agent-reported), and the rest are computed
         // and written back by ShadowBbService in the same run transaction.
         lpRecord.setInc(row.inc());
-        lpRecord.setRcl(row.rcl());
+        // Reclassification is a sticky record status. A Shadow BB client can legitimately carry
+        // a stale false value from a snapshot loaded before the classification Save; never let a
+        // later run erase the server-authoritative flag.
+        lpRecord.setRcl(lpRecord.isRcl() || row.rcl());
         lpRecord.setTf(row.tf());
         lpRecord.setNotes(row.notes());
     }
