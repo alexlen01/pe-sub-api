@@ -139,6 +139,7 @@ public class LpRecordController {
                                         HttpServletRequest request) {
         return repo.findById(id).map(lpRecord -> {
             String prevCls = lpRecord.getCls();
+            String prevAgentCls = lpRecord.getAgentCls();
             if (body.containsKey("investor_type")) lpRecord.setInvestorType((String) body.get("investor_type"));
             if (body.containsKey("investorType"))  lpRecord.setInvestorType((String) body.get("investorType"));
             if (body.containsKey("fund_sleeve"))   lpRecord.setFundSleeve((String) body.get("fund_sleeve"));
@@ -158,14 +159,18 @@ public class LpRecordController {
             if (body.containsKey("inc"))    lpRecord.setInc((Boolean) body.get("inc"));
             if (body.containsKey("rcl"))    lpRecord.setRcl((Boolean) body.get("rcl"));
             if (body.containsKey("notes"))  lpRecord.setNotes((String) body.get("notes"));
+            boolean classificationChanged = !Objects.equals(lpRecord.getCls(), prevCls)
+                || !Objects.equals(lpRecord.getAgentCls(), prevAgentCls);
+            if (classificationChanged) lpRecord.setRcl(true);
             lpRecord.setUpdatedAt(LocalDateTime.now());
             LpRecord saved = repo.save(lpRecord);
             log.info("LpRecord patched id={} facilityId={} investor='{}' fields={}",
                 id, saved.getFacilityId(), saved.getInvestorName(), body.keySet());
-            if (body.containsKey("cls") && !Objects.equals(lpRecord.getCls(), prevCls)) {
-                notifier.broadcast(lpRecord.getInvestorName() + " reclassified to " + lpRecord.getCls());
-                String detail = lpRecord.getInvestorName() + " → " + lpRecord.getCls()
-                    + (prevCls != null ? " (was " + prevCls + ")" : "");
+            if (classificationChanged) {
+                notifier.broadcast(lpRecord.getInvestorName() + " was reclassified");
+                String detail = lpRecord.getInvestorName()
+                    + ": Agent " + prevAgentCls + " → " + lpRecord.getAgentCls()
+                    + "; UBS " + prevCls + " → " + lpRecord.getCls();
                 auditService.log("LpRecord Reclassified", detail, lpRecord.getFacilityId(),
                     currentUser.uuName(), currentUser.auditDisplayName(), auditService.extractIp(request));
             }

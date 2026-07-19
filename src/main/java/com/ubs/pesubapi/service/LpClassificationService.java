@@ -14,6 +14,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -63,6 +64,11 @@ public class LpClassificationService {
             }
             if (lpRecord == null) continue;   // only persisted LP Master records are updated
 
+            // Derive reclassification from persisted values during Save. The flag is sticky so
+            // downstream screens and reports do not depend on a separate client-side action.
+            boolean reclassified = changed(row.agentCls(), lpRecord.getAgentCls())
+                || changed(row.cls(), lpRecord.getCls());
+
             if (row.name() != null && !row.name().isBlank()) lpRecord.setInvestorName(row.name());
             if (row.parent()         != null) lpRecord.setParent(row.parent());
             if (row.spv()            != null) lpRecord.setSpv(row.spv());
@@ -88,6 +94,7 @@ public class LpClassificationService {
             if (row.tf()             != null) lpRecord.setTf(row.tf());
             if (row.uc()             != null) lpRecord.setUc(row.uc());
             if (row.notes()          != null) lpRecord.setNotes(row.notes());
+            if (reclassified) lpRecord.setRcl(true);
             // Rates: persist the display strings on the lpRecord, and upsert the decimal fractions
             // into lp_rates below for the submission period.
             if (row.ubsAdvRatePct()  != null) lpRecord.setUbsRate(formatPct(row.ubsAdvRatePct()));
@@ -157,5 +164,13 @@ public class LpClassificationService {
     private LocalDate parseMonth(String ym) {
         if (ym == null || ym.isBlank()) return LocalDate.now().withDayOfMonth(1);
         return EffectivePeriod.firstOfMonth(ym);
+    }
+
+    private boolean changed(String requested, String persisted) {
+        return requested != null && !Objects.equals(normalize(requested), normalize(persisted));
+    }
+
+    private String normalize(String value) {
+        return value == null ? "" : value.trim();
     }
 }

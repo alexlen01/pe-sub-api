@@ -165,7 +165,8 @@ class LpRecordControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.pension").value("$1.0B"))
             .andExpect(jsonPath("$.pensionFunded").value("112%"))
             .andExpect(jsonPath("$.uc").value("$12.0M"))
-            .andExpect(jsonPath("$.inc").value(true));
+            .andExpect(jsonPath("$.inc").value(true))
+            .andExpect(jsonPath("$.rcl").value(true));
 
         // Advance rate + conc limit upserted into lp_rates as decimal fractions
         mvc.perform(get("/api/lpRecords/rates").param("effective_date", "2026-06"))
@@ -238,6 +239,34 @@ class LpRecordControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.updated").value(1));
 
         assertThat(auditLogRepo.count()).isZero();
+    }
+
+    @Test
+    void patchClassification_detectsAgentClassificationChangeOnSave() throws Exception {
+        LpRecord lp = buildLp("Agent Reclassified LP", "Rated");
+        lp.setAgentCls("Included");
+        LpRecord saved = lpRecordRepo.save(lp);
+
+        mvc.perform(patch("/api/lpRecords/classification")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "facilityId": %d,
+                      "rows": [{
+                        "id": %d,
+                        "name": "Agent Reclassified LP",
+                        "cls": "Rated",
+                        "agentCls": "Excluded"
+                      }]
+                    }
+                    """.formatted(facilityId, saved.getId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.updated").value(1));
+
+        mvc.perform(get("/api/lpRecords/{id}", saved.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.agentCls").value("Excluded"))
+            .andExpect(jsonPath("$.rcl").value(true));
     }
 
     @Test
