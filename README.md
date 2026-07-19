@@ -104,6 +104,19 @@ full dollars or abbreviated `$M` by panel width). Key rules:
   This drives UBS BB, the BUSA distribution (Table 3) and the UBS advance rate.
 - **Total Called Capital** is calculated (`Capital Commitments − Uncalled Capital`) per LP when no
   `called_cap` is stored, rather than summing a column of blanks.
+- **Agent BB** is read from the stored `abb`/`agent_bb_num` when present (including an explicit
+  `"$0"` — an agent-reported value written at ingest); otherwise the engine derives it per LP as
+  `MIN(uncalled, total uncalled × agent_conc) × agent_rate` (0 for excluded LPs). This keeps
+  `totalABB`, Available Commitment, and Facility Advance Rate non-zero for facilities that have
+  agent rates but no agent-reported Agent BB amounts.
+- **Server-authoritative run** (`POST /api/bb/run/{facilityId}`) — the commit payload carries LP
+  *inputs* only; engine outputs (`abb`, `ubb`, excess concentrations, `rank`) are not accepted.
+  On every run the engine computes them and writes `ubb` / `ubs_excess_conc` / `agent_excess_conc`
+  display strings and ranks back onto `lp_records` in the same transaction
+  (`ShadowBbService.writeBackComputedValues`); `abb`/`agent_bb_num` are never touched by a run.
+  The snapshot's per-LP rows carry `ucM`, `agentExcessM`, `pctAgentBB`, `pctUbsBB`, and the
+  summary carries `totalUEC`, `totalUC`, `totalConcExcess`, `reclassCount` — the UI renders these
+  rather than recomputing them.
 - **Money precision** — LP money is stored twice: the formatted display string (`"$12.3M"`) and a
   precise numeric column (`uncalled_capital_num`, `cap_commit_num`, `aum_num`, `agent_bb_num` on
   `lp_records` in `V1_1__schema.sql`). The engine (`BbCalculationService.moneyM`) reads the numeric
@@ -190,7 +203,7 @@ endpoints on this API (which owns the schema and audits the writes):
 |---|---|---|
 | `POST /api/facilities/ingest` | Agent Bank Summary CSV | Upsert by facility `name`; platform-owned fields (status, conc limit, facility size) never touched |
 | `POST /api/lp-master/ingest` | LP Master CSV | Upsert by `investorName`; whole profile replaced (feed is authoritative) |
-| `POST /api/lpRecords/seed` | Facility-LP seeds CSV | Facility + LP Master resolved by name server-side, LP Master profile merged, classifications normalized; existing (facility, investor) pairs skipped, never overwritten — `lp_records` intentionally has no unique constraint on that pair (multi-sleeve), so idempotency is application-level |
+| `POST /api/lpRecords/seed` | Facility-LP seeds CSV | Full per-LP column set of the LP DB Export (31 fields incl. `ubsCls` pre-derived from row UBSAR via the rate tiers); facility + LP Master resolved by name server-side, row values authoritative, LP Master profile fills only blank fields (legacy 7-field rows keep the old merge), classifications normalized; existing (facility, investor) pairs skipped, never overwritten — `lp_records` intentionally has no unique constraint on that pair (multi-sleeve), so idempotency is application-level |
 | `PATCH /api/config/cls-conc-limit-defaults` | cls-conc limits CSV | jsonb-style merge into the defaults map (see above) |
 
 Each returns `{"created": n, "updated": n, "skipped": n}`; unresolvable or blank rows are
@@ -264,17 +277,17 @@ read-only; Intra ID App Role `APP_VIEWER`). Authorization highlights:
 - Configuration surfaces (`PUT /api/config/**`, `/api/field-mapping/**` mutations, template
   create/update/delete/import on `/api/bb-templates/**`) require `ANALYST`, as does the bank-wide
   LP Master delete (`DELETE /api/lp-master/{id}`). Reading any of these (`GET`) is open to any operator.
-- Independent review (maker-checker) is **Manager-only**: `POST /api/submissions/{id}/accept` and
-  `/reject` require `MANAGER`, and the accepting/rejecting manager must not be the submitter (maker ≠
-  checker, enforced in `SubmissionController`).
+- Shadow BB review is **Manager-only**: `POST /api/submissions/{id}/accept` and `/reject` require
+  `MANAGER`. A Manager may accept or reject their own submission so the workflow does not lock when
+  no second reviewer is available.
 - **VIEWER is read-only**: every mutating verb (`POST`/`PUT`/`PATCH`/`DELETE`) under `/api` is denied
   to it (`403`), while `GET`/download (including report exports) is allowed.
 - Service-to-service endpoints require the `SERVICE` role and are never reachable by an operator (in gateway mode): `POST /api/lpRecords/ingest`, `POST /api/lpRecords/seed`, `POST /api/facilities/ingest`, `POST /api/lp-master/ingest`, `PATCH /api/config/cls-conc-limit-defaults`.
 - Public (no auth): `GET /api/ping`, `GET /health`, `GET /api/notifications/**`, and CORS preflight.
 
 Audit entries record the **authenticated principal** (previously a hardcoded operator name); in
-`dev` mode that is `app.security.dev-user`. Maker-checker review **is now enforced**: `POST
-/complete` submits a Shadow BB for review (status `Pending Review`, recording `submitted_by`);
+`dev` mode that is `app.security.dev-user`. Role-gated review **is enforced**: `POST /complete`
+submits a Shadow BB for review (status `Pending Review`, recording `submitted_by`);
 `accept` activates the facility and writes the credit profile back to LP Master (recording
 `reviewed_by`); `reject` returns it to an actionable state with a required `review_note`.
 

@@ -40,7 +40,7 @@ public class CurrentUserService {
 
     /**
      * Stable, unique authentication identity (UBS uuName) — the correct key for authorization
-     * decisions, ownership, and maker-checker separation. Unlike {@link #displayName()} this is
+     * decisions, ownership, and submitter/reviewer attribution. Unlike {@link #displayName()} this is
      * never a human-readable name, so two people who share a name do not collide. Returns
      * {@code "system"} when no principal is bound.
      */

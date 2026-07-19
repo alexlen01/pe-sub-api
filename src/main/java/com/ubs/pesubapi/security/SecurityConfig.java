@@ -29,7 +29,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  * <p>Enforcement shape: specific write rules come first (config → ANALYST, ingest → SERVICE,
  * accept/reject → MANAGER). Reads (GET) under {@code /api} are open to any authenticated operator
  * including VIEWER. All remaining writes require an operator role, which structurally excludes
- * VIEWER (403). The maker ≠ checker separation on accept/reject is enforced in the controller.
+ * VIEWER (403). A Manager may accept or reject a Shadow BB they submitted themselves.
  */
 @Configuration
 @EnableConfigurationProperties(SecurityProperties.class)
@@ -64,9 +64,9 @@ public class SecurityConfig {
                 // per-id DELETE) so a human curation token can never trigger a table-wide clear.
                 .requestMatchers(HttpMethod.POST, "/api/lp-master/clear").hasRole("SERVICE")
                 .requestMatchers(HttpMethod.PATCH, "/api/config/cls-conc-limit-defaults").hasRole("SERVICE")
-                // Independent review (maker-checker) is Manager-only; maker ≠ checker is enforced
-                // in SubmissionController. Analysts submit for review via POST /complete (an
-                // operator write, allowed by the generic rules below).
+                // Shadow BB review is Manager-only. Managers may review their own submissions to
+                // avoid a lockout when no second reviewer is available. Analysts submit for review
+                // via POST /complete (an operator write, allowed by the generic rules below).
                 .requestMatchers(HttpMethod.POST, "/api/submissions/*/accept").hasRole("MANAGER")
                 .requestMatchers(HttpMethod.POST, "/api/submissions/*/reject").hasRole("MANAGER")
                 // Configuration surfaces are ANALYST-only to WRITE (RBAC matrix: MANAGER/VIEWER read

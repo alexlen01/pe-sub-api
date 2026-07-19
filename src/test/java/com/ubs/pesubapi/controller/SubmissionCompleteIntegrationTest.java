@@ -21,8 +21,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Maker-checker independent review of a completed Shadow BB.
  *
  * <p>POST /complete is the maker step: it moves the submission to 'Pending Review' and records the
- * submitter, but does NOT activate the facility. Only a Manager (MANAGER) may accept or reject, and the
- * accepting/rejecting manager must not be the maker (maker ≠ checker).
+ * submitter, but does NOT activate the facility. Only a Manager (MANAGER) may accept or reject;
+ * a Manager may review their own submission when no second reviewer is available.
  */
 class SubmissionCompleteIntegrationTest extends IntegrationTestBase {
 
@@ -162,15 +162,16 @@ class SubmissionCompleteIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void accept_byTheMaker_isForbidden() throws Exception {
-        // Maker submits (as a manager who could also run the work) ...
+    void accept_byTheSubmittingManager_succeeds() throws Exception {
         mvc.perform(post("/api/submissions/{id}/complete", submissionId)
                 .with(user("same.person").roles("MANAGER")))
             .andExpect(status().isOk());
-        // ... and the same identity may not accept their own submission.
+
         mvc.perform(post("/api/submissions/{id}/accept", submissionId)
                 .with(user("same.person").roles("MANAGER")))
-            .andExpect(status().isForbidden());
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("Processed"))
+            .andExpect(jsonPath("$.reviewedBy").value("same.person"));
     }
 
     @Test
@@ -235,11 +236,27 @@ class SubmissionCompleteIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.submittedBy").value("bob.analyst"))
             .andExpect(jsonPath("$.reviewNote").doesNotExist());
 
-        // The original rejecting manager is no longer the maker, so they may accept the re-run;
-        // the true re-submitter (bob) would be blocked as maker ≠ checker.
+        // A Manager may accept their own re-submission when no second reviewer is available.
         mvc.perform(post("/api/submissions/{id}/accept", submissionId)
                 .with(user("bob.analyst").roles("MANAGER")))
-            .andExpect(status().isForbidden());
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.reviewedBy").value("bob.analyst"));
+    }
+
+    @Test
+    void reject_byTheSubmittingManager_succeeds() throws Exception {
+        mvc.perform(post("/api/submissions/{id}/complete", submissionId)
+                .with(user("same.person").roles("MANAGER")))
+            .andExpect(status().isOk());
+
+        mvc.perform(post("/api/submissions/{id}/reject", submissionId)
+                .with(user("same.person").roles("MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"Correct the advance rate\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("Review"))
+            .andExpect(jsonPath("$.reviewedBy").value("same.person"))
+            .andExpect(jsonPath("$.reviewNote").value("Correct the advance rate"));
     }
 
     @Test

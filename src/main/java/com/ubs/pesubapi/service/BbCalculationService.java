@@ -90,14 +90,25 @@ public class BbCalculationService {
         double totalUBB = included.stream().mapToDouble(lpRecord -> lpRecord.ubbM()).sum();
         double totalABB = computed.stream().mapToDouble(lpRecord -> lpRecord.abbM()).sum();
         double totalUEC = included.stream().mapToDouble(lpRecord -> lpRecord.uecM()).sum();
+        double totalUC  = included.stream().mapToDouble(lpRecord -> lpRecord.ucM()).sum();
+        double totalConcExcess = computed.stream().mapToDouble(lpRecord -> lpRecord.concExcessM()).sum();
+        int reclassCount = (int) computed.stream().filter(lpRecord -> lpRecord.rcl()).count();
 
         double ear      = totalUEC > 0 ? totalUBB / totalUEC : 0;
         double agentEar = totalUEC > 0 ? totalABB / totalUEC : 0;
 
+        // Pass 2: %-of-portfolio shares need the totals from pass 1.
+        computed = computed.stream()
+            .map(lpRecord -> lpRecord.withShares(
+                totalABB > 0 ? lpRecord.abbM() / totalABB : 0,
+                totalUBB > 0 ? lpRecord.ubbM() / totalUBB : 0))
+            .toList();
+
         BbSummary summary = new BbSummary(
             totalUBB, totalABB, totalUBB - totalABB,
             ear, agentEar, ear - agentEar,
-            included.size(), computed.size() - included.size()
+            totalUEC, totalUC, totalConcExcess,
+            included.size(), computed.size() - included.size(), reclassCount
         );
 
         return new BbResult(computed, summary, detectBreaches(computed, totalUBB));
@@ -108,13 +119,45 @@ public class BbCalculationService {
         double busaRate    = advanceRateFraction(lpRecord, criteria);
         boolean excluded   = !lpRecord.isInc() || "Excluded".equals(lpRecord.getCls());
         double ucM         = moneyM(lpRecord.getUcNum(),  lpRecord.getUc());
-        double abbM        = moneyM(lpRecord.getAbbNum(), lpRecord.getAbb());
+        double abbM        = hasStoredAbb(lpRecord)
+            ? moneyM(lpRecord.getAbbNum(), lpRecord.getAbb())
+            : deriveAgentBbM(lpRecord, ucM, totalUcM, excluded);
         double concLimitM  = perLpConc(lpRecord, facilityConc, totalUcM, criteria);
         double uecM        = excluded ? 0 : Math.min(ucM, concLimitM);
         double concExcessM = Math.max(0, ucM - uecM);
         double ubbM        = uecM * busaRate;
         double deltaM      = ubbM - abbM;
-        return ComputedLpRecord.from(lpRecord, busaRate, uecM, ubbM, abbM, deltaM, concExcessM);
+        double agentExcessM = excluded ? 0 : Math.max(0, ucM - agentEligibleM(lpRecord, ucM, totalUcM));
+        return ComputedLpRecord.from(lpRecord, busaRate, ucM, uecM, ubbM, abbM, deltaM, concExcessM, agentExcessM);
+    }
+
+    /** True when the record carries an Agent BB value written by a row-bearing run — including an
+     *  explicit "$0", which must not be re-derived. */
+    private static boolean hasStoredAbb(LpRecord lpRecord) {
+        return lpRecord.getAbbNum() != null
+            || (lpRecord.getAbb() != null && !lpRecord.getAbb().isBlank());
+    }
+
+    /**
+     * Agent BB for records whose {@code abb} column was never populated (committed via the wizard
+     * but only ever run through the row-less re-run path): eligible uncalled capital — capped by
+     * the agent concentration limit as a percent of total uncalled — times the agent advance rate.
+     * Mirrors the frontend {@code calcRow} (RunShadowBB) so both engines agree; without this
+     * fallback such facilities report Agent BB = $0 despite populated agent rates.
+     */
+    private static double deriveAgentBbM(LpRecord lpRecord, double ucM, double totalUcM, boolean excluded) {
+        if (excluded) return 0;
+        double agentRate = parsePct(lpRecord.getAgentRate());
+        if (agentRate <= 0) return 0;
+        return agentEligibleM(lpRecord, ucM, totalUcM) * agentRate;
+    }
+
+    /** Uncalled capital eligible under the agent's concentration limit (a percent of total
+     *  uncalled); uncapped when no limit is stored. Shared by the Agent BB derivation and the
+     *  agent excess-concentration figure so the two can never drift. */
+    private static double agentEligibleM(LpRecord lpRecord, double ucM, double totalUcM) {
+        double agentConcPct = parsePct(lpRecord.getAgentConc());
+        return agentConcPct > 0 ? Math.min(ucM, agentConcPct * totalUcM) : ucM;
     }
 
     /** Per-LP concentration limit in $M. Chain: explicit per-LP limit stored in ubsConc as a

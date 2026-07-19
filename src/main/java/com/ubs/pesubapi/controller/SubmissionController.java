@@ -834,7 +834,8 @@ public class SubmissionController {
     // ── POST /api/submissions/:id/accept ────────────────────────────────────
     // Checker step (Manager-only, enforced in SecurityConfig). Completes independent review:
     // submission → Processed (step 6), facility → Active, lastRunAt stamped, credit profile
-    // written back to LP Master. The accepting manager must NOT be the maker (maker ≠ checker).
+    // written back to LP Master. A Manager may review their own submission so a facility is not
+    // locked when no second reviewer is available.
 
     @Transactional
     @PostMapping("/{id}/accept")
@@ -846,11 +847,7 @@ public class SubmissionController {
         if (!STATUS_PENDING_REVIEW.equals(sub.getStatus())) {
             return ResponseEntity.status(409).body("Submission is not pending review.");
         }
-        // Maker-checker separation keyed on the STABLE uuName, never a display name.
         String checkerId = currentUser.uuName();
-        if (checkerId != null && checkerId.equals(sub.getSubmittedBy())) {
-            return ResponseEntity.status(403).body("The reviewer may not accept their own work.");
-        }
 
         sub.setStatus("Processed");
         sub.setWizardStep(6);
@@ -884,7 +881,8 @@ public class SubmissionController {
 
     // ── POST /api/submissions/:id/reject ────────────────────────────────────
     // Checker step (Manager-only). Returns the submission to an actionable state (step 5) with a
-    // required reviewer rationale; the facility is left unchanged. Maker ≠ checker still applies.
+    // required reviewer rationale; the facility is left unchanged. A Manager may reject their own
+    // submission so the workflow remains actionable when no second reviewer is available.
 
     record RejectRequest(String reason) {}
 
@@ -905,13 +903,10 @@ public class SubmissionController {
             return ResponseEntity.badRequest().body("A rejection reason is required.");
         }
         String checkerId = currentUser.uuName();
-        if (checkerId != null && checkerId.equals(sub.getSubmittedBy())) {
-            return ResponseEntity.status(403).body("The reviewer may not reject their own work.");
-        }
 
         // Return to the actionable step. reviewNote present (with the submission back at step 5)
         // is the "Changes Requested" signal the analyst sees; submitted_by is cleared so the next
-        // /complete re-stamps whoever actually re-submits (maker-checker stays correct on re-run).
+        // /complete re-stamps whoever actually re-submits.
         sub.setStatus("Review");
         sub.setWizardStep(5);
         sub.setReviewedBy(checkerId);

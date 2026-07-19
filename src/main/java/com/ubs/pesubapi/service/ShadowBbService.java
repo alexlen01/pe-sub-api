@@ -2,6 +2,7 @@ package com.ubs.pesubapi.service;
 
 import com.ubs.pesubapi.dto.BbResult;
 import com.ubs.pesubapi.dto.CommitBbRequest;
+import com.ubs.pesubapi.dto.ComputedLpRecord;
 import com.ubs.pesubapi.entity.BbSnapshot;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.entity.LpRecord;
@@ -69,6 +70,8 @@ public class ShadowBbService {
         refreshRanks(lps);
         lps = lpRecordRepo.saveAll(lps);
         BbResult result = calculator.compute(lps, facility.getConcLimitM().doubleValue());
+        writeBackComputedValues(lps, result);
+        lpRecordRepo.saveAll(lps);
 
         BbSnapshot snapshot = new BbSnapshot();
         snapshot.setFacilityId(facilityId);
@@ -84,6 +87,32 @@ public class ShadowBbService {
         lpMasterWriteBack.writeBack(facilityId);
 
         return new RunResult(saved, facility.getName(), lps.size());
+    }
+
+    /**
+     * Persists the engine's per-LP results onto the facility LP records in the run transaction,
+     * so the stored rows always match the snapshot regardless of what (if anything) the client
+     * posted. {@code abb}/{@code abbNum} are deliberately left untouched: a stored Agent BB is an
+     * agent-reported figure (written at ingest) and writing the derived value back would make
+     * {@code hasStoredAbb} freeze derivation against future rate edits.
+     */
+    private static void writeBackComputedValues(List<LpRecord> lps, BbResult result) {
+        Map<Integer, ComputedLpRecord> byId = result.lps().stream()
+            .filter(row -> row.id() != null)
+            .collect(Collectors.toMap(row -> row.id(), row -> row));
+        for (LpRecord lpRecord : lps) {
+            ComputedLpRecord row = lpRecord.getId() != null ? byId.get(lpRecord.getId()) : null;
+            if (row == null) continue;
+            lpRecord.setUbb(row.ubb());
+            lpRecord.setUbsExcessConc(fmtM(row.concExcessM()));
+            lpRecord.setAgentExcessConc(fmtM(row.agentExcessM()));
+        }
+    }
+
+    private static String fmtM(double m) {
+        if (m == 0) return "$0";
+        double abs = Math.abs(m);
+        return (m < 0 ? "-" : "") + "$" + String.format("%.1f", abs) + "M";
     }
 
     /** Outcome of a facility LP record deletion, for audit/notification messaging. */

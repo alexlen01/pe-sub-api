@@ -16,12 +16,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 /**
- * Seeds facility LP records from the pe-sub-jobs feed (facility name + investor name +
- * commitment terms). Replaces the batch job's direct SQL against lp_records — pe-sub-api owns
- * the schema, so all writes route through here.
+ * Seeds facility LP records from the pe-sub-jobs feed, which carries the full per-LP column
+ * set of the LP DB Export (see LpRecordSeedRow). Replaces the batch job's direct SQL against
+ * lp_records — pe-sub-api owns the schema, so all writes route through here.
  *
- * <p>The facility and LP Master references are resolved by name server-side and the LP Master
- * profile (identity, ratings, financial scale) is merged onto the new record. lp_records has
+ * <p>The facility and LP Master references are resolved by name server-side. Row values are
+ * authoritative; the LP Master profile (identity, ratings, financial scale) only fills fields
+ * the row left blank, which keeps legacy 7-column feeds on the old merge behavior. lp_records has
  * deliberately NO unique constraint on (facility_id, investor_name) — the same investor may
  * appear across sleeves/vintages/SPVs — so idempotency is enforced in application code:
  * a pair that already has a record is skipped, never overwritten. This keeps re-seeding on
@@ -78,27 +79,40 @@ public class LpRecordSeedService {
             lp.setLpMasterId(master.getId());
             lp.setSourceSeq(seq);
             lp.setInvestorName(row.investorName().trim());
-            lp.setParent(master.getParent());
-            lp.setSpv(master.isSpv());
-            lp.setHighQty(master.isHighQty());
-            lp.setInvestorType(coalesce(master.getInvestorType(), ""));
-            lp.setInstVsHnw(coalesce(master.getInstVsHnw(), "Institutional"));
-            lp.setRegionLocation(coalesce(master.getRegionLocation(), ""));
-            lp.setIg(master.isIg());
-            lp.setCls(normalizeUbsClassification(master.getUbsClassification(), agentCls));
+            // Full-column seed: the row value wins; the LP Master golden profile only fills blanks
+            // (legacy 7-column feeds arrive with these fields blank and keep the old merge behavior).
+            lp.setParent(coalesce(row.parent(), master.getParent()));
+            lp.setSpv(boolOr(row.spv(), master.isSpv()));
+            lp.setHighQty(boolOr(row.highQty(), master.isHighQty()));
+            lp.setInvestorType(coalesce(row.investorType(), coalesce(master.getInvestorType(), "")));
+            lp.setInstVsHnw(coalesce(row.instVsHnw(), coalesce(master.getInstVsHnw(), "Institutional")));
+            lp.setRegionLocation(coalesce(row.regionLocation(), coalesce(master.getRegionLocation(), "")));
+            lp.setIg(boolOr(row.investmentGrade(), master.isIg()));
+            lp.setCls(normalizeUbsClassification(
+                    coalesce(row.ubsCls(), master.getUbsClassification()), agentCls));
             lp.setAgentCls(agentCls);
             lp.setAgentClsSource("EXTRACTED");
-            lp.setSp(coalesce(master.getSp(), ""));
-            lp.setMdy(coalesce(master.getMdy(), ""));
-            lp.setFitch(coalesce(master.getFitch(), ""));
-            lp.setAum(master.getAum());
-            lp.setNav(master.getNav());
-            lp.setPension(master.getPension());
-            lp.setPensionFunded(master.getPensionFunded());
+            lp.setSp(coalesce(row.sp(), coalesce(master.getSp(), "")));
+            lp.setMdy(coalesce(row.mdy(), coalesce(master.getMdy(), "")));
+            lp.setFitch(coalesce(row.fitch(), coalesce(master.getFitch(), "")));
+            lp.setAum(coalesce(row.aum(), master.getAum()));
+            lp.setNav(coalesce(row.nav(), master.getNav()));
+            lp.setPension(coalesce(row.pension(), master.getPension()));
+            lp.setPensionFunded(coalesce(row.pensionFunded(), master.getPensionFunded()));
             lp.setCapCommit(row.capCommit());
             lp.setUc(row.uncalled());
             lp.setAgentRate(row.agentRate());
             lp.setAgentConc(row.agentConc());
+            // Row-only fields (no LP Master counterpart):
+            lp.setPctCapCommit(row.pctCapCommit());
+            lp.setCalledCap(row.calledCap());
+            lp.setPctUncalled(row.pctUncalled());
+            lp.setPctCalled(row.pctCalled());
+            lp.setUbsConc(row.ubsConc());
+            lp.setUbsRate(row.ubsRate());
+            lp.setAbb(row.agentBb());
+            lp.setUbb(row.ubsBb());
+            lp.setNotes(row.notes());
             lp.setInc(true);
             lp.setRcl(false);
             lp.setTf(false);
@@ -110,6 +124,11 @@ public class LpRecordSeedService {
 
     private static String coalesce(String v, String fallback) {
         return (v != null && !v.isBlank()) ? v : fallback;
+    }
+
+    /** "TRUE"/"FALSE" feed string -> boolean; blank/absent falls back to the LP Master value. */
+    private static boolean boolOr(String v, boolean fallback) {
+        return (v != null && !v.isBlank()) ? v.trim().equalsIgnoreCase("true") : fallback;
     }
 
     private static String normalizeAgentClassification(String raw) {
@@ -127,22 +146,29 @@ public class LpRecordSeedService {
     private static String normalizeUbsClassification(String raw, String agentCls) {
         String value = raw == null ? "" : raw.trim();
         return switch (value) {
+            // Canonical 9-class taxonomy (classification_config UBS_CLS_OPTS) passes through.
             case "Rated Investor" -> "Rated Investor";
             case "Unrated NAV > $1Bn" -> "Unrated NAV > $1Bn";
             case "FoF & Other > $10Bn AUM" -> "FoF & Other > $10Bn AUM";
             case "Corp Pension > $5Bn Assets" -> "Corp Pension > $5Bn Assets";
+            case "Corp Pension > $1Bn Assets" -> "Corp Pension > $1Bn Assets";
             case "Other Institutional" -> "Other Institutional";
+            case "HNW Feeder (acceptable)" -> "HNW Feeder (acceptable)";
+            case "HNW (acceptable)" -> "HNW (acceptable)";
             case "Excluded" -> "Excluded";
+            // Legacy feed labels.
             case "Rated", "Rated Included" -> "Rated Investor";
             case "Unrated >2bn", "Unrated AUM >$2bn", "Unrated AUM $1-2bn", "Eligible <$1bn",
                  "Non-Rated", "Non-Rated Included" -> "Unrated NAV > $1Bn";
             case "Designated Institutional" -> "Corp Pension > $5Bn Assets";
-            case "Eligible", "Designated PWM", "Included (PWM)" -> "Other Institutional";
+            case "Eligible", "Included (PWM)" -> "Other Institutional";
+            case "Designated PWM" -> "HNW Feeder (acceptable)";
             case "Ineligible Investor", "Ineligible Investors" -> "Excluded";
+            // Unknown/blank: fall back to the agent category (AGENT_CLS_UBS_MAP).
             default -> switch (agentCls) {
                 case "Rated Included" -> "Rated Investor";
                 case "Designated Institutional" -> "Corp Pension > $5Bn Assets";
-                case "Designated PWM" -> "Other Institutional";
+                case "Designated PWM" -> "HNW Feeder (acceptable)";
                 case "Ineligible Investor" -> "Excluded";
                 default -> "Unrated NAV > $1Bn";
             };

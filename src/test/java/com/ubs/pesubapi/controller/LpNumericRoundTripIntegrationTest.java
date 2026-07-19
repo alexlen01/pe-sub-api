@@ -104,14 +104,15 @@ class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$[0].aum").value("$4,250,000,000"));
     }
 
-    // ── Shadow BB commit: numeric re-derived from the submitted strings, stale cleared ──
+    // ── Shadow BB commit: input numerics re-derived from the submitted strings; the
+    // agent-reported abb/abbNum is not commit-settable and survives the run untouched ──
 
     @Test
-    void run_rederivesNumericFromCommittedStrings_andClearsStale() throws Exception {
+    void run_rederivesNumericFromCommittedStrings_andPreservesIngestAbb() throws Exception {
         LpRecord stale = seedLp("CalPERS", "Rated Investor");
         stale.setUc("$99.9M");
         stale.setUcNum(new BigDecimal("99999999.99"));   // TEST ONLY — stale prior-cycle value
-        stale.setAbbNum(new BigDecimal("55555555.00"));  // TEST ONLY — must be cleared, abb blank
+        stale.setAbbNum(new BigDecimal("55555555.00"));  // TEST ONLY — ingest-written, must survive
         lpRecordRepo.save(stale);
 
         String body = """
@@ -126,7 +127,7 @@ class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
                 "capCommit": "$15.0M", "pctCapCommit": null, "calledCap": "$3.0M",
                 "uc": "$12.0M", "pctUncalled": null, "pctCalled": null,
                 "agentConc": "7.5%", "ubsConc": "$25.0M",
-                "agentRate": "95.0%", "abb": "",
+                "agentRate": "95.0%",
                 "inc": true, "rcl": false, "notes": null
               }]
             }
@@ -145,7 +146,8 @@ class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
         assertThat(lpRecord.getUcNum()).isEqualByComparingTo(new BigDecimal("12000000"));
         assertThat(lpRecord.getCapCommitNum()).isEqualByComparingTo(new BigDecimal("15000000"));
         assertThat(lpRecord.getAumNum()).isEqualByComparingTo(new BigDecimal("500000000000"));
-        assertThat(lpRecord.getAbbNum()).isNull();
+        // abb/abbNum are engine-input provenance (ingest-written) — the run must not clear them.
+        assertThat(lpRecord.getAbbNum()).isEqualByComparingTo(new BigDecimal("55555555.00"));
     }
 }
 

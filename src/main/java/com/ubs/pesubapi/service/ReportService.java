@@ -64,7 +64,7 @@ public class ReportService {
         BbSummary snapshotSummary = result != null ? result.summary() : null;
         boolean usedSummaryFallback = snapshotSummary == null;
         BbSummary summary = usedSummaryFallback
-            ? new BbSummary(0, 0, 0, 0, 0, 0, 0, 0)
+            ? new BbSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
             : snapshotSummary;
         if (usedSummaryFallback) {
             log.warn("collateral_report_summary_fallback facilityId={} snapshotId={} reason={}",

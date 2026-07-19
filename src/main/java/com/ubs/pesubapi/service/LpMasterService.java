@@ -140,7 +140,6 @@ public class LpMasterService {
             lpRecord.setUbsRate(row.ubsRate());
         }
         lpRecord.setAgentRate(row.agentRate());
-        lpRecord.setAbb(row.abb());
         // C2: keep the precise numeric columns in lockstep with the display strings written here.
         // This run's payload carries only formatted strings, so numeric is derived from them —
         // critically clearing any stale numeric left by a prior extraction-commit cycle, which
@@ -148,14 +147,12 @@ public class LpMasterService {
         lpRecord.setUcNum(numDollars(row.uc()));
         lpRecord.setCapCommitNum(numDollars(row.capCommit()));
         lpRecord.setAumNum(numDollars(row.aum()));
-        lpRecord.setAbbNum(numDollars(row.abb()));
-        lpRecord.setUbb(row.ubb());
-        lpRecord.setAgentExcessConc(row.agentExcessConc());
-        lpRecord.setUbsExcessConc(row.ubsExcessConc());
+        // Engine outputs (abb/abbNum, ubb, excess concentrations, rank) are not taken from the
+        // payload: abb stays whatever ingest wrote (agent-reported), and the rest are computed
+        // and written back by ShadowBbService in the same run transaction.
         lpRecord.setInc(row.inc());
         lpRecord.setRcl(row.rcl());
         lpRecord.setTf(row.tf());
-        lpRecord.setRank(row.rank());
         lpRecord.setNotes(row.notes());
     }
 

@@ -8,6 +8,7 @@ import com.ubs.pesubapi.repository.BbSnapshotRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.LpRecordRepository;
 import com.ubs.pesubapi.security.CurrentUserService;
+import com.ubs.pesubapi.service.AdvanceRateFloorMap;
 import com.ubs.pesubapi.service.AuditLogService;
 import com.ubs.pesubapi.service.BbCalculationService;
 import com.ubs.pesubapi.service.NotificationService;
@@ -161,8 +162,7 @@ public class BbController {
             busaMap.put(key, new double[]{0, 0});   // [count, dollars]
         for (var lpRecord : lps) {
             double rate = calculator.advanceRateFraction(lpRecord);
-            String rateKey = String.format("%.0f%%", rate * 100);
-            busaMap.computeIfAbsent(rateKey, k -> new double[]{0, 0});
+            String rateKey = AdvanceRateFloorMap.groupLabel(rate * 100);
             busaMap.get(rateKey)[0]++;
             busaMap.get(rateKey)[1] += ucM(lpRecord);
         }
@@ -181,8 +181,7 @@ public class BbController {
         for (String key : List.of("90%", "75%", "65%", "50%", "0%"))
             agentMap.put(key, new double[]{0, 0});   // [count, dollars]
         for (var lpRecord : lps) {
-            String rateKey = normalizeAgentSummaryRate(lpRecord.getAgentRate());
-            agentMap.computeIfAbsent(rateKey, k -> new double[]{0, 0});
+            String rateKey = AdvanceRateFloorMap.groupLabel(parseRatePct(lpRecord.getAgentRate()));
             agentMap.get(rateKey)[0]++;
             agentMap.get(rateKey)[1] += ucM(lpRecord);
         }
@@ -287,15 +286,6 @@ public class BbController {
         if (rate == null) return 0;
         try { return Double.parseDouble(rate.replace("%", "").trim()); }
         catch (NumberFormatException e) { return 0; }
-    }
-
-    private static String normalizeAgentSummaryRate(String rate) {
-        double value = parseRatePct(rate);
-        if (value == 90 || value == 95) return "90%";
-        if (value >= 70 && value <= 80) return "75%";
-        if (value == 60 || value == 65) return "65%";
-        if (value >= 20 && value <= 55) return "50%";
-        return "0%";
     }
 
     private Map<String, Object> emptySummaryExt() {

@@ -50,20 +50,17 @@ public record CommitBbRequest(List<CommitLpRow> lps) {
         String  uc,
         String  pctUncalled,
         String  pctCalled,
-        // Concentration & BB
+        // Concentration & BB inputs. Engine outputs (abb/ubb/excess concentrations, rank) are
+        // deliberately NOT part of this payload — the server computes and persists them at run
+        // time, so a client can never submit BB figures the engine did not produce.
         String  agentConc,
         String  ubsConc,           // per-LP UBS concentration limit percent, e.g. "7.5%"
         String  ubsRate,           // per-LP UBS advance rate percent, e.g. "90%" (matrix-resolved or manual override)
         String  agentRate,
-        String  abb,               // Agent Borrowing Base
-        String  ubb,               // UBS Borrowing Base
-        String  agentExcessConc,   // Agent Excess Concentration Base
-        String  ubsExcessConc,     // UBS Excess Concentration Base
         // Status
         boolean inc,
         boolean rcl,
         boolean tf,
-        Integer rank,              // calculated by Shadow BB run; persisted to LP records
         String  notes
     ) {}
 }

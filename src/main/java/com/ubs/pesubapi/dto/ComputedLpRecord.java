@@ -37,10 +37,15 @@ public record ComputedLpRecord(
     double  abbM,
     double  deltaM,
     double  concExcessM,
+    double  ucM,
+    double  agentExcessM,
+    double  pctAgentBB,
+    double  pctUbsBB,
     boolean highQuality
 ) {
-    public static ComputedLpRecord from(LpRecord lpRecord, double busaRate, double uecM, double ubbM,
-                                   double abbM, double deltaM, double concExcessM) {
+    public static ComputedLpRecord from(LpRecord lpRecord, double busaRate, double ucM, double uecM,
+                                   double ubbM, double abbM, double deltaM, double concExcessM,
+                                   double agentExcessM) {
         String cls = lpRecord.getCls();
         boolean highQuality = "Rated Investor".equals(cls)
             || "Unrated NAV > $1Bn".equals(cls)
@@ -53,7 +58,19 @@ public record ComputedLpRecord(
             lpRecord.getAum(), lpRecord.getUc(), lpRecord.getAbb(), lpRecord.isInc(), lpRecord.isRcl(), lpRecord.isTf(),
             fmt(busaRate), lpRecord.getAgentRate() != null ? lpRecord.getAgentRate() : "",
             fmtM(uecM), fmtM(ubbM), fmtM(deltaM),
-            uecM, ubbM, abbM, deltaM, concExcessM, highQuality
+            uecM, ubbM, abbM, deltaM, concExcessM, ucM, agentExcessM,
+            0, 0,   // %-of-BB shares need portfolio totals — set by withShares in the compute pass 2
+            highQuality
+        );
+    }
+
+    /** Copy with the %-of-portfolio shares filled in once the portfolio totals are known. */
+    public ComputedLpRecord withShares(double pctAgentBB, double pctUbsBB) {
+        return new ComputedLpRecord(
+            id, facilityId, name, parent, spv, hq, investorType, instVsHnw, regionLocation, ig,
+            cls, sp, mdy, fitch, aum, uc, abb, inc, rcl, tf, rate, agentRate, uec, ubb, delta,
+            uecM, ubbM, abbM, deltaM, concExcessM, ucM, agentExcessM,
+            pctAgentBB, pctUbsBB, highQuality
         );
     }
 

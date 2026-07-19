@@ -7,6 +7,10 @@ public record BbSummary(
     double ear,
     double agentEar,
     double earDelta,
+    double totalUEC,
+    double totalUC,
+    double totalConcExcess,
     int    includedCount,
-    int    excludedCount
+    int    excludedCount,
+    int    reclassCount
 ) {}
