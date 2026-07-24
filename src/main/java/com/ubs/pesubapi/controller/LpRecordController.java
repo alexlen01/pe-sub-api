@@ -101,6 +101,11 @@ public class LpRecordController {
         return lps.stream().map(LpRecordDto::from).toList();
     }
 
+    @GetMapping("/count")
+    public Map<String, Long> count() {
+        return Map.of("count", repo.count());
+    }
+
     /**
      * Applies the credit officer's classification & rate edits onto persisted LP Master records
      * (the LP Category & Rate Assignment screen). Rows are matched to existing records by

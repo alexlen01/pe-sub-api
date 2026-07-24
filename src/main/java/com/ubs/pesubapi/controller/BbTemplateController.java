@@ -12,12 +12,16 @@ import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.nio.charset.StandardCharsets;
 
 @RestController
 @RequestMapping("/api/bb-templates")
@@ -99,6 +103,20 @@ public class BbTemplateController {
             imported.id(), imported.templateSlug(), imported.templateClass(),
             imported.tabs() != null ? imported.tabs().size() : 0);
         return imported;
+    }
+
+    /** Download the original structured workbook persisted when this template was imported. */
+    @GetMapping("/{id}/download")
+    public ResponseEntity<byte[]> download(@PathVariable int id) {
+        BbTemplateService.SourceFile file = templateService.getSourceFile(id);
+        ContentDisposition disposition = ContentDisposition.attachment()
+            .filename(file.fileName(), StandardCharsets.UTF_8)
+            .build();
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+            .contentType(MediaType.parseMediaType(file.contentType()))
+            .contentLength(file.content().length)
+            .body(file.content());
     }
 
     /**

@@ -21,6 +21,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class BbTemplateControllerIntegrationTest extends IntegrationTestBase {
@@ -50,9 +52,21 @@ class BbTemplateControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.templateSlug").value("grouped-sample"))
             .andExpect(jsonPath("$.templateName").value("grouped-sample"))
             .andExpect(jsonPath("$.agentName").value("Northbank Agent"))
+            .andExpect(jsonPath("$.sourceFileName").value("BB-Template-Import-grouped.xlsx"))
+            .andExpect(jsonPath("$.sourceFileSize").value(file.getSize()))
             .andExpect(jsonPath("$.tabs[0].headerRowIndex").value(10))
             .andExpect(jsonPath("$.tabs[0].groups.length()").value(5))
             .andExpect(jsonPath("$.tabs[0].groups[1].headerText").value("Included Investors (Non-Rated)"));
+
+        int importedId = templateRepo.findByTemplateSlug("grouped-sample").orElseThrow().getId();
+        mvc.perform(get("/api/bb-templates/{id}/download", importedId))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Content-Disposition",
+                org.hamcrest.Matchers.containsString("BB-Template-Import-grouped.xlsx")))
+            .andExpect(content().contentType(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+            .andExpect(content().bytes(Files.readAllBytes(
+                Path.of("src/test/resources/templates/BB-Template-Import-grouped.xlsx"))));
 
         MockMultipartFile duplicate = templateWorkbook("BB-Template-Import-grouped.xlsx");
 
@@ -161,6 +175,9 @@ class BbTemplateControllerIntegrationTest extends IntegrationTestBase {
 
         int templateId = JsonPath.read(created, "$.id");
         int tabId = JsonPath.read(created, "$.tabs[0].id");
+
+        mvc.perform(get("/api/bb-templates/{id}/download", templateId))
+            .andExpect(status().isNotFound());
 
         mvc.perform(delete("/api/bb-templates/{id}", templateId))
             .andExpect(status().isNoContent());

@@ -26,6 +26,8 @@ public record BbTemplateDto(
     List<String>             detectKeys,
     List<Map<String, String>> legend,
     List<String>             notes,
+    String                   sourceFileName,
+    Long                     sourceFileSize,
     LocalDateTime            createdAt,
     LocalDateTime            updatedAt,
     List<BbTemplateTabDto>   tabs
@@ -51,6 +53,8 @@ public record BbTemplateDto(
             t.getDetectKeys(),
             t.getLegend(),
             t.getNotes(),
+            t.getSourceFileName(),
+            t.getSourceFileSize(),
             t.getCreatedAt(),
             t.getUpdatedAt(),
             tabs

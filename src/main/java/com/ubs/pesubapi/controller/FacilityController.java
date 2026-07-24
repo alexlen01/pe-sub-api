@@ -91,6 +91,11 @@ public class FacilityController {
             .orElse(ResponseEntity.notFound().build());
     }
 
+    @GetMapping("/count")
+    public Map<String, Long> count() {
+        return Map.of("count", repo.count());
+    }
+
     /**
      * Bulk upsert from the pe-sub-jobs facility feed (Agent Bank Summary CSV), keyed by name.
      * Replaces the batch job's direct {@code INSERT ... ON CONFLICT (name)} against the

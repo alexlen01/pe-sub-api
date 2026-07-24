@@ -38,10 +38,10 @@ workbook is laid out, so `ExtractionClientService` can pass `sheetNameHint`,
 pe-sub-extraction. `header_row_index` is 0-based; `header_row_span` (V1_6) is the number
 of physical rows a stacked column header occupies (e.g. Carlyle CP VII rows 84–85 → span 2).
 
-`V1_6__bb_sample_templates.sql` seeds the five sampled formats from
-`pe-sub-platform/public/BB_Templates.xlsx` (KKR Ascendant, Audax VII, CCP VII, AEP VII,
-CP VII). These are identified by **fund/deal** in the sample, so `agent_bank` holds the
-fund label as the template key until the owning facility is onboarded with its real bank.
+Structured XLSX imports persist both the parsed registry definition and the original
+workbook. File metadata is exposed with each template; the bytes live in
+`bb_template_files` and can be retrieved from `GET /api/bb-templates/{id}/download`.
+There are no public sample-template files.
 
 ## Facility Agent Bank Summary fields
 

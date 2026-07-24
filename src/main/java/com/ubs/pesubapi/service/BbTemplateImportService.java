@@ -12,10 +12,13 @@ import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
 import java.util.*;
 
 /**
@@ -26,7 +29,7 @@ import java.util.*;
  * {@code template_slug} (Template ID); {@link BbTemplateService#create} auto-versions the slug
  * when it already exists.
  *
- * <p>Expected sheets (see {@code pe-sub-platform/public/BB-Template-Import-*.xlsx}):
+ * <p>Expected sheets (see the import workbooks used by the API integration tests):
  * <ul>
  *   <li>{@code Template} — one data row: template_slug, agent_bank, template_class, sheet_name,
  *       header_row_index (1-based Excel row), header_row_span, auto_learned, tranche_count,
@@ -65,15 +68,26 @@ public class BbTemplateImportService {
         return importFromExcel(file, false);
     }
 
+    @Transactional
     public BbTemplateDto importFromExcel(MultipartFile file, boolean upsert) {
-        try (Workbook wb = WorkbookFactory.create(file.getInputStream())) {
-            BbTemplateRequest req = parseWorkbook(wb);
-            log.info("BB template import parsed file='{}' slug='{}' agent='{}' class={} sheet='{}' headerRow={} autoDiscover={} tabs={} notes={}",
-                fileName(file), req.templateSlug(), req.agentName(), req.templateClass(),
-                req.sheetName(), req.headerRowIndex(), req.autoDiscoverTabs(),
-                req.tabs() != null ? req.tabs().size() : 0,
-                req.notes() != null ? req.notes().size() : 0);
-            return upsert ? templateService.upsertBySlug(req) : templateService.create(req);
+        try {
+            byte[] content = file.getBytes();
+            try (Workbook wb = WorkbookFactory.create(new ByteArrayInputStream(content))) {
+                BbTemplateRequest req = parseWorkbook(wb);
+                log.info("BB template import parsed file='{}' slug='{}' agent='{}' class={} sheet='{}' headerRow={} autoDiscover={} tabs={} notes={}",
+                    fileName(file), req.templateSlug(), req.agentName(), req.templateClass(),
+                    req.sheetName(), req.headerRowIndex(), req.autoDiscoverTabs(),
+                    req.tabs() != null ? req.tabs().size() : 0,
+                    req.notes() != null ? req.notes().size() : 0);
+                BbTemplateDto imported = upsert
+                    ? templateService.upsertBySlug(req)
+                    : templateService.create(req);
+                return templateService.storeSourceFile(
+                    imported.id(),
+                    safeFileName(file),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    content);
+            }
         } catch (ResponseStatusException e) {
             log.warn("BB template import rejected file='{}': {}", fileName(file), e.getReason());
             throw e;
@@ -230,6 +244,13 @@ public class BbTemplateImportService {
 
     private String fileName(MultipartFile file) {
         return file != null && file.getOriginalFilename() != null ? file.getOriginalFilename() : "<unknown>";
+    }
+
+    private String safeFileName(MultipartFile file) {
+        String cleaned = StringUtils.cleanPath(fileName(file)).replace('\\', '/');
+        int slash = cleaned.lastIndexOf('/');
+        String baseName = slash >= 0 ? cleaned.substring(slash + 1) : cleaned;
+        return baseName.isBlank() || "<unknown>".equals(baseName) ? "bb-template.xlsx" : baseName;
     }
 
     // ── Value helpers ─────────────────────────────────────────────────────────
