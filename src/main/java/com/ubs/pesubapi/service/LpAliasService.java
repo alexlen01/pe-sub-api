@@ -54,7 +54,7 @@ public class LpAliasService {
     public Optional<Integer> lookup(String uploadedName) {
         String k = key(uploadedName);
         if (k.isEmpty()) return Optional.empty();
-        return aliasRepo.findByUploadedName(k).map(LpAlias::getLpMasterId);
+        return aliasRepo.findByUploadedName(k).map(alias -> alias.getLpMasterId());
     }
 
     /**
@@ -104,7 +104,7 @@ public class LpAliasService {
     public List<String> aliasesFor(Integer lpMasterId) {
         if (lpMasterId == null) return List.of();
         return aliasRepo.findByLpMasterIdOrderByUploadedNameAsc(lpMasterId).stream()
-            .map(LpAlias::getUploadedName)
+            .map(alias -> alias.getUploadedName())
             .toList();
     }
 }

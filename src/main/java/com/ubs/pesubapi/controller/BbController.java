@@ -255,12 +255,6 @@ public class BbController {
         return Math.max(0, capCommitM(lpRecord) - ucM(lpRecord));
     }
 
-    // Single source of truth for money parsing — a private near-copy previously lived here
-    // and had already drifted from the engine's version (no N/A or en-dash handling).
-    private static double parseMoney(String value) {
-        return BbCalculationService.parseMoney(value);
-    }
-
     // Numeric-first money reads ($millions) — the precise C2 numeric column when present, else the
     // legacy display string. Keeps summaryExt aligned with the engine's computeOne.
     private static double ucM(com.ubs.pesubapi.entity.LpRecord lpRecord)        { return BbCalculationService.dollarM(lpRecord.getUncalledCapital()); }
