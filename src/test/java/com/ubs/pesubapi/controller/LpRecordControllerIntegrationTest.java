@@ -1,18 +1,26 @@
 package com.ubs.pesubapi.controller;
 
 import com.ubs.pesubapi.IntegrationTestBase;
+import com.ubs.pesubapi.dto.BbResult;
+import com.ubs.pesubapi.dto.BbSummary;
+import com.ubs.pesubapi.entity.BbSnapshot;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.entity.LpRecord;
+import com.ubs.pesubapi.entity.Submission;
 import com.ubs.pesubapi.repository.AuditLogRepository;
+import com.ubs.pesubapi.repository.BbSnapshotRepository;
 
 import com.ubs.pesubapi.repository.FacilityRepository;
 
 import com.ubs.pesubapi.repository.LpRecordRepository;
+import com.ubs.pesubapi.repository.SubmissionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -25,6 +33,8 @@ class LpRecordControllerIntegrationTest extends IntegrationTestBase {
     @Autowired LpRecordRepository lpRecordRepo;
     @Autowired FacilityRepository facilityRepo;
     @Autowired AuditLogRepository auditLogRepo;
+    @Autowired BbSnapshotRepository snapshotRepo;
+    @Autowired SubmissionRepository submissionRepo;
 
     private int facilityId;
 
@@ -36,13 +46,37 @@ class LpRecordControllerIntegrationTest extends IntegrationTestBase {
         facilityId = facilityRepo.save(f).getId();
     }
 
+    /**
+     * Stands in for a completed Run Shadow BB. Reclassification marking only starts once the
+     * facility's current submission has a run to invalidate, so any test asserting the flag has to
+     * put a snapshot in place first (see ReclassificationPolicy).
+     */
+    private BbSnapshot givenShadowBbRun() {
+        BbSnapshot snapshot = new BbSnapshot();
+        snapshot.setFacilityId(facilityId);
+        snapshot.setResult(new BbResult(
+            List.of(), new BbSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), List.of()));
+        return snapshotRepo.save(snapshot);
+    }
+
+    /** An Upload Agent BB wizard still open on steps 1–5 (status "Review" after extraction). */
+    private Submission givenOpenWizardSubmission() {
+        Submission sub = new Submission();
+        sub.setFacilityId(facilityId);
+        sub.setAgentBank("Citibank");
+        sub.setPeriodMonth("2026-06");
+        sub.setFileName("agent-bb.xlsx");
+        sub.setStatus("Review");
+        return submissionRepo.save(sub);
+    }
+
     private LpRecord buildLp(String investorName, String cls) {
         LpRecord lpRecord = new LpRecord();
         lpRecord.setFacilityId(facilityId);
         lpRecord.setInvestorName(investorName);
-        lpRecord.setInvType("Pension");
-        lpRecord.setRegion("US");
-        lpRecord.setCls(cls);
+        lpRecord.setInvestorSegmentOrType("Pension");
+        lpRecord.setRegionLocation("US");
+        lpRecord.setUbsLpCategory(cls);
         return lpRecord;
     }
 
@@ -54,10 +88,10 @@ class LpRecordControllerIntegrationTest extends IntegrationTestBase {
         mvc.perform(get("/api/lpRecords").param("facilityId", String.valueOf(facilityId)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(2)))
-            .andExpect(jsonPath("$[0].name").value("Acme Pension Fund"))
-            .andExpect(jsonPath("$[0].cls").value("Rated"))
+            .andExpect(jsonPath("$[0].investorName").value("Acme Pension Fund"))
+            .andExpect(jsonPath("$[0].ubsLpCategory").value("Rated"))
             .andExpect(jsonPath("$[0].facilityId").value(facilityId))
-            .andExpect(jsonPath("$[1].name").value("Beta Capital LLC"));
+            .andExpect(jsonPath("$[1].investorName").value("Beta Capital LLC"));
     }
 
     @Test
@@ -67,8 +101,8 @@ class LpRecordControllerIntegrationTest extends IntegrationTestBase {
         mvc.perform(get("/api/lpRecords/{id}", saved.getId()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(saved.getId()))
-            .andExpect(jsonPath("$.name").value("Delta Fund"))
-            .andExpect(jsonPath("$.cls").value("Rated"))
+            .andExpect(jsonPath("$.investorName").value("Delta Fund"))
+            .andExpect(jsonPath("$.ubsLpCategory").value("Rated"))
             .andExpect(jsonPath("$.facilityId").value(facilityId));
     }
 
@@ -88,9 +122,9 @@ class LpRecordControllerIntegrationTest extends IntegrationTestBase {
                     {"cls": "Excluded", "notes": "Manually excluded"}
                     """))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.cls").value("Excluded"))
+            .andExpect(jsonPath("$.ubsLpCategory").value("Excluded"))
             .andExpect(jsonPath("$.notes").value("Manually excluded"))
-            .andExpect(jsonPath("$.name").value("Gamma Pension"));
+            .andExpect(jsonPath("$.investorName").value("Gamma Pension"));
     }
 
     @Test
@@ -103,7 +137,7 @@ class LpRecordControllerIntegrationTest extends IntegrationTestBase {
                 .param("cls", "Rated"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(1)))
-            .andExpect(jsonPath("$[0].name").value("Included LP"));
+            .andExpect(jsonPath("$[0].investorName").value("Included LP"));
     }
 
     @Test
@@ -116,7 +150,7 @@ class LpRecordControllerIntegrationTest extends IntegrationTestBase {
                 .param("search", "Apollo"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(1)))
-            .andExpect(jsonPath("$[0].name").value("Apollo Capital"));
+            .andExpect(jsonPath("$[0].investorName").value("Apollo Capital"));
     }
 
     @Test
@@ -127,8 +161,8 @@ class LpRecordControllerIntegrationTest extends IntegrationTestBase {
         mvc.perform(get("/api/lpRecords").param("facilityId", String.valueOf(facilityId)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].aum").doesNotExist())
-            .andExpect(jsonPath("$[0].uc").doesNotExist())
-            .andExpect(jsonPath("$[0].capCommit").doesNotExist());
+            .andExpect(jsonPath("$[0].uncalledCapital").doesNotExist())
+            .andExpect(jsonPath("$[0].capitalCommitment").doesNotExist());
     }
 
     // ── Batch classification save (Shadow BB "Save") ────────────────────────────────
@@ -136,6 +170,7 @@ class LpRecordControllerIntegrationTest extends IntegrationTestBase {
     @Test
     void patchClassification_updatesLpRecordAndUpsertsRate() throws Exception {
         LpRecord saved = lpRecordRepo.save(buildLp("Monarch Capital LP", "Eligible"));
+        givenShadowBbRun();
 
         mvc.perform(patch("/api/lpRecords/classification")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -146,7 +181,7 @@ class LpRecordControllerIntegrationTest extends IntegrationTestBase {
                       "rows": [{
                         "name": "Monarch Capital LP",
                         "cls": "Rated", "sp": "AA", "mdy": "Aa2", "fitch": "AA",
-                        "aum": "$4.2B", "nav": "$3.1B", "pension": "$1.0B", "pensionFunded": "112%%",
+                        "aum": "$4.2B", "nav": "$3.1B", "pensionAssets": "$1.0B", "fundingRatio": 1.12,
                         "inc": true, "uc": "$12.0M",
                         "ubsAdvRatePct": 90.0, "ubsConcLimitPct": 7.5
                       }]
@@ -155,18 +190,22 @@ class LpRecordControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.updated").value(1));
 
-        // LP entity fields updated in place — including the Financial Scale columns
+        // LP entity fields updated in place — including the Financial Scale columns. aum and uc are
+        // NUMERIC, so an abbreviated input is stored as exact dollars and served back in full:
+        // "$4.2B" round-trips as "$4,200,000,000", never re-abbreviated. nav and pensionAssets are
+        // still VARCHAR passthrough columns and keep the submitted text verbatim, while
+        // fundingRatio is NUMERIC and travels as the raw fraction (1.12 renders as 112%).
         mvc.perform(get("/api/lpRecords/{id}", saved.getId()))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.cls").value("Rated"))
-            .andExpect(jsonPath("$.sp").value("AA"))
-            .andExpect(jsonPath("$.aum").value("$4.2B"))
+            .andExpect(jsonPath("$.ubsLpCategory").value("Rated"))
+            .andExpect(jsonPath("$.spRating").value("AA"))
+            .andExpect(jsonPath("$.aum").value("$4,200,000,000"))
             .andExpect(jsonPath("$.nav").value("$3.1B"))
-            .andExpect(jsonPath("$.pension").value("$1.0B"))
-            .andExpect(jsonPath("$.pensionFunded").value("112%"))
-            .andExpect(jsonPath("$.uc").value("$12.0M"))
-            .andExpect(jsonPath("$.inc").value(true))
-            .andExpect(jsonPath("$.rcl").value(true));
+            .andExpect(jsonPath("$.pensionAssets").value("$1.0B"))
+            .andExpect(jsonPath("$.fundingRatio").value(closeTo(1.12, 0.0001)))
+            .andExpect(jsonPath("$.uncalledCapital").value("$12,000,000"))
+            .andExpect(jsonPath("$.included").value(true))
+            .andExpect(jsonPath("$.reclassified").value(true));
 
         // Advance rate + conc limit upserted into lp_rates as decimal fractions
         mvc.perform(get("/api/lpRecords/rates").param("effective_date", "2026-06"))
@@ -244,8 +283,9 @@ class LpRecordControllerIntegrationTest extends IntegrationTestBase {
     @Test
     void patchClassification_detectsAgentClassificationChangeOnSave() throws Exception {
         LpRecord lp = buildLp("Agent Reclassified LP", "Rated");
-        lp.setAgentCls("Included");
+        lp.setAgentLpCategory("Included");
         LpRecord saved = lpRecordRepo.save(lp);
+        givenShadowBbRun();
 
         mvc.perform(patch("/api/lpRecords/classification")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -265,8 +305,132 @@ class LpRecordControllerIntegrationTest extends IntegrationTestBase {
 
         mvc.perform(get("/api/lpRecords/{id}", saved.getId()))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.agentCls").value("Excluded"))
-            .andExpect(jsonPath("$.rcl").value(true));
+            .andExpect(jsonPath("$.agentLpCategory").value("Excluded"))
+            .andExpect(jsonPath("$.reclassified").value(true));
+    }
+
+    // ── Reclassification is deferred until a Shadow BB exists to invalidate ──────────
+
+    @Test
+    void patchClassification_beforeAnyShadowBbRun_doesNotMarkReclassified() throws Exception {
+        // Upload Agent BB wizard, steps 1–5: the analyst is setting the categories for the first
+        // time. There is no run to invalidate, so no R badge and no "re-run" warning.
+        LpRecord saved = lpRecordRepo.save(buildLp("Greenfield Capital LP", "Eligible"));
+
+        mvc.perform(patch("/api/lpRecords/classification")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "facilityId": %d,
+                      "rows": [{ "id": %d, "name": "Greenfield Capital LP", "cls": "Rated" }]
+                    }
+                    """.formatted(facilityId, saved.getId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.updated").value(1));
+
+        mvc.perform(get("/api/lpRecords/{id}", saved.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.ubsLpCategory").value("Rated"))
+            .andExpect(jsonPath("$.reclassified").value(false));
+    }
+
+    @Test
+    void patchClassification_duringNewWizardOverAnOlderRun_doesNotMarkReclassified() throws Exception {
+        // A snapshot from a previous, already-completed submission must not make the next upload's
+        // steps 1–5 start marking reclassifications: the new submission has not been run yet.
+        LpRecord saved = lpRecordRepo.save(buildLp("Carryover Capital LP", "Eligible"));
+        givenShadowBbRun();
+        givenOpenWizardSubmission();
+
+        mvc.perform(patch("/api/lpRecords/classification")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "facilityId": %d,
+                      "rows": [{ "id": %d, "name": "Carryover Capital LP", "cls": "Rated" }]
+                    }
+                    """.formatted(facilityId, saved.getId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.updated").value(1));
+
+        mvc.perform(get("/api/lpRecords/{id}", saved.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.reclassified").value(false));
+    }
+
+    @Test
+    void patchClassification_afterTheOpenSubmissionWasRun_marksReclassified() throws Exception {
+        // Same open submission, but this time its Shadow BB has been created — a category change
+        // now invalidates that run and must be flagged for the re-run + Manager approval.
+        LpRecord saved = lpRecordRepo.save(buildLp("Runthrough Capital LP", "Eligible"));
+        givenOpenWizardSubmission();
+        givenShadowBbRun();
+
+        mvc.perform(patch("/api/lpRecords/classification")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "facilityId": %d,
+                      "rows": [{ "id": %d, "name": "Runthrough Capital LP", "cls": "Rated" }]
+                    }
+                    """.formatted(facilityId, saved.getId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.updated").value(1));
+
+        mvc.perform(get("/api/lpRecords/{id}", saved.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.reclassified").value(true));
+    }
+
+    @Test
+    void patchLp_beforeAnyShadowBbRun_doesNotMarkReclassified() throws Exception {
+        LpRecord saved = lpRecordRepo.save(buildLp("Single Edit LP", "Eligible"));
+
+        mvc.perform(patch("/api/lpRecords/{id}", saved.getId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"cls": "Rated"}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.ubsLpCategory").value("Rated"))
+            .andExpect(jsonPath("$.reclassified").value(false));
+    }
+
+    @Test
+    void patchLp_afterShadowBbRun_marksReclassified() throws Exception {
+        LpRecord saved = lpRecordRepo.save(buildLp("Post Run Edit LP", "Eligible"));
+        givenShadowBbRun();
+
+        mvc.perform(patch("/api/lpRecords/{id}", saved.getId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"cls": "Rated"}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.reclassified").value(true));
+    }
+
+    @Test
+    void patchClassification_neverClearsAnExistingReclassifiedFlag() throws Exception {
+        // Deferral only suppresses *setting* the flag. A record already flagged (e.g. a rejected
+        // submission sent back to the analyst) keeps it through the wizard.
+        LpRecord lp = buildLp("Sticky Flag LP", "Eligible");
+        lp.setReclassified(true);
+        LpRecord saved = lpRecordRepo.save(lp);
+
+        mvc.perform(patch("/api/lpRecords/classification")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "facilityId": %d,
+                      "rows": [{ "id": %d, "name": "Sticky Flag LP", "cls": "Rated" }]
+                    }
+                    """.formatted(facilityId, saved.getId())))
+            .andExpect(status().isOk());
+
+        mvc.perform(get("/api/lpRecords/{id}", saved.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.reclassified").value(true));
     }
 
     @Test

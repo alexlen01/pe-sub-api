@@ -185,10 +185,21 @@ class FieldMappingIntegrationTest extends IntegrationTestBase {
     // ── blocklist ───────────────────────────────────────────────────────────────
 
     @Test
-    void blocklist_returnsDto_notEntity() throws Exception {
+    void blocklist_returnsSeededQualifiersAsDto() throws Exception {
+        // fm_blocklist is Flyway-seeded reference data (V1_2), served id-ordered. FmBlocklistEntryDto
+        // is field-identical to the entity, so the DTO boundary is pinned by the key set rather than
+        // by absent columns: a leaked @Entity would serialize Hibernate's proxy accessors alongside
+        // the three real fields.
         mvc.perform(get("/api/field-mapping/blocklist"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$").isArray());
+            .andExpect(jsonPath("$[0].id").isNumber())
+            .andExpect(jsonPath("$[0].qualifier").value("Adjusted"))
+            .andExpect(jsonPath("$[0].reason")
+                .value("Post-processed — concentration or eligibility already applied"))
+            .andExpect(jsonPath("$[*].qualifier", hasItems(
+                "Eligible", "Capped", "Net of", "Post-Haircut", "After Concentration")))
+            .andExpect(jsonPath("$[0].*", hasSize(3)))
+            .andExpect(jsonPath("$[0].hibernateLazyInitializer").doesNotExist());
     }
 
     // ── suggestions ─────────────────────────────────────────────────────────────

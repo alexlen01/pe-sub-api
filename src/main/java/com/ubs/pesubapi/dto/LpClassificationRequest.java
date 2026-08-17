@@ -1,14 +1,18 @@
 package com.ubs.pesubapi.dto;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
-import com.fasterxml.jackson.annotation.JsonProperty;
+
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * Batch save of the credit officer's classification & rate decisions from the
- * "LP Category & Rate Assignment" screen onto persisted LP Master records.
- * Rows are matched to existing records by (facilityId, name); unmatched rows are ignored.
- * Rate fields are expressed as percentages (e.g. 90.0, 7.5) and stored as decimal fractions.
+ * Batch save of the credit officer's LP Category &amp; rate decisions from the
+ * "LP Category &amp; Rate Assignment" screen onto persisted LP records.
+ * Rows are matched to existing records by (facilityId, investorName); unmatched rows are ignored.
+ *
+ * <p>The four {@code *Pct} rate inputs are percent-scaled (90.0, 7.5) because that is what the
+ * screen's number fields hold; they are stored as fractions. Every other percent on this payload is
+ * already a fraction. The names keep the {@code Pct} suffix precisely to mark that difference.
  *
  * <p>The screen auto-saves each edited row individually as the user types, so those calls leave
  * {@code audit} null/false to avoid one audit entry per keystroke. A single aggregated entry is
@@ -23,46 +27,56 @@ public record LpClassificationRequest(
 ) {
     public record Row(
         Integer id,
-        String  name,
+        @JsonAlias("name")
+        String  investorName,
         String  originalName,
-        // Identity & classification (manual)
+        // Identity & LP Category (manual)
         String  parent,
         Boolean spv,
-        @JsonProperty("fund_sleeve")
-        @JsonAlias({"fundSleeve"})
-        String  fundSleeve,
-        @JsonProperty("investor_type")
-        @JsonAlias({"investorType"})
+        @JsonAlias({"investor_type"})
         String  investorType,
-        @JsonProperty("inst_vs_hnw")
-        @JsonAlias({"instVsHnw", "type"})
-        String  instVsHnw,
-        @JsonProperty("region_location")
-        @JsonAlias({"region", "regionLocation"})
+        @JsonAlias({"inst_vs_hnw", "instVsHnw", "type"})
+        String  institutionalOrHnw,
+        @JsonAlias({"region", "region_location"})
         String  regionLocation,
-        Boolean ig,               // Investment Grade?
-        String  agentCls,         // Agent LP Category (verbatim from Agent BB)
-        String  agentClsSource,   // EXTRACTED, DERIVED, or USER_EDITED
-        String  cls,              // UBS LP Category (follows Agent LP Category)
-        String  sp,
-        String  mdy,
-        String  fitch,
+        @JsonAlias("ig")
+        Boolean investmentGrade,
+        @JsonAlias("agentCls")
+        String  agentLpCategory,        // Agent LP Category (verbatim from Agent BB)
+        @JsonAlias("agentClsSource")
+        String  agentLpCategorySource,  // EXTRACTED, DERIVED, or USER_EDITED
+        @JsonAlias("cls")
+        String  ubsLpCategory,          // UBS LP Category (follows Agent LP Category)
+        @JsonAlias("sp")
+        String  spRating,
+        @JsonAlias("mdy")
+        String  moodysRating,
+        @JsonAlias("fitch")
+        String  fitchRating,
         // Scale (manual)
-        String  aum,              // Assets Under Management
-        String  nav,              // Net Asset Value
-        String  pension,          // Pension Assets
-        String  pensionFunded,    // Pension Funded %
+        String  aum,                    // Assets Under Management
+        String  nav,                    // Net Asset Value
+        String  pensionAssets,
+        BigDecimal fundingRatio,        // Pension funded status as a fraction (0.91 = 91%)
         // Commitment / capital (manual)
-        String  capCommit,
-        String  uc,
-        // Rates & limits (manual; percentages, e.g. 90.0 / 7.5)
-        Double  ubsAdvRatePct,    // null → rate left unchanged
-        Double  agentRatePct,     // null → unchanged
-        Double  ubsConcLimitPct,  // null → limit left unchanged
-        Double  agentConcLimitPct,// null → unchanged
+        @JsonAlias("capCommit")
+        String  capitalCommitment,
+        @JsonAlias("uc")
+        String  uncalledCapital,
+        // Rates & limits (manual; percent-scaled, e.g. 90.0 / 7.5)
+        @JsonAlias("ubsAdvRatePct")
+        Double  ubsAdvanceRatePct,      // null → rate left unchanged
+        @JsonAlias("agentRatePct")
+        Double  agentAdvanceRatePct,    // null → unchanged
+        @JsonAlias("ubsConcLimitPct")
+        Double  ubsConcentrationLimitPct,   // null → limit left unchanged
+        @JsonAlias("agentConcLimitPct")
+        Double  agentConcentrationLimitPct, // null → unchanged
         // Status (manual)
-        Boolean inc,
-        Boolean tf,
+        @JsonAlias("inc")
+        Boolean included,
+        @JsonAlias("tf")
+        Boolean transferee,
         String  notes
     ) {}
 }

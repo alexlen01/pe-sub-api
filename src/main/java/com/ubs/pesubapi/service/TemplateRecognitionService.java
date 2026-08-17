@@ -1,5 +1,6 @@
 package com.ubs.pesubapi.service;
 
+import com.ubs.pesubapi.config.TemplateRecognitionProperties;
 import com.ubs.pesubapi.dto.ResolvedTemplate;
 import com.ubs.pesubapi.dto.WorkbookSignals;
 import com.ubs.pesubapi.entity.BbTemplate;
@@ -44,31 +45,25 @@ public class TemplateRecognitionService {
 
     private static final Logger log = LoggerFactory.getLogger(TemplateRecognitionService.class);
 
-    // Minimum score before a match is reported; below this the engine auto-detects sheet/header.
-    private static final int MIN_SCORE = 30;
-
-    private static final int SCORE_FILENAME   = 100;
-    private static final int SCORE_TITLE      = 50;
-    private static final int SCORE_DETECT_KEY = 20;
-    private static final int SCORE_NAMED_TAB  = 15;
-    private static final int SCORE_AGENT_BANK = 10;
-
-    private final BbTemplateRepository      templateRepo;
-    private final BbTemplateTabRepository   tabRepo;
-    private final BbTemplateGroupRepository groupRepo;
+    private final BbTemplateRepository       templateRepo;
+    private final BbTemplateTabRepository    tabRepo;
+    private final BbTemplateGroupRepository  groupRepo;
+    private final TemplateRecognitionProperties scoring;
 
     public TemplateRecognitionService(BbTemplateRepository templateRepo,
                                       BbTemplateTabRepository tabRepo,
-                                      BbTemplateGroupRepository groupRepo) {
+                                      BbTemplateGroupRepository groupRepo,
+                                      TemplateRecognitionProperties scoring) {
         this.templateRepo = templateRepo;
         this.tabRepo      = tabRepo;
         this.groupRepo    = groupRepo;
+        this.scoring      = scoring;
     }
 
     /**
      * Recognises the template for a workbook. An operator-forced template name/slug wins outright;
      * otherwise the registry is scored against the workbook signals. Returns
-     * {@link ResolvedTemplate#unknown()} when nothing clears {@link #MIN_SCORE}.
+     * {@link ResolvedTemplate#unknown()} when nothing clears the configured minimum score.
      */
     public ResolvedTemplate recognize(WorkbookSignals signals, String agentBank, String forcedTemplate) {
         List<BbTemplate> templates = templateRepo.findAll();
@@ -110,14 +105,14 @@ public class TemplateRecognitionService {
 
             String filenameHit = firstContained(fileKey, t.getDetectKeys());
             if (filenameHit != null) {
-                score += SCORE_FILENAME;
+                score += scoring.getScoreFilename();
                 by = "filename:" + filenameHit;
             } else {
                 // Slug tokens in the filename (e.g. "kkr-ascendant" ⊂ "Agent-BB-KKR-Ascendant-Fund"),
                 // so a template with no detect_keys is still recognised from a conventionally-named file.
                 String slugNorm = normalize(t.getTemplateSlug());
                 if (!slugNorm.isBlank() && fileKey.contains(slugNorm)) {
-                    score += SCORE_FILENAME;
+                    score += scoring.getScoreFilename();
                     by = "filenameSlug:" + t.getTemplateSlug();
                 }
             }
@@ -125,32 +120,32 @@ public class TemplateRecognitionService {
             if (t.getTitleText() != null && !t.getTitleText().isBlank()) {
                 String title = normalize(t.getTitleText());
                 if (!title.isBlank() && cells.stream().anyMatch(c -> c.contains(title))) {
-                    score += SCORE_TITLE;
+                    score += scoring.getScoreTitle();
                     if (by.isEmpty()) by = "title";
                 }
             }
 
             String cellKeyHit = firstContainedInAny(cells, t.getDetectKeys());
-            if (cellKeyHit != null) { score += SCORE_DETECT_KEY; if (by.isEmpty()) by = "detectKey:" + cellKeyHit; }
+            if (cellKeyHit != null) { score += scoring.getScoreDetectKey(); if (by.isEmpty()) by = "detectKey:" + cellKeyHit; }
 
             List<BbTemplateTab> tabs = tabRepo.findByTemplateIdAndTabRoleOrderByTabSortAsc(t.getId(), TabRole.LP_GRID);
             boolean namedTab = tabs.stream()
                 .map(tab -> tab.getSheetName())
                 .filter(Objects::nonNull)
                 .anyMatch(sn -> sheetNames.contains(normalize(sn)));
-            if (namedTab) { score += SCORE_NAMED_TAB; if (by.isEmpty()) by = "namedTab"; }
+            if (namedTab) { score += scoring.getScoreNamedTab(); if (by.isEmpty()) by = "namedTab"; }
 
             if (agentBank != null && t.getAgentName() != null
                     && normalize(agentBank).contains(normalize(t.getAgentName()))) {
-                score += SCORE_AGENT_BANK;
+                score += scoring.getScoreAgentBank();
                 if (by.isEmpty()) by = "agentBank";
             }
 
             if (score > bestScore) { bestScore = score; best = t; bestBy = by; }
         }
 
-        if (best == null || bestScore < MIN_SCORE) {
-            log.info("Recognition: no confident match (bestScore={}, threshold={}); UNKNOWN", bestScore, MIN_SCORE);
+        if (best == null || bestScore < scoring.getMinScore()) {
+            log.info("Recognition: no confident match (bestScore={}, threshold={}); UNKNOWN", bestScore, scoring.getMinScore());
             return ResolvedTemplate.unknown();
         }
         log.info("Recognition: matched template='{}' score={} matchedBy='{}'", best.getTemplateName(), bestScore, bestBy);

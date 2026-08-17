@@ -57,11 +57,10 @@ class LpRecordDeleteIntegrationTest extends IntegrationTestBase {
         LpRecord r = new LpRecord();
         r.setFacilityId(facilityId);
         r.setInvestorName(name);   // TEST ONLY
-        r.setInvType("Pension");
-        r.setRegion("US");
-        r.setCls("Rated");
-        r.setUc("$" + uncalledDollars);
-        r.setUcNum(new BigDecimal(uncalledDollars));
+        r.setInvestorSegmentOrType("Pension");
+        r.setRegionLocation("US");
+        r.setUbsLpCategory("Rated");
+        r.setUncalledCapital(new BigDecimal(uncalledDollars));
         return lpRecordRepo.save(r);
     }
 
@@ -71,8 +70,8 @@ class LpRecordDeleteIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isNoContent());
 
         assertThat(lpRecordRepo.findById(middleId)).isEmpty();
-        assertThat(lpRecordRepo.findById(bigId).orElseThrow().getRank()).isEqualTo(1);
-        assertThat(lpRecordRepo.findById(smallId).orElseThrow().getRank()).isEqualTo(2);
+        assertThat(lpRecordRepo.findById(bigId).orElseThrow().getLpRank()).isEqualTo(1);
+        assertThat(lpRecordRepo.findById(smallId).orElseThrow().getLpRank()).isEqualTo(2);
 
         assertThat(auditLogRepo.findAllByOrderByCreatedAtDesc())
             .anySatisfy(entry -> {

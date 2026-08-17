@@ -42,57 +42,65 @@ public class BbCalculationService {
     /** Advance rate (fraction) with the LP's Borrowing Base Criteria already resolved, so the
      *  {@code compute} loop resolves the matrix once per LP rather than twice. */
     double advanceRateFraction(LpRecord lpRecord, Optional<BbCriteriaResolver.Criteria> criteria) {
-        String raw = lpRecord.getUbsRate();
-        if (raw != null && !raw.isBlank()) {
-            try {
-                double n = Double.parseDouble(raw.replace("%", "").trim());
-                return n > 1 ? n / 100.0 : n;
-            } catch (NumberFormatException ignored) { /* fall through to matrix default */ }
-        }
+        double stored = parsePctDecimal(lpRecord.getUbsAdvanceRate());
+        if (stored >= 0) return stored;
         return criteria.map(c -> c.advanceRatePct() / 100.0).orElse(0.0);
     }
 
     private Optional<BbCriteriaResolver.Criteria> resolveCriteria(LpRecord lpRecord) {
-        return criteriaResolver.resolve(lpRecord.getCls(), lpRecord.getSp(), lpRecord.getMdy(),
-            lpRecord.getFitch(), pctFunded(lpRecord));
+        return criteriaResolver.resolve(lpRecord.getUbsLpCategory(), lpRecord.getSpRating(), lpRecord.getMoodysRating(),
+            lpRecord.getFitchRating(), pctFunded(lpRecord));
     }
 
     /** LP funded fraction (called ÷ commitment): stored Called Capital when present, else the
      *  derived Capital Commitments − Uncalled Capital. 0 when commitment is unavailable. */
     private static double pctFunded(LpRecord lpRecord) {
-        double commitM = moneyM(lpRecord.getCapCommitNum(), lpRecord.getCapCommit());
+        double commitM = (lpRecord.getCapitalCommitment() != null ? lpRecord.getCapitalCommitment().doubleValue() / 1_000_000.0 : 0);
         if (commitM <= 0) return 0;
-        double calledM = lpRecord.getCalledCap() != null && !lpRecord.getCalledCap().isBlank()
-            ? parseMoney(lpRecord.getCalledCap())
-            : Math.max(0, commitM - moneyM(lpRecord.getUcNum(), lpRecord.getUc()));
+        double calledM = lpRecord.getCalledCapital() != null
+            ? dollarM(lpRecord.getCalledCapital())
+            : Math.max(0, commitM - dollarM(lpRecord.getUncalledCapital()));
         return calledM / commitM;
     }
 
-    private static double parsePct(String raw) {
-        if (raw == null || raw.isBlank()) return -1.0;
-        try {
-            double n = Double.parseDouble(raw.replace("%", "").trim());
-            return n > 1 ? n / 100.0 : n;
-        } catch (NumberFormatException ignored) {
-            return -1.0;
-        }
+    /**
+     * Magnitude at or above which a bare number is read as absolute dollars rather than as a
+     * percentage or a $millions figure — the same threshold {@link #parseMoney} applies to
+     * suffix-less strings, and the TS reference (parseM in bbCalculationService.ts) to its inputs.
+     * Concentration limits rely on it to tell a 25% limit from a $25,000,000 one.
+     */
+    public static final double ABSOLUTE_DOLLAR_MIN = 100_000;
+
+    /** NUMERIC money column (absolute dollars) to $millions; null reads as 0. Calculation inputs
+     *  are magnitudes, so the sign is dropped. */
+    public static double dollarM(BigDecimal bd) {
+        return bd != null ? bd.abs().doubleValue() / 1_000_000.0 : 0;
+    }
+
+    /** A stored percent/rate column to a fraction; -1 signals "not set" so callers can fall back.
+     *  Rates and percents persist as fractions, but the {@code > 1} rescale is kept because the
+     *  concentration limits still arrive on the percent scale (7.5 = 7.5%). */
+    private static double parsePctDecimal(BigDecimal bd) {
+        if (bd == null) return -1.0;
+        double n = bd.doubleValue();
+        return n > 1 ? n / 100.0 : n;
     }
 
     public BbResult compute(List<LpRecord> lps, double concLimitM) {
         double totalUcM = lps.stream()
-            .mapToDouble(lpRecord -> moneyM(lpRecord.getUcNum(), lpRecord.getUc())).sum();
+            .mapToDouble(lpRecord -> dollarM(lpRecord.getUncalledCapital())).sum();
         List<ComputedLpRecord> computed = lps.stream()
             .map(lpRecord -> computeOne(lpRecord, concLimitM, totalUcM))
             .toList();
 
-        List<ComputedLpRecord> included = computed.stream().filter(lpRecord -> lpRecord.inc()).toList();
+        List<ComputedLpRecord> included = computed.stream().filter(lpRecord -> lpRecord.included()).toList();
 
         double totalUBB = included.stream().mapToDouble(lpRecord -> lpRecord.ubbM()).sum();
         double totalABB = computed.stream().mapToDouble(lpRecord -> lpRecord.abbM()).sum();
         double totalUEC = included.stream().mapToDouble(lpRecord -> lpRecord.uecM()).sum();
         double totalUC  = included.stream().mapToDouble(lpRecord -> lpRecord.ucM()).sum();
         double totalConcExcess = computed.stream().mapToDouble(lpRecord -> lpRecord.concExcessM()).sum();
-        int reclassCount = (int) computed.stream().filter(lpRecord -> lpRecord.rcl()).count();
+        int reclassCount = (int) computed.stream().filter(lpRecord -> lpRecord.reclassified()).count();
 
         double ear      = totalUEC > 0 ? totalUBB / totalUEC : 0;
         double agentEar = totalUEC > 0 ? totalABB / totalUEC : 0;
@@ -117,10 +125,10 @@ public class BbCalculationService {
     private ComputedLpRecord computeOne(LpRecord lpRecord, double facilityConc, double totalUcM) {
         Optional<BbCriteriaResolver.Criteria> criteria = resolveCriteria(lpRecord);
         double busaRate    = advanceRateFraction(lpRecord, criteria);
-        boolean excluded   = !lpRecord.isInc() || "Excluded".equals(lpRecord.getCls());
-        double ucM         = moneyM(lpRecord.getUcNum(),  lpRecord.getUc());
+        boolean excluded   = !lpRecord.isIncluded() || "Excluded".equals(lpRecord.getUbsLpCategory());
+        double ucM         = dollarM(lpRecord.getUncalledCapital());
         double abbM        = hasStoredAbb(lpRecord)
-            ? moneyM(lpRecord.getAbbNum(), lpRecord.getAbb())
+            ? dollarM(lpRecord.getAgentBorrowingBase())
             : deriveAgentBbM(lpRecord, ucM, totalUcM, excluded);
         double concLimitM  = perLpConc(lpRecord, facilityConc, totalUcM, criteria);
         double uecM        = excluded ? 0 : Math.min(ucM, concLimitM);
@@ -134,8 +142,7 @@ public class BbCalculationService {
     /** True when the record carries an Agent BB value written by a row-bearing run — including an
      *  explicit "$0", which must not be re-derived. */
     private static boolean hasStoredAbb(LpRecord lpRecord) {
-        return lpRecord.getAbbNum() != null
-            || (lpRecord.getAbb() != null && !lpRecord.getAbb().isBlank());
+        return lpRecord.getAgentBorrowingBase() != null;
     }
 
     /**
@@ -147,7 +154,7 @@ public class BbCalculationService {
      */
     private static double deriveAgentBbM(LpRecord lpRecord, double ucM, double totalUcM, boolean excluded) {
         if (excluded) return 0;
-        double agentRate = parsePct(lpRecord.getAgentRate());
+        double agentRate = parsePctDecimal(lpRecord.getAgentAdvanceRate());
         if (agentRate <= 0) return 0;
         return agentEligibleM(lpRecord, ucM, totalUcM) * agentRate;
     }
@@ -156,7 +163,7 @@ public class BbCalculationService {
      *  uncalled); uncapped when no limit is stored. Shared by the Agent BB derivation and the
      *  agent excess-concentration figure so the two can never drift. */
     private static double agentEligibleM(LpRecord lpRecord, double ucM, double totalUcM) {
-        double agentConcPct = parsePct(lpRecord.getAgentConc());
+        double agentConcPct = parsePctDecimal(lpRecord.getAgentConcentrationLimit());
         return agentConcPct > 0 ? Math.min(ucM, agentConcPct * totalUcM) : ucM;
     }
 
@@ -166,19 +173,21 @@ public class BbCalculationService {
      *  then the facility-level dollar limit. No legacy classification-default fallback. */
     private static double perLpConc(LpRecord lpRecord, double facilityConc, double totalUcM,
                                     Optional<BbCriteriaResolver.Criteria> criteria) {
-        String cls = lpRecord.getCls();
+        String cls = lpRecord.getUbsLpCategory();
         // Evaluate the Excluded bucket first: an excluded LP is a hard 0 concentration
         // limit, ahead of any explicit per-LP override or class default, so a
         // stale/misconfigured default can never leak into the borrowing base.
         if (cls != null && "Excluded".equals(normalizeDashes(cls))) return 0;
-        String ubsConc = lpRecord.getUbsConc();
-        if (ubsConc != null && !ubsConc.isBlank()) {
-            if (ubsConc.contains("%")) {
-                double pct = parsePct(ubsConc);
-                if (pct >= 0 && totalUcM > 0) return pct * totalUcM;
+        BigDecimal ubsConcLimitBd = lpRecord.getUbsConcentrationLimit();
+        if (ubsConcLimitBd != null) {
+            // The limit is either a percentage of total uncalled or an absolute dollar cap; both
+            // share the one NUMERIC column and are told apart by magnitude (see ABSOLUTE_DOLLAR_MIN).
+            if (ubsConcLimitBd.doubleValue() >= ABSOLUTE_DOLLAR_MIN) {
+                double capM = dollarM(ubsConcLimitBd);
+                if (capM > 0) return capM;
             } else {
-                double v = parseMoney(ubsConc);
-                if (v > 0) return v;
+                double pct = parsePctDecimal(ubsConcLimitBd);
+                if (pct >= 0 && totalUcM > 0) return pct * totalUcM;
             }
         }
         // Matrix default (rating-band aware for Rated Investors), as a percent of total uncalled.
@@ -229,14 +238,14 @@ public class BbCalculationService {
         if (totalUBB <= 0) return breaches;
 
         ConcLimits limits = loadConcLimits();
-        List<ComputedLpRecord> included = lps.stream().filter(lpRecord -> lpRecord.inc()).toList();
+        List<ComputedLpRecord> included = lps.stream().filter(lpRecord -> lpRecord.included()).toList();
 
         // Single LP over configured limit
         for (ComputedLpRecord lpRecord : included) {
             double pct = lpRecord.ubbM() / totalUBB;
             if (pct > limits.singleLp()) {
                 breaches.add(new BbBreach("single-LP", "breach",
-                    lpRecord.name() + " exceeds " + pctLabel(limits.singleLp()) + " single-LP concentration",
+                    lpRecord.investorName() + " exceeds " + pctLabel(limits.singleLp()) + " single-LP concentration",
                     pct, limits.singleLp()));
             }
         }
@@ -269,7 +278,7 @@ public class BbCalculationService {
 
         // Non-US aggregate over configured limit
         double nonUsUBB = included.stream()
-            .filter(lpRecord -> !lpRecord.hq())
+            .filter(lpRecord -> !lpRecord.highQuality())
             .mapToDouble(lpRecord -> lpRecord.ubbM()).sum();
         if (nonUsUBB / totalUBB > limits.nonUs()) {
             breaches.add(new BbBreach("non-us", "breach",
@@ -284,16 +293,6 @@ public class BbCalculationService {
     private static String pctLabel(double fraction) {
         double pct = fraction * 100;
         return (pct == Math.rint(pct) ? String.valueOf((long) pct) : String.valueOf(pct)) + "%";
-    }
-
-    /**
-     * Money in $millions, numeric-first (C2): the precise numeric column (absolute dollars) when
-     * present, otherwise the legacy formatted display string. Lets the engine read exact values
-     * for rows written after the numeric migration while staying correct for pre-migration rows.
-     */
-    public static double moneyM(BigDecimal numericDollars, String display) {
-        if (numericDollars != null) return numericDollars.abs().doubleValue() / 1_000_000.0;
-        return Math.abs(parseMoney(display));
     }
 
     /**
@@ -316,7 +315,7 @@ public class BbCalculationService {
         else { suffixed = false; }
         try {
             double value = Double.parseDouble(clean) * mult;
-            if (!suffixed && (s.contains("$") || Math.abs(value) >= 100_000)) {
+            if (!suffixed && (s.contains("$") || Math.abs(value) >= ABSOLUTE_DOLLAR_MIN)) {
                 return value / 1_000_000;
             }
             return value;

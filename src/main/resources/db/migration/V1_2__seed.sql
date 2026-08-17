@@ -1,6 +1,6 @@
 -- ╔══════════════════════════════════════════════════════════════════════════╗
 -- ║  Consolidated seed — all reference data in final form.                 ║
--- ║  39 canonical fields across 9 groups; all aliases, blocklist, and      ║
+-- ║  38 canonical fields across 9 groups; all aliases, blocklist, and      ║
 -- ║  suggestions reflect the accumulated state of V1_14 through V1_26.    ║
 -- ║  BB template rows live in the bb_template_* seed blocks below.          ║
 -- ╚══════════════════════════════════════════════════════════════════════════╝
@@ -95,7 +95,7 @@ INSERT INTO config (key, value) VALUES ('matching_config', '{
 }');
 
 -- ── Field Mapping Dictionary: canonical fields ────────────────────────────────
--- 39 fields across 9 groups.
+-- 38 fields across 9 groups.
 -- is_derived = TRUE: agent-calculated output; display / cross-check only.
 
 INSERT INTO fm_canonical_fields
@@ -110,24 +110,12 @@ VALUES
       'INVESTOR_NAME', FALSE),
 
   ('Identity & Core Hierarchy', 1, 2,
-      'Fund Sleeve',
-      'Identity & Core Hierarchy - Fund Sleeve',
-      'Structural sub-division of the fund vehicle to which the LP commitment belongs. '
-      'Concentration limits are applied per sleeve. '
-      'Direct synonyms (interchangeable): Fund Vehicle / Borrowing Vehicle / Guarantor Vehicle; '
-      'Feeder Fund / Feeder / Parallel Fund; '
-      'Fund Tranche (e.g. "The Levered Tranche" vs "The Unlevered Tranche"). '
-      'Bank template column labels: Sub-Fund, Legal Entity / Issuing Entity, '
-      'Investing Entity / Allocation Entity, Fund Pocket / Share Class.',
-      'FUND_SLEEVE', FALSE),
-
-  ('Identity & Core Hierarchy', 1, 3,
       'Parent / Sponsor',
       'Identity & Core Hierarchy - Parent / Sponsor',
       'Ultimate parent or sponsoring entity of the LP',
       NULL, FALSE),
 
-  ('Identity & Core Hierarchy', 1, 4,
+  ('Identity & Core Hierarchy', 1, 3,
       'SPV Flag',
       'Identity & Core Hierarchy - SPV Flag',
       'Indicates whether the LP is a Special Purpose Vehicle / entity. '
@@ -135,13 +123,13 @@ VALUES
       'Captured as a boolean-style flag (Y/N, Yes/No, TRUE/FALSE, X) from agent submissions.',
       'SPV_FLAG', FALSE),
 
-  ('Identity & Core Hierarchy', 1, 5,
+  ('Identity & Core Hierarchy', 1, 4,
       'Transferee',
       'Identity & Core Hierarchy - Transferee',
       'Y where LP received a transferred commitment; blank otherwise',
       NULL, FALSE),
 
-  ('Identity & Core Hierarchy', 1, 6,
+  ('Identity & Core Hierarchy', 1, 5,
       'Region / Location',
       'Identity & Core Hierarchy - Region / Location',
       'Geographic region or domicile of the LP. '
@@ -381,23 +369,6 @@ INSERT INTO fm_aliases (canonical_field_id, alias_sort, alias_text, tier, bank) 
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Name'), 5,  'Limited Partner',                 'Core', NULL),
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Name'), 6,  'Fund Investor',                   'Bank', 'SVB'),
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Investor Name'), 7,  'Deal Investor Name',              'Bank', 'WF'),
-
-  -- ── Fund Sleeve ───────────────────────────────────────────────────────────────
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fund Sleeve'), 1,  'Fund Sleeve',       'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fund Sleeve'), 2,  'Fund Vehicle',      'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fund Sleeve'), 3,  'Borrowing Vehicle', 'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fund Sleeve'), 4,  'Guarantor Vehicle', 'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fund Sleeve'), 5,  'Feeder Fund',       'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fund Sleeve'), 6,  'Feeder',            'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fund Sleeve'), 7,  'Parallel Fund',     'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fund Sleeve'), 8,  'Fund Tranche',      'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fund Sleeve'), 9,  'Sub-Fund',          'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fund Sleeve'), 10, 'Legal Entity',      'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fund Sleeve'), 11, 'Issuing Entity',    'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fund Sleeve'), 12, 'Investing Entity',  'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fund Sleeve'), 13, 'Allocation Entity', 'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fund Sleeve'), 14, 'Fund Pocket',       'Core', NULL),
-  ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Fund Sleeve'), 15, 'Share Class',       'Core', NULL),
 
   -- ── Parent / Sponsor ──────────────────────────────────────────────────────────
   ((SELECT id FROM fm_canonical_fields WHERE canonical = 'Parent / Sponsor'), 1, 'Parent / Sponsor',           'Core', NULL),
@@ -706,8 +677,8 @@ INSERT INTO lp_rates (
 SELECT
     id,
     '2025-01-01'::DATE,
-    classification,
-    CASE classification
+    ubs_lp_category,
+    CASE ubs_lp_category
         WHEN 'Rated'          THEN 0.9000
         WHEN 'Unrated >2bn'   THEN 0.7500
         WHEN 'Unrated 1–2bn'  THEN 0.6500
@@ -715,7 +686,7 @@ SELECT
         WHEN 'Excluded'       THEN 0.0000
         ELSE                       0.5000
     END,
-    CASE classification
+    CASE ubs_lp_category
         WHEN 'Rated'          THEN 0.1500
         WHEN 'Unrated >2bn'   THEN 0.1250
         WHEN 'Unrated 1–2bn'  THEN 0.1000

@@ -8,11 +8,13 @@ import com.ubs.pesubapi.entity.LpRecord;
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.LpMasterRepository;
 import com.ubs.pesubapi.repository.LpRecordRepository;
+import com.ubs.pesubapi.util.MoneyValues;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -73,7 +75,7 @@ public class LpRecordSeedService {
                 continue;
             }
 
-            String agentCls = normalizeAgentClassification(row.agentCls());
+            String agentCls = normalizeAgentClassification(row.agentLpCategory());
             LpRecord lp = new LpRecord();
             lp.setFacilityId(facility.getId());
             lp.setLpMasterId(master.getId());
@@ -83,39 +85,40 @@ public class LpRecordSeedService {
             // (legacy 7-column feeds arrive with these fields blank and keep the old merge behavior).
             lp.setParent(coalesce(row.parent(), master.getParent()));
             lp.setSpv(boolOr(row.spv(), master.isSpv()));
-            lp.setHighQty(boolOr(row.highQty(), master.isHighQty()));
+            lp.setHighQuality(boolOr(row.highQuality(), master.isHighQuality()));
             lp.setInvestorType(coalesce(row.investorType(), coalesce(master.getInvestorType(), "")));
-            lp.setInstVsHnw(coalesce(row.instVsHnw(), coalesce(master.getInstVsHnw(), "Institutional")));
+            lp.setInstitutionalOrHnw(coalesce(row.institutionalOrHnw(), coalesce(master.getInstitutionalOrHnw(), "Institutional")));
             lp.setRegionLocation(coalesce(row.regionLocation(), coalesce(master.getRegionLocation(), "")));
-            lp.setIg(boolOr(row.investmentGrade(), master.isIg()));
-            lp.setCls(normalizeUbsClassification(
-                    coalesce(row.ubsCls(), master.getUbsClassification()), agentCls));
-            lp.setAgentCls(agentCls);
-            lp.setAgentClsSource("EXTRACTED");
-            lp.setSp(coalesce(row.sp(), coalesce(master.getSp(), "")));
-            lp.setMdy(coalesce(row.mdy(), coalesce(master.getMdy(), "")));
-            lp.setFitch(coalesce(row.fitch(), coalesce(master.getFitch(), "")));
+            lp.setInvestmentGrade(boolOr(row.investmentGrade(), master.isInvestmentGrade()));
+            lp.setUbsLpCategory(normalizeUbsClassification(
+                    coalesce(row.ubsLpCategory(), master.getUbsLpCategory()), agentCls));
+            lp.setAgentLpCategory(agentCls);
+            lp.setAgentLpCategorySource("EXTRACTED");
+            lp.setSpRating(coalesce(row.spRating(), coalesce(master.getSpRating(), "")));
+            lp.setMoodysRating(coalesce(row.moodysRating(), coalesce(master.getMoodysRating(), "")));
+            lp.setFitchRating(coalesce(row.fitchRating(), coalesce(master.getFitchRating(), "")));
             lp.setAum(coalesce(row.aum(), master.getAum()));
             lp.setNav(coalesce(row.nav(), master.getNav()));
-            lp.setPension(coalesce(row.pension(), master.getPension()));
-            lp.setPensionFunded(coalesce(row.pensionFunded(), master.getPensionFunded()));
-            lp.setCapCommit(row.capCommit());
-            lp.setUc(row.uncalled());
-            lp.setAgentRate(row.agentRate());
-            lp.setAgentConc(row.agentConc());
+            lp.setPensionAssets(coalesce(row.pensionAssets(), master.getPensionAssets()));
+            BigDecimal fundingRatio = MoneyValues.fraction(row.fundingRatio());
+            lp.setFundingRatio(fundingRatio != null ? fundingRatio : master.getFundingRatio());
+            lp.setCapitalCommitment(MoneyValues.dollars(row.capitalCommitment()));
+            lp.setUncalledCapital(MoneyValues.dollars(row.uncalledCapital()));
+            lp.setAgentAdvanceRate(MoneyValues.fraction(row.agentAdvanceRate()));
+            lp.setAgentConcentrationLimit(MoneyValues.decimal(row.agentConcentrationLimit()));
             // Row-only fields (no LP Master counterpart):
-            lp.setPctCapCommit(row.pctCapCommit());
-            lp.setCalledCap(row.calledCap());
-            lp.setPctUncalled(row.pctUncalled());
-            lp.setPctCalled(row.pctCalled());
-            lp.setUbsConc(row.ubsConc());
-            lp.setUbsRate(row.ubsRate());
-            lp.setAbb(row.agentBb());
-            lp.setUbb(row.ubsBb());
+            lp.setPctOfFundCommitments(MoneyValues.fraction(row.pctOfFundCommitments()));
+            lp.setCalledCapital(MoneyValues.dollars(row.calledCapital()));
+            lp.setPctOfFundUncalled(MoneyValues.fraction(row.pctOfFundUncalled()));
+            lp.setPctLpCalled(MoneyValues.fraction(row.pctLpCalled()));
+            lp.setUbsConcentrationLimit(MoneyValues.concLimit(row.ubsConcentrationLimit()));
+            lp.setUbsAdvanceRate(MoneyValues.fraction(row.ubsAdvanceRate()));
+            lp.setAgentBorrowingBase(MoneyValues.dollars(row.agentBorrowingBase()));
+            lp.setUbsBorrowingBase(MoneyValues.dollars(row.ubsBorrowingBase()));
             lp.setNotes(row.notes());
-            lp.setInc(true);
-            lp.setRcl(false);
-            lp.setTf(false);
+            lp.setIncluded(true);
+            lp.setReclassified(false);
+            lp.setTransferee(false);
             lpRecordRepo.save(lp);
             created++;
         }

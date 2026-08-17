@@ -17,10 +17,10 @@ public interface LpRecordRepository extends JpaRepository<LpRecord, Integer> {
      * rows without a source position appear after the uploaded set, ordered alphabetically.
      */
     List<LpRecord> findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(Integer facilityId);
-    List<LpRecord> findByFacilityIdAndClsOrderByClsAscInvestorNameAsc(Integer facilityId, String cls);
-    List<LpRecord> findByFacilityIdAndInvestorNameContainingIgnoreCaseOrderByClsAscInvestorNameAsc(Integer facilityId, String investorName);
+    List<LpRecord> findByFacilityIdAndUbsLpCategoryOrderByUbsLpCategoryAscInvestorNameAsc(Integer facilityId, String cls);
+    List<LpRecord> findByFacilityIdAndInvestorNameContainingIgnoreCaseOrderByUbsLpCategoryAscInvestorNameAsc(Integer facilityId, String investorName);
     List<LpRecord> findAllByOrderByInvestorNameAsc();
-    List<LpRecord> findAllByOrderByClsAscInvestorNameAsc();
+    List<LpRecord> findAllByOrderByUbsLpCategoryAscInvestorNameAsc();
 
     long countByFacilityId(Integer facilityId);
 
@@ -51,6 +51,6 @@ public interface LpRecordRepository extends JpaRepository<LpRecord, Integer> {
     /** Finalize approved reclassifications. The accepted snapshot retains the historical flag,
      * while live LP records return to their normal post-review state. */
     @Modifying
-    @Query("UPDATE LpRecord l SET l.rcl = false WHERE l.facilityId = :facilityId AND l.rcl = true")
+    @Query("UPDATE LpRecord l SET l.reclassified = false WHERE l.facilityId = :facilityId AND l.reclassified = true")
     int clearReclassifiedByFacilityId(@Param("facilityId") Integer facilityId);
 }

@@ -23,12 +23,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Round-trip coverage for the precise numeric money columns (C2: uncalled_capital_num,
- * cap_commit_num, aum_num, agent_bb_num on lp_records). The columns are internal to the BB
- * engine — never exposed on a DTO — so the round trip is asserted at both boundaries: the write
- * paths (service ingest, Shadow BB commit) must persist exact dollars alongside full-precision
- * display strings (dollar amounts are never rounded or abbreviated: "$12,345,678.9", not
- * "$12.3M"), and the engine must compute from the exact numeric value.
+ * Round-trip coverage for the money columns on lp_records (uncalled_capital, cap_commit, aum,
+ * agent_bb), which are NUMERIC — a single precise column per field, no display-string sibling.
+ * The round trip is asserted at both boundaries: the write paths (service ingest, Shadow BB
+ * commit) must persist exact dollars with no rounding or abbreviation ($12,345,678.90 must never
+ * degrade to $12.3M), and the engine must compute from that exact value.
  */
 class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
 
@@ -50,17 +49,17 @@ class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
         LpRecord lpRecord = new LpRecord();
         lpRecord.setFacilityId(facilityId);
         lpRecord.setInvestorName(investorName);
-        lpRecord.setInvType("Pension");
-        lpRecord.setRegion("US");
-        lpRecord.setCls(cls);
+        lpRecord.setInvestorSegmentOrType("Pension");
+        lpRecord.setRegionLocation("US");
+        lpRecord.setUbsLpCategory(cls);
         return lpRecordRepo.save(lpRecord);
     }
 
-    // ── Extraction ingest: exact decimals persist; display strings keep every digit ─────
+    // ── Extraction ingest: exact decimals persist, to the cent ──────────────────────────
 
     @Test
     @WithMockUser(username = "extraction-svc", roles = {"SERVICE"})
-    void ingest_dualWritesExactNumericAndFullPrecisionDisplay() throws Exception {
+    void ingest_persistsExactDollarsWithoutRounding() throws Exception {
         seedLp("Acme Pension Fund", "Rated Investor");
 
         String body = """
@@ -86,33 +85,28 @@ class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.updated").value(1));
 
-        // Numeric columns carry the exact extracted dollars; display strings keep every
-        // digit — never rounded or abbreviated ($12,345,678.9 is not $12.3M).
+        // The exact extracted dollars land in the numeric columns — $12,345,678.90 is not $12.3M.
         LpRecord lpRecord = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).getFirst();
-        assertThat(lpRecord.getUcNum()).isEqualByComparingTo(new BigDecimal("12345678.90"));
-        assertThat(lpRecord.getCapCommitNum()).isEqualByComparingTo(new BigDecimal("20000000.55"));
-        assertThat(lpRecord.getAumNum()).isEqualByComparingTo(new BigDecimal("4250000000"));
-        assertThat(lpRecord.getUc()).isEqualTo("$12,345,678.9");
-        assertThat(lpRecord.getCapCommit()).isEqualTo("$20,000,000.55");
-        assertThat(lpRecord.getAum()).isEqualTo("$4,250,000,000");
+        assertThat(lpRecord.getUncalledCapital()).isEqualByComparingTo(new BigDecimal("12345678.90"));
+        assertThat(lpRecord.getCapitalCommitment()).isEqualByComparingTo(new BigDecimal("20000000.55"));
+        assertThat(lpRecord.getAum()).isEqualTo("$4.25B");   // VARCHAR display field — agent text kept verbatim
 
-        // GET still serves the display strings the UI renders.
+        // GET serves them as full-precision display strings for the UI.
         mvc.perform(get("/api/lpRecords").param("facilityId", String.valueOf(facilityId)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$[0].uc").value("$12,345,678.9"))
-            .andExpect(jsonPath("$[0].capCommit").value("$20,000,000.55"))
+            .andExpect(jsonPath("$[0].uncalledCapital").value("$12,345,678.9"))
+            .andExpect(jsonPath("$[0].capitalCommitment").value("$20,000,000.55"))
             .andExpect(jsonPath("$[0].aum").value("$4,250,000,000"));
     }
 
-    // ── Shadow BB commit: input numerics re-derived from the submitted strings; the
-    // agent-reported abb/abbNum is not commit-settable and survives the run untouched ──
+    // ── Shadow BB commit: numerics re-derived from the submitted strings; the agent-reported
+    // abb is not commit-settable and survives the run untouched ────────────────────────
 
     @Test
     void run_rederivesNumericFromCommittedStrings_andPreservesIngestAbb() throws Exception {
         LpRecord stale = seedLp("CalPERS", "Rated Investor");
-        stale.setUc("$99.9M");
-        stale.setUcNum(new BigDecimal("99999999.99"));   // TEST ONLY — stale prior-cycle value
-        stale.setAbbNum(new BigDecimal("55555555.00"));  // TEST ONLY — ingest-written, must survive
+        stale.setUncalledCapital(new BigDecimal("99999999.99"));   // TEST ONLY — stale prior-cycle value
+        stale.setAgentBorrowingBase(new BigDecimal("55555555.00"));  // TEST ONLY — ingest-written, must survive
         lpRecordRepo.save(stale);
 
         String body = """
@@ -123,11 +117,11 @@ class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
                 "type": "Institutional", "region": "North America",
                 "ig": true, "cls": "Rated Investor",
                 "sp": "AAA", "mdy": "Aaa", "fitch": "",
-                "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
+                "aum": "$500.0B", "nav": null, "pensionAssets": null, "fundingRatio": null,
                 "capCommit": "$15.0M", "pctCapCommit": null, "calledCap": "$3.0M",
                 "uc": "$12.0M", "pctUncalled": null, "pctCalled": null,
-                "agentConc": "7.5%", "ubsConc": "$25.0M",
-                "agentRate": "95.0%",
+                "agent_conc_limit": "7.5%", "ubs_conc_limit": "$25.0M",
+                "agentRate": 0.95,
                 "inc": true, "rcl": false, "notes": null
               }]
             }
@@ -142,12 +136,12 @@ class LpNumericRoundTripIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.result.summary.totalUBB").value(closeTo(10.8, 0.0001)));
 
         LpRecord lpRecord = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).getFirst();
-        assertThat(lpRecord.getUc()).isEqualTo("$12.0M");
-        assertThat(lpRecord.getUcNum()).isEqualByComparingTo(new BigDecimal("12000000"));
-        assertThat(lpRecord.getCapCommitNum()).isEqualByComparingTo(new BigDecimal("15000000"));
-        assertThat(lpRecord.getAumNum()).isEqualByComparingTo(new BigDecimal("500000000000"));
-        // abb/abbNum are engine-input provenance (ingest-written) — the run must not clear them.
-        assertThat(lpRecord.getAbbNum()).isEqualByComparingTo(new BigDecimal("55555555.00"));
+        assertThat(lpRecord.getUncalledCapital()).isEqualByComparingTo(new BigDecimal("12000000"));
+        assertThat(lpRecord.getCapitalCommitment()).isEqualByComparingTo(new BigDecimal("15000000"));
+        assertThat(lpRecord.getAum()).isEqualTo("$500.0B");  // VARCHAR display field
+        // A dollar-denominated conc limit must survive the numeric column as absolute dollars.
+        assertThat(lpRecord.getUbsConcentrationLimit()).isEqualByComparingTo(new BigDecimal("25000000"));
+        // abb is engine-input provenance (ingest-written) — the run must not clear it.
+        assertThat(lpRecord.getAgentBorrowingBase()).isEqualByComparingTo(new BigDecimal("55555555.00"));
     }
 }
-

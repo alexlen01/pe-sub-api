@@ -13,7 +13,6 @@ import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -22,7 +21,7 @@ import java.io.ByteArrayInputStream;
 import java.util.*;
 
 /**
- * Parses a structured "BB-Template-Import" Excel workbook into a {@link BbTemplateRequest}.
+ * Parses a structured BB template Excel workbook into a {@link BbTemplateRequest}.
  *
  * <p>This is the canonical way the BB template registry is populated — the same path used by
  * "Upload Template" in the app and by integration tests. A template is identified by its
@@ -79,14 +78,9 @@ public class BbTemplateImportService {
                     req.sheetName(), req.headerRowIndex(), req.autoDiscoverTabs(),
                     req.tabs() != null ? req.tabs().size() : 0,
                     req.notes() != null ? req.notes().size() : 0);
-                BbTemplateDto imported = upsert
+                return upsert
                     ? templateService.upsertBySlug(req)
                     : templateService.create(req);
-                return templateService.storeSourceFile(
-                    imported.id(),
-                    safeFileName(file),
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    content);
             }
         } catch (ResponseStatusException e) {
             log.warn("BB template import rejected file='{}': {}", fileName(file), e.getReason());
@@ -244,13 +238,6 @@ public class BbTemplateImportService {
 
     private String fileName(MultipartFile file) {
         return file != null && file.getOriginalFilename() != null ? file.getOriginalFilename() : "<unknown>";
-    }
-
-    private String safeFileName(MultipartFile file) {
-        String cleaned = StringUtils.cleanPath(fileName(file)).replace('\\', '/');
-        int slash = cleaned.lastIndexOf('/');
-        String baseName = slash >= 0 ? cleaned.substring(slash + 1) : cleaned;
-        return baseName.isBlank() || "<unknown>".equals(baseName) ? "bb-template.xlsx" : baseName;
     }
 
     // ── Value helpers ─────────────────────────────────────────────────────────

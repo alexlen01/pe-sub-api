@@ -83,8 +83,8 @@ class PerLpConcentrationLimitIntegrationTest extends IntegrationTestBase {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(twoRatedPayload("10%", null)))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.result.lps[?(@.name=='Chain LP 01')].uecM", contains(closeTo(4.0, 0.001))))
-            .andExpect(jsonPath("$.result.lps[?(@.name=='Chain LP 02')].uecM", contains(closeTo(10.0, 0.001))));
+            .andExpect(jsonPath("$.result.lps[?(@.investorName=='Chain LP 01')].uecM", contains(closeTo(4.0, 0.001))))
+            .andExpect(jsonPath("$.result.lps[?(@.investorName=='Chain LP 02')].uecM", contains(closeTo(10.0, 0.001))));
     }
 
     @Test
@@ -145,11 +145,11 @@ class PerLpConcentrationLimitIntegrationTest extends IntegrationTestBase {
               "type": "Institutional", "region": "North America",
               "ig": true, "cls": "%s",
               "sp": "%s", "mdy": "%s", "fitch": "",
-              "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
+              "aum": "$500.0B", "nav": null, "pensionAssets": null, "fundingRatio": null,
               "capCommit": "$20.0M", "pctCapCommit": null, "calledCap": null,
               "uc": "$20.0M", "pctUncalled": null, "pctCalled": null,
               "agentConc": null, "ubsConc": %s,
-              "agentRate": "95%%", "abb": "$19.0M",
+              "agentRate": 0.95, "abb": "$19.0M",
               "inc": true, "rcl": false, "notes": null
             }""".formatted(i, cls, sp, mdy, ubsConc == null ? "null" : "\"" + ubsConc + "\"");
     }

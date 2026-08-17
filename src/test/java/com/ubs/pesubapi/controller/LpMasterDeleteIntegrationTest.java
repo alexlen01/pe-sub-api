@@ -46,15 +46,15 @@ class LpMasterDeleteIntegrationTest extends IntegrationTestBase {
 
         LpMaster master = new LpMaster();
         master.setInvestorName(LP);
-        master.setUbsClassification("Rated Investor");
+        master.setUbsLpCategory("Rated Investor");
         masterId = lpMasterRepo.save(master).getId();
 
         LpRecord record = new LpRecord();
         record.setFacilityId(facilityId);
         record.setInvestorName(LP);
-        record.setInvType("Pension");
-        record.setRegion("US");
-        record.setCls("Rated");
+        record.setInvestorSegmentOrType("Pension");
+        record.setRegionLocation("US");
+        record.setUbsLpCategory("Rated");
         record.setLpMasterId(masterId);
         recordId = lpRecordRepo.save(record).getId();
     }

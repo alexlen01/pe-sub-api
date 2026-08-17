@@ -14,13 +14,17 @@ import java.util.Objects;
 @Configuration
 public class ExtractionClientConfig {
 
-    // Without explicit timeouts a hung pe-sub-extraction pins the calling thread forever;
-    // reads stay generous because large-workbook extraction is legitimately slow.
-    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
-    private static final Duration READ_TIMEOUT    = Duration.ofSeconds(120);
-
     @Value("${pe-sub-extraction.base-url}")
     private String extractionBaseUrl;
+
+    // Timeouts are configured (see application.yml): without them a hung pe-sub-extraction pins
+    // the calling thread forever, and reads must stay generous because large-workbook extraction
+    // is legitimately slow.
+    @Value("${pe-sub-extraction.connect-timeout}")
+    private Duration connectTimeout;
+
+    @Value("${pe-sub-extraction.read-timeout}")
+    private Duration readTimeout;
 
     @Bean
     public RestClient peSubExtractionClient() {
@@ -29,8 +33,8 @@ public class ExtractionClientConfig {
         // unlike SimpleClientHttpRequestFactory (HttpURLConnection) which buffers multipart
         // forwards fully in memory and re-handshakes every call.
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(
-            HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build());
-        requestFactory.setReadTimeout(READ_TIMEOUT);
+            HttpClient.newBuilder().connectTimeout(connectTimeout).build());
+        requestFactory.setReadTimeout(readTimeout);
         return RestClient.builder()
             .baseUrl(url)
             .requestFactory(requestFactory)

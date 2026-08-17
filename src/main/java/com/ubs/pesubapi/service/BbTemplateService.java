@@ -5,12 +5,10 @@ import com.ubs.pesubapi.dto.BbTemplateGroupDto;
 import com.ubs.pesubapi.dto.BbTemplateRequest;
 import com.ubs.pesubapi.dto.BbTemplateTabDto;
 import com.ubs.pesubapi.entity.BbTemplate;
-import com.ubs.pesubapi.entity.BbTemplateFile;
 import com.ubs.pesubapi.entity.BbTemplateGroup;
 import com.ubs.pesubapi.entity.BbTemplateTab;
 import com.ubs.pesubapi.entity.BbTemplateTab.TabRole;
 import com.ubs.pesubapi.repository.BbTemplateGroupRepository;
-import com.ubs.pesubapi.repository.BbTemplateFileRepository;
 import com.ubs.pesubapi.repository.BbTemplateRepository;
 import com.ubs.pesubapi.repository.BbTemplateTabRepository;
 import org.springframework.cache.annotation.CacheEvict;
@@ -28,16 +26,13 @@ public class BbTemplateService {
     private final BbTemplateRepository      templateRepo;
     private final BbTemplateTabRepository   tabRepo;
     private final BbTemplateGroupRepository groupRepo;
-    private final BbTemplateFileRepository  fileRepo;
 
     public BbTemplateService(BbTemplateRepository templateRepo,
                              BbTemplateTabRepository tabRepo,
-                             BbTemplateGroupRepository groupRepo,
-                             BbTemplateFileRepository fileRepo) {
+                             BbTemplateGroupRepository groupRepo) {
         this.templateRepo = templateRepo;
         this.tabRepo      = tabRepo;
         this.groupRepo    = groupRepo;
-        this.fileRepo     = fileRepo;
     }
 
     // ── Queries ────────────────────────────────────────────────────────────────
@@ -130,38 +125,6 @@ public class BbTemplateService {
         // Cascade: tabs → groups deleted by FK ON DELETE CASCADE in Postgres
         templateRepo.deleteById(id);
     }
-
-    @CacheEvict(value = "bb-templates", allEntries = true)
-    @Transactional
-    public BbTemplateDto storeSourceFile(int id, String fileName, String contentType, byte[] content) {
-        BbTemplate template = templateRepo.findById(id)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                "BB template not found: " + id));
-
-        BbTemplateFile file = fileRepo.findById(id).orElseGet(BbTemplateFile::new);
-        file.setTemplateId(id);
-        file.setContentType(contentType);
-        file.setContent(content);
-        fileRepo.save(file);
-
-        template.setSourceFileName(fileName);
-        template.setSourceFileSize((long) content.length);
-        templateRepo.save(template);
-        return toDto(template);
-    }
-
-    @Transactional(readOnly = true)
-    public SourceFile getSourceFile(int id) {
-        BbTemplate template = templateRepo.findById(id)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                "BB template not found: " + id));
-        BbTemplateFile file = fileRepo.findById(id)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                "No imported workbook is stored for BB template: " + id));
-        return new SourceFile(template.getSourceFileName(), file.getContentType(), file.getContent());
-    }
-
-    public record SourceFile(String fileName, String contentType, byte[] content) {}
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 

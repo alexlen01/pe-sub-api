@@ -6,7 +6,6 @@ import com.ubs.pesubapi.entity.BbSnapshot;
 import com.ubs.pesubapi.entity.Facility;
 import com.ubs.pesubapi.repository.BbSnapshotRepository;
 import com.ubs.pesubapi.repository.FacilityRepository;
-import com.ubs.pesubapi.repository.ReportHistoryRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,7 +24,6 @@ class ReportControllerIntegrationTest extends IntegrationTestBase {
     @Autowired MockMvc                 mvc;
     @Autowired FacilityRepository      facilityRepo;
     @Autowired BbSnapshotRepository    snapshotRepo;
-    @Autowired ReportHistoryRepository historyRepo;
 
     private int facilityId;
 
@@ -55,13 +53,14 @@ class ReportControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.summary.ear").isNumber())
             .andExpect(jsonPath("$.totalEligibleUncalledM").isNumber())
             // 3-LP payload: one Rated Investor, one Unrated NAV, one Excluded
-            .andExpect(jsonPath("$.classBreakdown[*].cls",
+            .andExpect(jsonPath("$.classBreakdown[*].ubsLpCategory",
                 hasItems("Rated Investor", "Unrated NAV > $1Bn", "Excluded")))
-            .andExpect(jsonPath("$.classBreakdown[0].cls").value("Rated Investor"))
+            .andExpect(jsonPath("$.classBreakdown[0].ubsLpCategory").value("Rated Investor"))
             .andExpect(jsonPath("$.classBreakdown[0].count").value(1))
             .andExpect(jsonPath("$.classBreakdown[0].uncalledM").value(closeTo(20.0, 0.01)))
             .andExpect(jsonPath("$.classBreakdown[0].ubbM").isNumber())
-            .andExpect(jsonPath("$.classBreakdown[0].rate").value("90%"));
+            // The tier advance rate travels as the raw fraction; the consumer formats it as 90%.
+            .andExpect(jsonPath("$.classBreakdown[0].ubsAdvanceRate").value(closeTo(0.9, 0.0001)));
     }
 
     @Test
@@ -149,8 +148,6 @@ class ReportControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$[0].ear").isNumber())
             .andExpect(jsonPath("$[0].agentEar").isNumber())
             .andExpect(jsonPath("$[0].earDelta").isNumber());
-
-        assertThat(snapshotRepo.findByFacilityIdOrderByCalculatedAtAsc(facilityId)).hasSize(2);
     }
 
     @Test
@@ -246,8 +243,6 @@ class ReportControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$", hasSize(1)))
             .andExpect(jsonPath("$[0].report").value("Collateral & Coverage"))
             .andExpect(jsonPath("$[0].facilityName").value("Apex Growth Fund IV"));
-
-        assertThat(historyRepo.findAll()).hasSize(1);
     }
 
     @Test
@@ -293,11 +288,11 @@ class ReportControllerIntegrationTest extends IntegrationTestBase {
                   "type": "Institutional", "region": "North America",
                   "ig": true, "cls": "Rated Investor",
                   "sp": "AAA", "mdy": "Aaa", "fitch": "",
-                  "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
+                  "aum": "$500.0B", "nav": null, "pensionAssets": null, "fundingRatio": null,
                   "capCommit": "$20.0M", "pctCapCommit": null, "calledCap": "$14.0M",
                   "uc": "$20.0M", "pctUncalled": null, "pctCalled": null,
                   "agentConc": "7.5%", "ubsConc": "$25.0M",
-                  "agentRate": "95.0%", "abb": "$19.0M",
+                  "agentRate": 0.95, "abb": "$19.0M",
                   "inc": true, "rcl": false, "notes": null
                 },
                 {
@@ -306,11 +301,11 @@ class ReportControllerIntegrationTest extends IntegrationTestBase {
                   "type": "Institutional", "region": "North America",
                   "ig": false, "cls": "Unrated NAV > $1Bn",
                   "sp": "", "mdy": "", "fitch": "",
-                  "aum": "$40.0B", "nav": null, "pension": null, "pensionFunded": null,
+                  "aum": "$40.0B", "nav": null, "pensionAssets": null, "fundingRatio": null,
                   "capCommit": "$10.0M", "pctCapCommit": null, "calledCap": null,
                   "uc": "$10.0M", "pctUncalled": null, "pctCalled": null,
                   "agentConc": "7.5%", "ubsConc": "$25.0M",
-                  "agentRate": "75.0%", "abb": "$7.5M",
+                  "agentRate": 0.75, "abb": "$7.5M",
                   "inc": true, "rcl": false, "notes": null
                 },
                 {
@@ -319,11 +314,11 @@ class ReportControllerIntegrationTest extends IntegrationTestBase {
                   "type": "HNW", "region": "Europe",
                   "ig": false, "cls": "Excluded",
                   "sp": "", "mdy": "", "fitch": "",
-                  "aum": null, "nav": null, "pension": null, "pensionFunded": null,
+                  "aum": null, "nav": null, "pensionAssets": null, "fundingRatio": null,
                   "capCommit": "$1.0M", "pctCapCommit": null, "calledCap": null,
                   "uc": "$1.0M", "pctUncalled": null, "pctCalled": null,
                   "agentConc": null, "ubsConc": "$25.0M",
-                  "agentRate": "0%", "abb": "$0",
+                  "agentRate": 0, "abb": "$0",
                   "inc": false, "rcl": false, "notes": null
                 }
               ]

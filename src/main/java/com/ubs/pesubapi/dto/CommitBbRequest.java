@@ -1,66 +1,88 @@
 package com.ubs.pesubapi.dto;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
-import com.fasterxml.jackson.annotation.JsonProperty;
+
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
  * Request body for POST /api/bb/run/{facilityId}.
  * Each row represents one LpRecord as classified and valued in the Run Shadow BB wizard step.
  * The API upserts these rows into the LP Master table and then computes the snapshot.
+ *
+ * <p>Keys mirror the LpRecord field names. The {@code @JsonAlias} entries accept the abbreviated
+ * keys older clients send, so a stale pe-sub-ui build keeps working through a deploy.
  */
 public record CommitBbRequest(List<CommitLpRow> lps) {
 
     public record CommitLpRow(
-        // Identity & Classification (BB_PROCESS_FLOW Step 4)
-        String  name,
+        // Identity & LP Category (BB_PROCESS_FLOW Step 4)
+        @JsonAlias("name")
+        String  investorName,
         String  parent,
         boolean spv,
-        boolean hq,
-        @JsonProperty("fund_sleeve")
-        @JsonAlias({"fundSleeve"})
-        String  fundSleeve,
-        @JsonProperty("investor_type")
-        @JsonAlias({"investorType"})
+        @JsonAlias("hq")
+        boolean highQuality,
+        @JsonAlias({"investor_type"})
         String  investorType,
-        @JsonProperty("inst_vs_hnw")
-        @JsonAlias({"instVsHnw", "type"})
-        String  instVsHnw,
-        @JsonProperty("region_location")
-        @JsonAlias({"region", "regionLocation"})
+        @JsonAlias({"inst_vs_hnw", "instVsHnw", "type"})
+        String  institutionalOrHnw,
+        @JsonAlias({"region", "region_location"})
         String  regionLocation,
-        boolean ig,
-        String  agentCls,       // Agent LP Category (verbatim from Agent BB)
-        String  agentClsSource, // EXTRACTED, DERIVED, or USER_EDITED
-        String  cls,            // UBS LP Category (follows Agent LP Category)
+        @JsonAlias("ig")
+        boolean investmentGrade,
+        @JsonAlias("agentCls")
+        String  agentLpCategory,       // Agent LP Category (verbatim from Agent BB)
+        @JsonAlias("agentClsSource")
+        String  agentLpCategorySource, // EXTRACTED, DERIVED, or USER_EDITED
+        @JsonAlias("cls")
+        String  ubsLpCategory,         // UBS LP Category (follows Agent LP Category)
         // Ratings
-        String  sp,
-        String  mdy,
-        String  fitch,
+        @JsonAlias("sp")
+        String  spRating,
+        @JsonAlias("mdy")
+        String  moodysRating,
+        @JsonAlias("fitch")
+        String  fitchRating,
         // Financial Scale
         String  aum,
         String  nav,
-        String  pension,
-        String  pensionFunded,
+        String  pensionAssets,
+        // Percents and rates are fractions (0.91 = 91%). Percent-scaled and "91%"-style values are
+        // still normalised on the way in (MoneyValues.fraction) so older clients keep working.
+        BigDecimal fundingRatio,
         // Commitment Data
-        String  capCommit,
-        String  pctCapCommit,
-        String  calledCap,
+        @JsonAlias("capCommit")
+        String  capitalCommitment,
+        @JsonAlias("pctCapCommit")
+        BigDecimal pctOfFundCommitments,
+        @JsonAlias("calledCap")
+        String  calledCapital,
         // Uncalled / Eligible Capital
-        String  uc,
-        String  pctUncalled,
-        String  pctCalled,
-        // Concentration & BB inputs. Engine outputs (abb/ubb/excess concentrations, rank) are
-        // deliberately NOT part of this payload — the server computes and persists them at run
+        @JsonAlias("uc")
+        String  uncalledCapital,
+        @JsonAlias("pctUncalled")
+        BigDecimal pctOfFundUncalled,
+        @JsonAlias("pctCalled")
+        BigDecimal pctLpCalled,
+        // Concentration & BB inputs. Engine outputs (borrowing bases, excess concentrations, rank)
+        // are deliberately NOT part of this payload — the server computes and persists them at run
         // time, so a client can never submit BB figures the engine did not produce.
-        String  agentConc,
-        String  ubsConc,           // per-LP UBS concentration limit percent, e.g. "7.5%"
-        String  ubsRate,           // per-LP UBS advance rate percent, e.g. "90%" (matrix-resolved or manual override)
-        String  agentRate,
+        @JsonAlias({"agent_conc_limit", "agentConcLimit", "agentConc"})
+        String  agentConcentrationLimit,
+        @JsonAlias({"ubs_conc_limit", "ubsConcLimit", "ubsConc"})
+        String  ubsConcentrationLimit,  // per-LP UBS concentration limit percent, e.g. "7.5%"
+        @JsonAlias("ubsRate")
+        BigDecimal ubsAdvanceRate,      // per-LP UBS advance rate fraction, e.g. 0.90
+        @JsonAlias("agentRate")
+        BigDecimal agentAdvanceRate,
         // Status
-        boolean inc,
-        boolean rcl,
-        boolean tf,
+        @JsonAlias("inc")
+        boolean included,
+        @JsonAlias("rcl")
+        boolean reclassified,
+        @JsonAlias("tf")
+        boolean transferee,
         String  notes
     ) {}
 }

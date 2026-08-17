@@ -14,7 +14,9 @@ import com.ubs.pesubapi.service.LpClassificationService;
 import com.ubs.pesubapi.service.LpIngestService;
 import com.ubs.pesubapi.service.LpRecordSeedService;
 import com.ubs.pesubapi.service.NotificationService;
+import com.ubs.pesubapi.service.ReclassificationPolicy;
 import com.ubs.pesubapi.service.ShadowBbService;
+import com.ubs.pesubapi.util.MoneyValues;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,13 +42,15 @@ public class LpRecordController {
     private final LpRecordSeedService    seedService;
     private final CurrentUserService     currentUser;
     private final ShadowBbService        shadowBbService;
+    private final ReclassificationPolicy reclassificationPolicy;
 
     public LpRecordController(LpRecordRepository repo, NotificationService notifier,
                         AuditLogService auditService, LpIngestService ingestService,
                         LpClassificationService classificationService,
                         LpRecordSeedService seedService,
                         CurrentUserService currentUser,
-                        ShadowBbService shadowBbService) {
+                        ShadowBbService shadowBbService,
+                        ReclassificationPolicy reclassificationPolicy) {
         this.repo                  = repo;
         this.notifier              = notifier;
         this.auditService          = auditService;
@@ -55,6 +59,7 @@ public class LpRecordController {
         this.seedService           = seedService;
         this.currentUser           = currentUser;
         this.shadowBbService       = shadowBbService;
+        this.reclassificationPolicy = reclassificationPolicy;
     }
 
     /**
@@ -90,13 +95,13 @@ public class LpRecordController {
                              @RequestParam(required = false) String search) {
         List<LpRecord> lps;
         if (facilityId != null && cls != null) {
-            lps = repo.findByFacilityIdAndClsOrderByClsAscInvestorNameAsc(facilityId, cls);
+            lps = repo.findByFacilityIdAndUbsLpCategoryOrderByUbsLpCategoryAscInvestorNameAsc(facilityId, cls);
         } else if (facilityId != null && search != null) {
-            lps = repo.findByFacilityIdAndInvestorNameContainingIgnoreCaseOrderByClsAscInvestorNameAsc(facilityId, search);
+            lps = repo.findByFacilityIdAndInvestorNameContainingIgnoreCaseOrderByUbsLpCategoryAscInvestorNameAsc(facilityId, search);
         } else if (facilityId != null) {
             lps = repo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
         } else {
-            lps = repo.findAllByOrderByClsAscInvestorNameAsc();
+            lps = repo.findAllByOrderByUbsLpCategoryAscInvestorNameAsc();
         }
         return lps.stream().map(LpRecordDto::from).toList();
     }
@@ -143,30 +148,31 @@ public class LpRecordController {
                                         @RequestBody Map<String, Object> body,
                                         HttpServletRequest request) {
         return repo.findById(id).map(lpRecord -> {
-            String prevCls = lpRecord.getCls();
-            String prevAgentCls = lpRecord.getAgentCls();
+            String prevCls = lpRecord.getUbsLpCategory();
+            String prevAgentCls = lpRecord.getAgentLpCategory();
             if (body.containsKey("investor_type")) lpRecord.setInvestorType((String) body.get("investor_type"));
             if (body.containsKey("investorType"))  lpRecord.setInvestorType((String) body.get("investorType"));
-            if (body.containsKey("fund_sleeve"))   lpRecord.setFundSleeve((String) body.get("fund_sleeve"));
-            if (body.containsKey("fundSleeve"))    lpRecord.setFundSleeve((String) body.get("fundSleeve"));
-            if (body.containsKey("inst_vs_hnw"))   lpRecord.setInstVsHnw((String) body.get("inst_vs_hnw"));
-            if (body.containsKey("instVsHnw"))     lpRecord.setInstVsHnw((String) body.get("instVsHnw"));
+            if (body.containsKey("inst_vs_hnw"))   lpRecord.setInstitutionalOrHnw((String) body.get("inst_vs_hnw"));
+            if (body.containsKey("instVsHnw"))     lpRecord.setInstitutionalOrHnw((String) body.get("instVsHnw"));
             if (body.containsKey("region_location")) lpRecord.setRegionLocation((String) body.get("region_location"));
             if (body.containsKey("regionLocation"))  lpRecord.setRegionLocation((String) body.get("regionLocation"));
             if (body.containsKey("region"))          lpRecord.setRegionLocation((String) body.get("region"));
             if (body.containsKey("agentCls")) {
-                lpRecord.setAgentCls((String) body.get("agentCls"));
-                lpRecord.setAgentClsSource("USER_EDITED");
+                lpRecord.setAgentLpCategory((String) body.get("agentCls"));
+                lpRecord.setAgentLpCategorySource("USER_EDITED");
             }
-            if (body.containsKey("cls"))    lpRecord.setCls((String) body.get("cls"));
-            if (body.containsKey("clsTag")) lpRecord.setClsTag((String) body.get("clsTag"));
-            if (body.containsKey("abb"))    lpRecord.setAbb((String) body.get("abb"));
-            if (body.containsKey("inc"))    lpRecord.setInc((Boolean) body.get("inc"));
-            if (body.containsKey("rcl"))    lpRecord.setRcl((Boolean) body.get("rcl"));
+            if (body.containsKey("cls"))    lpRecord.setUbsLpCategory((String) body.get("cls"));
+            if (body.containsKey("clsTag")) lpRecord.setUbsLpCategoryTag((String) body.get("clsTag"));
+            if (body.containsKey("abb"))    lpRecord.setAgentBorrowingBase(MoneyValues.dollars(Objects.toString(body.get("abb"), null)));
+            if (body.containsKey("inc"))    lpRecord.setIncluded((Boolean) body.get("inc"));
+            if (body.containsKey("rcl"))    lpRecord.setReclassified((Boolean) body.get("rcl"));
             if (body.containsKey("notes"))  lpRecord.setNotes((String) body.get("notes"));
-            boolean classificationChanged = !Objects.equals(lpRecord.getCls(), prevCls)
-                || !Objects.equals(lpRecord.getAgentCls(), prevAgentCls);
-            if (classificationChanged) lpRecord.setRcl(true);
+            // A category change only counts as a reclassification once the facility's current
+            // submission has a Shadow BB to invalidate — see ReclassificationPolicy.
+            boolean classificationChanged = (!Objects.equals(lpRecord.getUbsLpCategory(), prevCls)
+                || !Objects.equals(lpRecord.getAgentLpCategory(), prevAgentCls))
+                && reclassificationPolicy.marksReclassification(lpRecord.getFacilityId());
+            if (classificationChanged) lpRecord.setReclassified(true);
             lpRecord.setUpdatedAt(LocalDateTime.now());
             LpRecord saved = repo.save(lpRecord);
             log.info("LpRecord patched id={} facilityId={} investor='{}' fields={}",
@@ -174,8 +180,8 @@ public class LpRecordController {
             if (classificationChanged) {
                 notifier.broadcast(lpRecord.getInvestorName() + " was reclassified");
                 String detail = lpRecord.getInvestorName()
-                    + ": Agent " + prevAgentCls + " → " + lpRecord.getAgentCls()
-                    + "; UBS " + prevCls + " → " + lpRecord.getCls();
+                    + ": Agent " + prevAgentCls + " → " + lpRecord.getAgentLpCategory()
+                    + "; UBS " + prevCls + " → " + lpRecord.getUbsLpCategory();
                 auditService.log("LpRecord Reclassified", detail, lpRecord.getFacilityId(),
                     currentUser.uuName(), currentUser.auditDisplayName(), auditService.extractIp(request));
             }

@@ -1,6 +1,6 @@
 # pe-sub-api — Development Rules
 
-Spring Boot 4.1 / Java 25 REST API. Runs at `http://localhost:3001`.
+Spring Boot 4.1 / Java 21 REST API. Runs at `http://localhost:3001`.
 
 ---
 
@@ -63,7 +63,7 @@ After any significant change (new endpoint, schema migration, changed response s
 
 ---
 
-## Java 25 & Spring Boot 4.1 Rules
+## Java 21 & Spring Boot 4.1 Rules
 
 1. Adhere to Clean Code and SOLID principles. Prioritize modularity, single responsibility, and dependency injection over quick fixes.
 2. Use Java Records for DTOs and immutable data containers.

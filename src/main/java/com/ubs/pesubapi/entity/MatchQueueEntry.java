@@ -28,8 +28,16 @@ public class MatchQueueEntry {
     @Column(name = "extracted_name")
     private String extractedName;
 
+    /** The facility LP record this row resolved to (lp_records), cleared when records are replaced. */
     @Column(name = "matched_lp_id")
     private Integer matchedLpId;
+
+    /**
+     * The LP Master record the match proposes — a different thing from {@link #matchedLpId}, and
+     * the anchor for parent/child routing. Always the matched child/feeder, never its parent.
+     */
+    @Column(name = "matched_lp_master_id")
+    private Integer matchedLpMasterId;
 
     @Column(name = "matched_lp_name")
     private String matchedLpName;
@@ -79,6 +87,7 @@ public class MatchQueueEntry {
     public int getRowIndex()           { return rowIndex; }
     public String getExtractedName()   { return extractedName; }
     public Integer getMatchedLpId()    { return matchedLpId; }
+    public Integer getMatchedLpMasterId() { return matchedLpMasterId; }
     public String getMatchedLpName()   { return matchedLpName; }
     public Integer getMatchScore()     { return matchScore; }
     public String getDecision()        { return decision; }
@@ -96,6 +105,7 @@ public class MatchQueueEntry {
     public void setRowIndex(int v)            { this.rowIndex = v; }
     public void setExtractedName(String v)    { this.extractedName = v; }
     public void setMatchedLpId(Integer v)     { this.matchedLpId = v; }
+    public void setMatchedLpMasterId(Integer v) { this.matchedLpMasterId = v; }
     public void setMatchedLpName(String v)    { this.matchedLpName = v; }
     public void setMatchScore(Integer v)      { this.matchScore = v; }
     public void setDecision(String v)         { this.decision = v; }

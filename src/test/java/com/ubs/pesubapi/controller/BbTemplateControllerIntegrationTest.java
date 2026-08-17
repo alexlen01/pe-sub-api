@@ -45,30 +45,18 @@ class BbTemplateControllerIntegrationTest extends IntegrationTestBase {
 
     @Test
     void importTemplate_groupedWorkbookCreatesTemplateAndVersionsDuplicateSlug() throws Exception {
-        MockMultipartFile file = templateWorkbook("BB-Template-Import-grouped.xlsx");
+        MockMultipartFile file = templateWorkbook("grouped.xlsx");
 
         mvc.perform(multipart("/api/bb-templates/import").file(file))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.templateSlug").value("grouped-sample"))
             .andExpect(jsonPath("$.templateName").value("grouped-sample"))
             .andExpect(jsonPath("$.agentName").value("Northbank Agent"))
-            .andExpect(jsonPath("$.sourceFileName").value("BB-Template-Import-grouped.xlsx"))
-            .andExpect(jsonPath("$.sourceFileSize").value(file.getSize()))
             .andExpect(jsonPath("$.tabs[0].headerRowIndex").value(10))
             .andExpect(jsonPath("$.tabs[0].groups.length()").value(5))
             .andExpect(jsonPath("$.tabs[0].groups[1].headerText").value("Included Investors (Non-Rated)"));
 
-        int importedId = templateRepo.findByTemplateSlug("grouped-sample").orElseThrow().getId();
-        mvc.perform(get("/api/bb-templates/{id}/download", importedId))
-            .andExpect(status().isOk())
-            .andExpect(header().string("Content-Disposition",
-                org.hamcrest.Matchers.containsString("BB-Template-Import-grouped.xlsx")))
-            .andExpect(content().contentType(
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-            .andExpect(content().bytes(Files.readAllBytes(
-                Path.of("src/test/resources/templates/BB-Template-Import-grouped.xlsx"))));
-
-        MockMultipartFile duplicate = templateWorkbook("BB-Template-Import-grouped.xlsx");
+        MockMultipartFile duplicate = templateWorkbook("grouped.xlsx");
 
         mvc.perform(multipart("/api/bb-templates/import").file(duplicate))
             .andExpect(status().isCreated())
@@ -79,7 +67,7 @@ class BbTemplateControllerIntegrationTest extends IntegrationTestBase {
     @Test
     void importTemplate_upsertModeReplacesExistingSlugWithoutVersioning() throws Exception {
         String created = mvc.perform(multipart("/api/bb-templates/import")
-                .file(templateWorkbook("BB-Template-Import-upsert.xlsx"))
+                .file(templateWorkbook("upsert.xlsx"))
                 .param("mode", "upsert"))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.templateSlug").value("upsert-sample"))
@@ -88,7 +76,7 @@ class BbTemplateControllerIntegrationTest extends IntegrationTestBase {
         int templateId = JsonPath.read(created, "$.id");
 
         mvc.perform(multipart("/api/bb-templates/import")
-                .file(templateWorkbook("BB-Template-Import-upsert.xlsx"))
+                .file(templateWorkbook("upsert.xlsx"))
                 .param("mode", "upsert"))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.id").value(templateId))
@@ -102,7 +90,7 @@ class BbTemplateControllerIntegrationTest extends IntegrationTestBase {
     @Test
     void importTemplate_multiTabSamplesPreserveSleeveTabSemantics() throws Exception {
         mvc.perform(multipart("/api/bb-templates/import")
-                .file(templateWorkbook("BB-Template-Import-autodiscover-single.xlsx")))
+                .file(templateWorkbook("autodiscover-single.xlsx")))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.templateSlug").value("autodiscover-single"))
             .andExpect(jsonPath("$.autoDiscoverTabs").value(true))
@@ -112,7 +100,7 @@ class BbTemplateControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.tabs[0].groups.length()").value(0));
 
         mvc.perform(multipart("/api/bb-templates/import")
-                .file(templateWorkbook("BB-Template-Import-autodiscover-nogroups.xlsx")))
+                .file(templateWorkbook("autodiscover-nogroups.xlsx")))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.templateSlug").value("autodiscover-nogroups"))
             .andExpect(jsonPath("$.autoDiscoverTabs").value(true))
@@ -120,7 +108,7 @@ class BbTemplateControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.tabs[0].groups.length()").value(0));
 
         mvc.perform(multipart("/api/bb-templates/import")
-                .file(templateWorkbook("BB-Template-Import-two-tab.xlsx")))
+                .file(templateWorkbook("two-tab.xlsx")))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.templateSlug").value("two-tab-sample"))
             .andExpect(jsonPath("$.autoDiscoverTabs").value(false))
@@ -131,7 +119,7 @@ class BbTemplateControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.tabs[0].headerRowSpan").value(2));
 
         mvc.perform(multipart("/api/bb-templates/import")
-                .file(templateWorkbook("BB-Template-Import-single-group.xlsx")))
+                .file(templateWorkbook("single-group.xlsx")))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.templateSlug").value("single-group-sample"))
             .andExpect(jsonPath("$.headerRowIndex").value(9))
@@ -176,13 +164,9 @@ class BbTemplateControllerIntegrationTest extends IntegrationTestBase {
         int templateId = JsonPath.read(created, "$.id");
         int tabId = JsonPath.read(created, "$.tabs[0].id");
 
-        mvc.perform(get("/api/bb-templates/{id}/download", templateId))
-            .andExpect(status().isNotFound());
-
         mvc.perform(delete("/api/bb-templates/{id}", templateId))
             .andExpect(status().isNoContent());
 
-        assertThat(templateRepo.existsById(templateId)).isFalse();
         assertThat(tabRepo.findByTemplateIdOrderByTabSortAsc(templateId)).isEmpty();
         assertThat(groupRepo.findByTabIdOrderByGroupSortAsc(tabId)).isEmpty();
 

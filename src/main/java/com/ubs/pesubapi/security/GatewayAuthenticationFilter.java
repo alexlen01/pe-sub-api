@@ -1,9 +1,12 @@
 package com.ubs.pesubapi.security;
 
+import com.ubs.pesubapi.service.UserDirectoryService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -29,10 +32,14 @@ import java.util.List;
  */
 public class GatewayAuthenticationFilter extends OncePerRequestFilter {
 
-    private final SecurityProperties props;
+    private static final Logger log = LoggerFactory.getLogger(GatewayAuthenticationFilter.class);
 
-    public GatewayAuthenticationFilter(SecurityProperties props) {
+    private final SecurityProperties props;
+    private final UserDirectoryService directory;
+
+    public GatewayAuthenticationFilter(SecurityProperties props, UserDirectoryService directory) {
         this.props = props;
+        this.directory = directory;
     }
 
     @Override
@@ -51,6 +58,7 @@ public class GatewayAuthenticationFilter extends OncePerRequestFilter {
         };
         if (auth != null) {
             SecurityContextHolder.getContext().setAuthentication(auth);
+            recordInDirectory(auth);
         }
         // When auth is null (GATEWAY mode, missing header) the context stays empty and the
         // authorization layer answers 401 for any protected endpoint.
@@ -77,6 +85,21 @@ public class GatewayAuthenticationFilter extends OncePerRequestFilter {
         return authentication(new UserIdentity(uuName,
             header(request, props.getFirstNameHeader()), header(request, props.getLastNameHeader()),
             email.isBlank() ? uuName : email), roles);
+    }
+
+    /**
+     * Mirrors the gateway-asserted identity into the users directory. Best-effort by design: the
+     * directory is a convenience for rendering names, so a database problem must never turn an
+     * otherwise-valid authenticated request into a 500.
+     */
+    private void recordInDirectory(Authentication auth) {
+        if (!(auth.getPrincipal() instanceof UserIdentity identity)) return;
+        try {
+            directory.record(identity, auth.getAuthorities().stream()
+                .map(a -> a.getAuthority()).toList());
+        } catch (RuntimeException e) {
+            log.warn("User directory update failed for uuName={}: {}", identity.uuName(), e.toString());
+        }
     }
 
     private String header(HttpServletRequest request, String name) {

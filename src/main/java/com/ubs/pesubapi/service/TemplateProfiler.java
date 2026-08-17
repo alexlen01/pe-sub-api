@@ -4,6 +4,7 @@ import com.ubs.pesubapi.dto.TemplateProposal;
 import com.ubs.pesubapi.dto.TemplateProposal.ProfiledField;
 import com.ubs.pesubapi.dto.TemplateProposal.ProfiledTab;
 import com.ubs.pesubapi.dto.TemplateProposal.ProposedGroup;
+import com.ubs.pesubapi.config.TemplateProfilerProperties;
 import com.ubs.pesubapi.dto.WorkbookSignals;
 import com.ubs.pesubapi.dto.WorkbookSignals.SheetSignals;
 import com.ubs.pesubapi.repository.FmAliasRepository;
@@ -31,10 +32,6 @@ import java.util.Set;
 @Service
 public class TemplateProfiler {
 
-    private static final int MIN_HEADER_MATCHES = 3;
-    private static final int HEADER_SCAN_ROWS   = 15;
-    private static final int MAX_GROUPS         = 12;
-
     // Generic labels (not agent/fund names) that precede an agent value in the summary block.
     private static final List<String> AGENT_LABELS =
         List.of("agent bank", "agent", "administrative agent", "administered by", "prepared by", "lender");
@@ -42,12 +39,15 @@ public class TemplateProfiler {
     private static final List<String> SKIP_BANNERS =
         List.of("total", "subtotal", "sub total", "grand total", "sum", "net total");
 
-    private final FmCanonicalFieldRepository canonicalRepo;
-    private final FmAliasRepository          aliasRepo;
+    private final FmCanonicalFieldRepository  canonicalRepo;
+    private final FmAliasRepository           aliasRepo;
+    private final TemplateProfilerProperties  limits;
 
-    public TemplateProfiler(FmCanonicalFieldRepository canonicalRepo, FmAliasRepository aliasRepo) {
+    public TemplateProfiler(FmCanonicalFieldRepository canonicalRepo, FmAliasRepository aliasRepo,
+                            TemplateProfilerProperties limits) {
         this.canonicalRepo = canonicalRepo;
         this.aliasRepo     = aliasRepo;
+        this.limits        = limits;
     }
 
     public TemplateProposal profile(WorkbookSignals signals, String agentBank) {
@@ -77,7 +77,7 @@ public class TemplateProfiler {
         List<String> detectKeys = detectKeys(slug, title.value());
 
         String overall = grids.isEmpty() ? "low"
-            : (grids.get(0).matchedCanonical() >= MIN_HEADER_MATCHES ? "high" : "medium");
+            : (grids.get(0).matchedCanonical() >= limits.getMinHeaderMatches() ? "high" : "medium");
 
         return new TemplateProposal(
             ProfiledField.of(slug, slug.isBlank() ? "low" : "high", "derived from filename"),
@@ -99,7 +99,7 @@ public class TemplateProfiler {
         List<List<String>> rows = sheet.rows();
         if (rows == null) return null;
         int bestRow = -1, bestMatched = 0;
-        int limit = Math.min(HEADER_SCAN_ROWS, rows.size());
+        int limit = Math.min(limits.getHeaderScanRows(), rows.size());
         for (int i = 0; i < limit; i++) {
             int matched = 0;
             for (String cell : rows.get(i)) {
@@ -107,7 +107,7 @@ public class TemplateProfiler {
             }
             if (matched > bestMatched) { bestMatched = matched; bestRow = i; }
         }
-        return bestMatched >= MIN_HEADER_MATCHES ? new int[]{bestRow, bestMatched} : null;
+        return bestMatched >= limits.getMinHeaderMatches() ? new int[]{bestRow, bestMatched} : null;
     }
 
     private boolean matchesAlias(String normCell, List<String> aliasNorms) {
@@ -134,7 +134,7 @@ public class TemplateProfiler {
     private List<ProposedGroup> detectGroups(SheetSignals sheet, int headerRow) {
         List<List<String>> rows = sheet.rows();
         List<ProposedGroup> groups = new ArrayList<>();
-        for (int i = headerRow + 1; i < rows.size() && groups.size() < MAX_GROUPS; i++) {
+        for (int i = headerRow + 1; i < rows.size() && groups.size() < limits.getMaxGroups(); i++) {
             List<String> cells = rows.get(i);
             List<String> populated = nonBlank(cells);
             if (populated.size() != 1) continue;            // banners have a single populated cell
@@ -207,7 +207,7 @@ public class TemplateProfiler {
         String base = fileName.replaceFirst("(?i)\\.(xlsx|xls|csv)$", "");
         String slug = base.toLowerCase()
             .replaceAll("[^a-z0-9]+", "-")
-            .replaceFirst("^(agent-bb|bb-template-import|bb-template)-", "")
+            .replaceFirst("^(agent-bb|bb-template)-", "")
             .replaceAll("(^-+|-+$)", "");
         // bb_templates.template_slug is VARCHAR(50); long real-world filenames must not
         // overflow it. Trim at a word boundary rather than mid-token.

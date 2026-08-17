@@ -107,28 +107,28 @@ public class LpMasterWriteBackService {
 
     private void mergeFacilityRecordIntoMaster(LpMaster master, LpRecord lpRecord) {
         // UBS credit profile — the definitive output of the accepted Shadow BB cycle
-        if (lpRecord.getCls()     != null && !lpRecord.getCls().isBlank())     master.setUbsClassification(lpRecord.getCls());
-        if (lpRecord.getUbsRate() != null && !lpRecord.getUbsRate().isBlank()) master.setUbsDefaultAdvRate(lpRecord.getUbsRate());
-        if (lpRecord.getUbsConc() != null && !lpRecord.getUbsConc().isBlank()) master.setUbsDefaultConcLimit(lpRecord.getUbsConc());
+        if (lpRecord.getUbsLpCategory()     != null && !lpRecord.getUbsLpCategory().isBlank())     master.setUbsLpCategory(lpRecord.getUbsLpCategory());
+        if (lpRecord.getUbsAdvanceRate() != null) master.setUbsDefaultAdvanceRate(lpRecord.getUbsAdvanceRate());
+        if (lpRecord.getUbsConcentrationLimit() != null) master.setUbsDefaultConcentrationLimit(lpRecord.getUbsConcentrationLimit());
 
         // Stable identity — refresh blanks with anything the facility record now carries
         if (lpRecord.getInvestorType() != null && !lpRecord.getInvestorType().isBlank() && (master.getInvestorType() == null || master.getInvestorType().isBlank())) master.setInvestorType(lpRecord.getInvestorType());
-        if (lpRecord.getInstVsHnw()  != null && !lpRecord.getInstVsHnw().isBlank()  && (master.getInstVsHnw()  == null || master.getInstVsHnw().isBlank()))  master.setInstVsHnw(lpRecord.getInstVsHnw());
-        if (lpRecord.getRegion()  != null && !lpRecord.getRegion().isBlank()  && (master.getRegion()  == null || master.getRegion().isBlank()))  master.setRegion(lpRecord.getRegion());
+        if (lpRecord.getInstitutionalOrHnw()  != null && !lpRecord.getInstitutionalOrHnw().isBlank()  && (master.getInstitutionalOrHnw()  == null || master.getInstitutionalOrHnw().isBlank()))  master.setInstitutionalOrHnw(lpRecord.getInstitutionalOrHnw());
+        if (lpRecord.getRegionLocation()  != null && !lpRecord.getRegionLocation().isBlank()  && (master.getRegionLocation()  == null || master.getRegionLocation().isBlank()))  master.setRegionLocation(lpRecord.getRegionLocation());
         if (lpRecord.getParent()  != null && !lpRecord.getParent().isBlank()  && (master.getParent()  == null || master.getParent().isBlank()))  master.setParent(lpRecord.getParent());
         master.setSpv(lpRecord.isSpv());
-        master.setHighQty(lpRecord.isHighQty());
-        master.setIg(lpRecord.isIg());
+        master.setHighQuality(lpRecord.isHighQuality());
+        master.setInvestmentGrade(lpRecord.isInvestmentGrade());
 
         // Ratings — overwrite with latest cycle values when non-blank
-        if (!lpRecord.getSp().isBlank())    master.setSp(lpRecord.getSp());
-        if (!lpRecord.getMdy().isBlank())   master.setMdy(lpRecord.getMdy());
-        if (!lpRecord.getFitch().isBlank()) master.setFitch(lpRecord.getFitch());
+        if (!lpRecord.getSpRating().isBlank())    master.setSpRating(lpRecord.getSpRating());
+        if (!lpRecord.getMoodysRating().isBlank())   master.setMoodysRating(lpRecord.getMoodysRating());
+        if (!lpRecord.getFitchRating().isBlank()) master.setFitchRating(lpRecord.getFitchRating());
 
         // Financial scale — overwrite with latest cycle values when non-null
         if (lpRecord.getAum()          != null) master.setAum(lpRecord.getAum());
         if (lpRecord.getNav()          != null) master.setNav(lpRecord.getNav());
-        if (lpRecord.getPension()      != null) master.setPension(lpRecord.getPension());
-        if (lpRecord.getPensionFunded()!= null) master.setPensionFunded(lpRecord.getPensionFunded());
+        if (lpRecord.getPensionAssets() != null) master.setPensionAssets(lpRecord.getPensionAssets());
+        if (lpRecord.getFundingRatio()  != null) master.setFundingRatio(lpRecord.getFundingRatio());
     }
 }

@@ -7,12 +7,29 @@
 
 -- ── Core tables ───────────────────────────────────────────────────────────────
 
+-- Directory of people who have authenticated, populated from the trusted gateway's X-Auth-*
+-- headers on each authenticated request (UserDirectoryService). This is NOT a credential store:
+-- there is no password column and the application never authenticates anyone itself — SSO does.
+-- Rows exist so screens can render "who did this" for a stored uuName without calling out to a
+-- corporate directory.
+--
+-- uu_name is the stable authentication identity (e.g. le05751) and the natural key; email and
+-- surname can both change over time, so neither is the key. A real uuName is 7 alphanumeric
+-- characters — the column is VARCHAR(50) purely as headroom for system/override identities passed
+-- in as variables, not because any person's uuName approaches that length.
+-- role holds the highest-privilege human role the gateway asserted (Manager > Analyst > Viewer);
+-- machine SERVICE principals are never written here.
+-- last_seen_at is refreshed on a throttle, not on literally every request.
 CREATE TABLE users (
-    id         SERIAL PRIMARY KEY,
-    email      VARCHAR(255) NOT NULL UNIQUE,
-    name       VARCHAR(255) NOT NULL,
-    role       VARCHAR(50)  NOT NULL DEFAULT 'Analyst',
-    created_at TIMESTAMP    NOT NULL DEFAULT NOW()
+    id           SERIAL PRIMARY KEY,
+    uu_name      VARCHAR(50)  NOT NULL UNIQUE,
+    first_name   VARCHAR(255) NOT NULL DEFAULT '',
+    last_name    VARCHAR(255) NOT NULL DEFAULT '',
+    email        VARCHAR(255) NOT NULL DEFAULT '',
+    role         VARCHAR(50)  NOT NULL DEFAULT 'Viewer',
+    created_at   TIMESTAMP    NOT NULL DEFAULT NOW(),
+    updated_at   TIMESTAMP    NOT NULL DEFAULT NOW(),
+    last_seen_at TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 
 -- account_number    : UBS internal identifier, format 5Vxxxxx.
@@ -42,111 +59,141 @@ CREATE TABLE facilities (
     updated_at       TIMESTAMP      NOT NULL DEFAULT NOW()
 );
 
+-- Column names are spelled out in full. Three pairs were previously abbreviated in ways that
+-- actively misled, and must not be reintroduced:
+--   * high_quality was `high_qty`, which reads as "high quantity". It is a BB quality tier flag.
+--   * ubs_lp_category / agent_lp_category were `classification` / `agent_cls`. LP Category (the
+--     bank's BB risk bucket) is a different thing from LP Classification (regulatory status:
+--     QP/QIB/ERISA) and from investor_type (industry profile). Never collapse the three.
+--   * institutional_or_hnw was `inst_vs_hnw`; it holds exactly 'Institutional' or 'HNW'.
+--
 -- Shadow BB 28-column alignment (Shadow_BB.xlsx · Upload Agent BB Step 5):
---   classification → UBS LP Category          | agent_cls      → Agent LP Category
---   ubs_rate       → UBS Advance Rate         | agent_rate     → Agent Advance Rate
---   agent_excess_conc → Agent Excess Conc Base| ubs_excess_conc → UBS Excess Conc Base
---   agent_bb       → Agent Borrowing Base      | ubs_bb         → UBS Borrowing Base
--- recallable_dist : dollar value behind the `rcl` flag.
+--   ubs_lp_category   → UBS LP Category         | agent_lp_category → Agent LP Category
+--   ubs_advance_rate  → UBS Advance Rate        | agent_advance_rate → Agent Advance Rate
+--   agent_excess_concentration → Agent Excess Conc Base
+--   ubs_excess_concentration   → UBS Excess Conc Base
+--   agent_borrowing_base → Agent Borrowing Base | ubs_borrowing_base → UBS Borrowing Base
+-- The UBS advance rate is UBS's own rate for the LP and overrides the bb_criteria_matrix default;
+-- the agent advance rate is the agent bank's rate, extracted verbatim from their workbook. The
+-- spread between the two is what the Shadow BB exists to measure.
+-- recallable_distributions : dollar value behind the `reclassified` flag.
 -- source_seq      : LP's row position in the originating Agent BB (extraction row index);
 --                   nullable — legacy / manually-created LPs sort last (NULL LAST).
 --
--- Column widths for workbook-derived data (real Agent BB values must be stored verbatim,
+-- Column types/widths for workbook-derived data (real Agent BB values must be stored verbatim,
 -- never truncated; dollar amounts never rounded):
---   * free-text labels (types, classifications, ranges, regions)  -> VARCHAR(255)
---   * formatted dollar display strings ("$12,102,000,000")        -> VARCHAR(64)
---     (calculations read the exact *_num NUMERIC(20,2) columns first; the string is display-only)
---   * percent/rate strings (convention: exactly 1 decimal, "5.6%";
---     width is defensive headroom for legacy/pass-through values)
---     and agency ratings incl. outlook qualifiers                 -> VARCHAR(50)
--- Enum-like app-controlled columns (status, decision, tab_role, agent_cls_source,
+--   * free-text labels (types, categories, ranges, regions)       -> VARCHAR(255)
+--   * money on lp_records (capital_commitment, called_capital,
+--     uncalled_capital, agent_borrowing_base) and the
+--     concentration limits                                        -> NUMERIC(20, 2)
+--   * the LP-size display fields (aum, nav, pension_assets), which
+--     stay text on both lp_records and lp_master                  -> VARCHAR(50)
+--   * percents and advance rates (both advance rates, the three
+--     pct_* columns, funding_ratio, lp_master's default rate)     -> NUMERIC(7, 4)
+--   * agency ratings incl. outlook qualifiers (width is defensive
+--     headroom for legacy/pass-through values)                    -> VARCHAR(50)
+-- Enum-like app-controlled columns (status, decision, tab_role, agent_lp_category_source,
 -- template_class) keep tighter widths.
--- *_num columns   : precise money in absolute dollars (uncalled_capital_num, cap_commit_num,
---                   aum_num, agent_bb_num) stored alongside the formatted display strings. The BB
---                   engine (BbCalculationService.moneyM) reads these first and falls back to
---                   parsing the display string only when null, so the borrowing base is computed
---                   from exact dollars rather than a re-parsed "$12.3M". Nullable + additive.
+--
+-- The money that drives the borrowing base (capital_commitment, called_capital, uncalled_capital,
+-- agent_borrowing_base) is one precise NUMERIC column per field, in absolute dollars, with no
+-- formatted display-string sibling. The BB engine reads the numeric directly
+-- (BbCalculationService.dollarM) so the borrowing base is computed from exact dollars rather than a
+-- re-parsed "$12.3M"; DTOs format for display on the way out (MoneyValues.display), which is why an
+-- abbreviated input such as "$4.2B" round-trips as "$4,200,000,000" and never re-abbreviates.
+--
+-- aum / nav / pension_assets are the exception: they are LP-size *display* fields, never BB inputs,
+-- and stay VARCHAR on lp_records exactly as on lp_master, so the copy across that boundary is a
+-- plain assignment. The one numeric consumer is the LP-size report aggregate, which parses on read.
+--
+-- Every percent/rate column is NUMERIC(7,4) holding a *fraction*, never a percent-scaled number and
+-- never a formatted string: 0.9100 is 91%. This matches the lp_rates convention below, and unlike
+-- money the API wire format is numeric too — DTOs emit the raw fraction and pe-sub-ui formats it for
+-- display (formatPercent in utils/percent.ts). The one exception is the pair below.
+--
+-- agent_concentration_limit / ubs_concentration_limit are NUMERIC and hold either a percentage of
+-- total uncalled capital (7.5 = 7.5%) or an absolute dollar cap (25000000 = $25M). The two are told
+-- apart by magnitude at BbCalculationService.ABSOLUTE_DOLLAR_MIN (100,000) — the same threshold
+-- parseMoney applies to suffix-less strings. They are therefore NOT on the fraction scale.
 --
 -- Multiple LP rows with the same investor_name may exist within one facility
 -- (for sleeves/vintages/SPVs). Row identity is the surrogate id.
 CREATE TABLE lp_master (
-    id                       SERIAL        PRIMARY KEY,
-    investor_name            VARCHAR(255)  NOT NULL UNIQUE,
-    parent                   VARCHAR(255),
-    spv                      BOOLEAN       NOT NULL DEFAULT FALSE,
-    high_qty                 BOOLEAN       NOT NULL DEFAULT TRUE,
-    investor_type            VARCHAR(255),
-    inst_vs_hnw              VARCHAR(255),
-    region_location          VARCHAR(255),
-    investment_grade         BOOLEAN       NOT NULL DEFAULT FALSE,
-    sp                       VARCHAR(50)   NOT NULL DEFAULT '',
-    mdy                      VARCHAR(50)   NOT NULL DEFAULT '',
-    fitch                    VARCHAR(50)   NOT NULL DEFAULT '',
-    aum                      VARCHAR(255),
-    nav                      VARCHAR(255),
-    pension                  VARCHAR(255),
-    pension_funded           VARCHAR(255),
-    ubs_classification       VARCHAR(255),
-    ubs_default_adv_rate     VARCHAR(50),
-    ubs_default_conc_limit   VARCHAR(50),
-    notes                    TEXT,
-    created_at               TIMESTAMP     NOT NULL DEFAULT NOW(),
-    updated_at               TIMESTAMP     NOT NULL DEFAULT NOW()
+    id                             SERIAL        PRIMARY KEY,
+    investor_name                  VARCHAR(255)  NOT NULL UNIQUE,
+    parent                         VARCHAR(255),
+    spv                            BOOLEAN       NOT NULL DEFAULT FALSE,
+    high_quality                   BOOLEAN       NOT NULL DEFAULT TRUE,
+    investor_type                  VARCHAR(255),
+    institutional_or_hnw           VARCHAR(255),
+    region_location                VARCHAR(255),
+    investment_grade               BOOLEAN       NOT NULL DEFAULT FALSE,
+    sp_rating                      VARCHAR(50)   NOT NULL DEFAULT '',
+    moodys_rating                  VARCHAR(50)   NOT NULL DEFAULT '',
+    fitch_rating                   VARCHAR(50)   NOT NULL DEFAULT '',
+    aum                            VARCHAR(50),
+    nav                            VARCHAR(50),
+    pension_assets                 VARCHAR(50),
+    funding_ratio                  NUMERIC(7, 4),
+    ubs_lp_category                VARCHAR(255),
+    ubs_default_advance_rate       NUMERIC(7, 4),
+    -- Mirrors lp_records.ubs_concentration_limit exactly, including the percent-or-dollars
+    -- magnitude split, so the write-back round-trips a $25M cap NUMERIC(7,4) could not hold.
+    ubs_default_concentration_limit NUMERIC(20, 2),
+    notes                          TEXT,
+    created_at                     TIMESTAMP     NOT NULL DEFAULT NOW(),
+    updated_at                     TIMESTAMP     NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE lp_records (
-    id                SERIAL PRIMARY KEY,
-    facility_id       INTEGER      NOT NULL REFERENCES facilities(id),
-    lp_master_id      INTEGER      REFERENCES lp_master(id),
-    investor_name     VARCHAR(255) NOT NULL,
-    parent            VARCHAR(255),
-    spv               BOOLEAN      NOT NULL DEFAULT FALSE,
-    high_qty          BOOLEAN      NOT NULL DEFAULT TRUE,
-    investor_type      VARCHAR(255) NOT NULL,
-    inst_vs_hnw        VARCHAR(255) NOT NULL DEFAULT 'Institutional',
-    region_location    VARCHAR(255) NOT NULL,
-    investment_grade   BOOLEAN      NOT NULL DEFAULT FALSE,
-    classification     VARCHAR(255) NOT NULL,
-    classification_tag VARCHAR(255),
-    agent_cls          VARCHAR(255),
-    agent_cls_source   VARCHAR(20),
-    sp                 VARCHAR(50)  NOT NULL DEFAULT '',
-    mdy                VARCHAR(50)  NOT NULL DEFAULT '',
-    fitch              VARCHAR(50)  NOT NULL DEFAULT '',
-    aum                VARCHAR(255),
-    aum_num            NUMERIC(20, 2),
-    nav                VARCHAR(255),
-    pension            VARCHAR(255),
-    pension_funded     VARCHAR(255),
-    cap_commit         VARCHAR(64),
-    cap_commit_num     NUMERIC(20, 2),
-    pct_cap_commit     VARCHAR(50),
-    called_cap         VARCHAR(64),
-    uncalled_capital   VARCHAR(64),
-    uncalled_capital_num NUMERIC(20, 2),
-    pct_uncalled       VARCHAR(50),
-    pct_called         VARCHAR(50),
-    agent_conc         VARCHAR(50),
-    ubs_conc           VARCHAR(50),
-    agent_excess_conc  VARCHAR(64),
-    ubs_excess_conc    VARCHAR(64),
-    agent_rate         VARCHAR(50),
-    ubs_rate           VARCHAR(50),
-    agent_bb           VARCHAR(64),
-    agent_bb_num       NUMERIC(20, 2),
-    ubs_bb             VARCHAR(64),
-    included           BOOLEAN      NOT NULL DEFAULT TRUE,
-    rcl                BOOLEAN      NOT NULL DEFAULT FALSE,
-    recallable_dist    VARCHAR(64),
-    transferee         BOOLEAN      NOT NULL DEFAULT FALSE,
-    lp_rank            INTEGER,
-    source_seq         INTEGER,
-    fund_sleeve        VARCHAR(255),
-    notes              TEXT,
-    created_at         TIMESTAMP    NOT NULL DEFAULT NOW(),
-    updated_at         TIMESTAMP    NOT NULL DEFAULT NOW(),
-    CONSTRAINT ck_lp_records_agent_cls_source
-        CHECK (agent_cls_source IS NULL OR agent_cls_source IN ('EXTRACTED', 'DERIVED', 'USER_EDITED'))
+    id                        SERIAL PRIMARY KEY,
+    facility_id               INTEGER      NOT NULL REFERENCES facilities(id),
+    lp_master_id              INTEGER      REFERENCES lp_master(id),
+    investor_name             VARCHAR(255) NOT NULL,
+    parent                    VARCHAR(255),
+    spv                       BOOLEAN      NOT NULL DEFAULT FALSE,
+    high_quality              BOOLEAN      NOT NULL DEFAULT TRUE,
+    investor_type             VARCHAR(255) NOT NULL,
+    institutional_or_hnw      VARCHAR(255) NOT NULL DEFAULT 'Institutional',
+    region_location           VARCHAR(255) NOT NULL,
+    investment_grade          BOOLEAN      NOT NULL DEFAULT FALSE,
+    ubs_lp_category           VARCHAR(255) NOT NULL,
+    ubs_lp_category_tag       VARCHAR(255),
+    agent_lp_category         VARCHAR(255),
+    agent_lp_category_source  VARCHAR(20),
+    sp_rating                 VARCHAR(50)  NOT NULL DEFAULT '',
+    moodys_rating             VARCHAR(50)  NOT NULL DEFAULT '',
+    fitch_rating              VARCHAR(50)  NOT NULL DEFAULT '',
+    aum                       VARCHAR(50),
+    nav                       VARCHAR(50),
+    pension_assets            VARCHAR(50),
+    funding_ratio             NUMERIC(7, 4),
+    capital_commitment        NUMERIC(20, 2),
+    pct_of_fund_commitments   NUMERIC(7, 4),
+    called_capital            NUMERIC(20, 2),
+    uncalled_capital          NUMERIC(20, 2),
+    pct_of_fund_uncalled      NUMERIC(7, 4),
+    pct_lp_called             NUMERIC(7, 4),
+    agent_concentration_limit NUMERIC(20, 2),
+    ubs_concentration_limit   NUMERIC(20, 2),
+    agent_excess_concentration NUMERIC(20, 2),
+    ubs_excess_concentration  NUMERIC(20, 2),
+    agent_advance_rate        NUMERIC(7, 4),
+    ubs_advance_rate          NUMERIC(7, 4),
+    agent_borrowing_base      NUMERIC(20, 2),
+    ubs_borrowing_base        NUMERIC(20, 2),
+    included                  BOOLEAN      NOT NULL DEFAULT TRUE,
+    reclassified              BOOLEAN      NOT NULL DEFAULT FALSE,
+    recallable_distributions  NUMERIC(20, 2),
+    transferee                BOOLEAN      NOT NULL DEFAULT FALSE,
+    lp_rank                   INTEGER,
+    source_seq                INTEGER,
+    notes                     TEXT,
+    created_at                TIMESTAMP    NOT NULL DEFAULT NOW(),
+    updated_at                TIMESTAMP    NOT NULL DEFAULT NOW(),
+    CONSTRAINT ck_lp_records_agent_lp_category_source
+        CHECK (agent_lp_category_source IS NULL
+            OR agent_lp_category_source IN ('EXTRACTED', 'DERIVED', 'USER_EDITED'))
 );
 
 CREATE INDEX idx_lp_records_lp_master ON lp_records(lp_master_id);
@@ -193,8 +240,10 @@ CREATE TABLE config (
 -- no longer transitions the facility straight to Active. The operator (Analyst) submits it for
 -- independent review (status='Pending Review'), and only an Account/Transaction Manager may
 -- accept or reject it. The accepting manager must not be the maker: submitted_by (maker) and
--- reviewed_by (checker) are recorded as stable authentication identities, never as foreign keys
--- to the deprecated local users table (see RBAC_ROLES.md).
+-- reviewed_by (checker) are recorded as stable authentication identities (uuName), never as
+-- foreign keys into users (see RBAC_ROLES.md). Attribution must survive independently of the
+-- directory: a run's maker/checker is a permanent fact about that run, and must not change or
+-- dangle if the directory row is later removed. Join to users on uu_name only to render a name.
 --   submitted_by  — uuName/identity of the operator who submitted the run for review (maker)
 --   reviewed_by   — uuName/identity of the manager who accepted or rejected it (checker)
 --   review_note   — reviewer rationale, required on rejection
@@ -376,8 +425,6 @@ CREATE TABLE bb_templates (
     id                        SERIAL PRIMARY KEY,
     template_name             VARCHAR(255) NOT NULL,
     template_class            VARCHAR(10)  NOT NULL DEFAULT 'A',
-    -- sheet_name / header_row_index kept as a single-tab shortcut; superseded by
-    -- bb_template_tabs for multi-tab workbooks.
     sheet_name                VARCHAR(255),
     header_row_index          INTEGER,
     auto_learned              BOOLEAN      NOT NULL DEFAULT TRUE,
@@ -385,9 +432,6 @@ CREATE TABLE bb_templates (
     has_grouping_rows         BOOLEAN      NOT NULL DEFAULT FALSE,
     has_color_flags           BOOLEAN      NOT NULL DEFAULT FALSE,
     summary_rows_above_header INTEGER      NOT NULL DEFAULT 0,
-    -- V1_14 registry extension: recognition + display fields mirroring the
-    -- pe-sub-platform TemplateProfile model. template_slug is the stable id used
-    -- by recognition/UI; detect_keys/title_text/agent_name drive matching.
     auto_discover_tabs        BOOLEAN      NOT NULL DEFAULT FALSE,
     template_slug             VARCHAR(50),
     agent_name                VARCHAR(255),

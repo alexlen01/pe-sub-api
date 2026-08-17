@@ -1,5 +1,6 @@
 package com.ubs.pesubapi.security;
 
+import com.ubs.pesubapi.service.UserDirectoryService;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -39,7 +40,8 @@ public class SecurityConfig {
         new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED);
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http, SecurityProperties props) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http, SecurityProperties props,
+                                                   UserDirectoryService directory) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
             .cors(Customizer.withDefaults())
@@ -77,6 +79,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.PATCH,  "/api/field-mapping/**").hasRole("ANALYST")
                 .requestMatchers(HttpMethod.DELETE, "/api/field-mapping/**").hasRole("ANALYST")
                 .requestMatchers(HttpMethod.DELETE, "/api/lp-master/**").hasRole("ANALYST")
+                // LP Master curation: editing a record's ratings, category, default rates or its
+                // parent link is the same class of write as deleting one, so it takes the same role.
+                .requestMatchers(HttpMethod.PUT,    "/api/lp-master/**").hasRole("ANALYST")
                 // Templates: any operator (incl. VIEWER) may read; only ANALYST may modify/import.
                 .requestMatchers(HttpMethod.GET, "/api/bb-templates/**").authenticated()
                 .requestMatchers("/api/bb-templates/**").hasRole("ANALYST")
@@ -94,7 +99,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.DELETE, "/api/**").hasAnyRole("ANALYST", "MANAGER", "SERVICE")
                 .requestMatchers("/api/**").authenticated()
                 .anyRequest().permitAll())
-            .addFilterBefore(new GatewayAuthenticationFilter(props),
+            .addFilterBefore(new GatewayAuthenticationFilter(props, directory),
                 UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

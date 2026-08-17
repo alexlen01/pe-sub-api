@@ -1,5 +1,6 @@
 package com.ubs.pesubapi.service;
 
+import com.ubs.pesubapi.util.MoneyValues;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -9,28 +10,30 @@ import static org.assertj.core.api.Assertions.within;
 
 /**
  * Unit coverage for the money helpers behind the borrowing-base engine:
- *  - {@code moneyM} reads the precise numeric column first (C2), keeping full dollars instead of
- *    the rounded display string, and falls back to the string only when the numeric is absent.
+ *  - {@code dollarM} converts the NUMERIC money columns (absolute dollars) to the $millions the
+ *    engine calculates in, keeping full precision instead of a rounded display string.
  *  - {@code parseMoney} matches the TS reference for suffix-less amounts (C3).
+ *  - {@code MoneyValues.concLimit} keeps percentage and absolute-dollar concentration limits
+ *    distinguishable now that both share the one NUMERIC column.
  */
 class BbCalculationServiceMoneyTest {
 
     @Test
-    void moneyM_prefersNumericColumn_overRoundedDisplayString() {
-        // $12,345,678 rounds to "$12.3M" for display; the numeric column keeps the exact value.
-        double m = BbCalculationService.moneyM(new BigDecimal("12345678"), "$12.3M");
-        assertThat(m).isEqualTo(12.345678, within(1e-9));
+    void dollarM_convertsAbsoluteDollarsToMillions_atFullPrecision() {
+        // $12,345,678 rounds to "$12.3M" for display; the NUMERIC column keeps the exact value.
+        assertThat(BbCalculationService.dollarM(new BigDecimal("12345678")))
+            .isEqualTo(12.345678, within(1e-9));
     }
 
     @Test
-    void moneyM_fallsBackToDisplayString_whenNumericNull() {
-        // Pre-migration row: no numeric value, so the formatted string is parsed ($millions).
-        assertThat(BbCalculationService.moneyM(null, "$12.3M")).isEqualTo(12.3, within(1e-9));
+    void dollarM_nullIsZero() {
+        assertThat(BbCalculationService.dollarM(null)).isEqualTo(0.0, within(1e-9));
     }
 
     @Test
-    void moneyM_nullNumericAndBlankString_isZero() {
-        assertThat(BbCalculationService.moneyM(null, null)).isEqualTo(0.0, within(1e-9));
+    void dollarM_keepsPositiveOnlyCalculationInputsUnsigned() {
+        assertThat(BbCalculationService.dollarM(new BigDecimal("-1250000")))
+            .isEqualTo(1.25, within(1e-9));
     }
 
     @Test
@@ -49,11 +52,27 @@ class BbCalculationServiceMoneyTest {
             .isEqualTo(-1.25, within(1e-9));
     }
 
+    // ── Concentration limits: percent and dollar caps share one NUMERIC column ──────────
+
     @Test
-    void moneyM_keepsPositiveOnlyCalculationInputsUnsigned() {
-        assertThat(BbCalculationService.moneyM(new BigDecimal("-1250000"), null))
-            .isEqualTo(1.25, within(1e-9));
-        assertThat(BbCalculationService.moneyM(null, "($1,250,000)"))
-            .isEqualTo(1.25, within(1e-9));
+    void concLimit_percentageStaysOnPercentScale() {
+        assertThat(MoneyValues.concLimit("7.5%")).isEqualByComparingTo(new BigDecimal("7.5"));
+        assertThat(MoneyValues.concLimit("25")).isEqualByComparingTo(new BigDecimal("25"));
+    }
+
+    @Test
+    void concLimit_dollarCapBecomesAbsoluteDollars() {
+        // A dollar-denominated limit must survive the numeric column rather than parse to null —
+        // it lands above ABSOLUTE_DOLLAR_MIN, which is how the engine tells it from a percentage.
+        assertThat(MoneyValues.concLimit("$25.0M"))
+            .isEqualByComparingTo(new BigDecimal("25000000"));
+        assertThat(MoneyValues.concLimit("$25.0M").doubleValue())
+            .isGreaterThanOrEqualTo(BbCalculationService.ABSOLUTE_DOLLAR_MIN);
+    }
+
+    @Test
+    void concLimit_blankIsNull() {
+        assertThat(MoneyValues.concLimit(null)).isNull();
+        assertThat(MoneyValues.concLimit("   ")).isNull();
     }
 }

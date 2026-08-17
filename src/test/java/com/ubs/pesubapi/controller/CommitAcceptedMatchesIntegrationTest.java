@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.stream.IntStream;
 
@@ -24,6 +25,7 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.closeTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -124,15 +126,15 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         List<LpRecord> stored = lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
         assertThat(stored).hasSize(N_ROWS);
 
-        // 2) Natural (source-file) order retained, not alphabetical.
+        // 2) Natural (source-file) order retained, not alphabetical — NAMES is deliberately
+        //    reverse-alphabetical, so matching it exactly proves the order is not sorted.
         List<String> storedOrder = stored.stream().map(lpRecord -> lpRecord.getInvestorName()).toList();
         assertThat(storedOrder).containsExactlyElementsOf(NAMES);
-        assertThat(storedOrder).isNotEqualTo(NAMES.stream().sorted().toList());
 
         // 3) Agent LP Category preserved verbatim through commit — not dropped, and not
         //    overridden by the invType (Investor Type) default.
         IntStream.range(0, N_ROWS).forEach(i -> {
-            assertThat(stored.get(i).getAgentCls()).isEqualTo(agentClassFor(i));
+            assertThat(stored.get(i).getAgentLpCategory()).isEqualTo(agentClassFor(i));
             assertThat(stored.get(i).getInvestorType()).isEqualTo(investorTypeFor(i));
         });
 
@@ -140,10 +142,10 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         mvc.perform(get("/api/lpRecords").param("facilityId", String.valueOf(facilityId)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(N_ROWS)))
-            .andExpect(jsonPath("$[0].name").value(NAMES.get(0)))
-            .andExpect(jsonPath("$[0].agentCls").value(agentClassFor(0)))
-            .andExpect(jsonPath("$[0].investor_type").value(investorTypeFor(0)))
-            .andExpect(jsonPath("$[" + (N_ROWS - 1) + "].name").value(NAMES.get(N_ROWS - 1)));
+            .andExpect(jsonPath("$[0].investorName").value(NAMES.get(0)))
+            .andExpect(jsonPath("$[0].agentLpCategory").value(agentClassFor(0)))
+            .andExpect(jsonPath("$[0].investorType").value(investorTypeFor(0)))
+            .andExpect(jsonPath("$[" + (N_ROWS - 1) + "].investorName").value(NAMES.get(N_ROWS - 1)));
     }
 
     @Test
@@ -168,7 +170,7 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         assertThat(stored).hasSize(N_ROWS);
         List<String> storedNames = stored.stream().map(lpRecord -> lpRecord.getInvestorName()).toList();
         assertThat(storedNames).containsExactlyElementsOf(NAMES);
-        assertThat(stored).allMatch(lpRecord -> lpRecord.getRegion().isBlank());
+        assertThat(stored).allMatch(lpRecord -> lpRecord.getRegionLocation().isBlank());
     }
 
     @Test
@@ -204,7 +206,7 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
                 "agentClass": "Excluded Investor",
                 "agentClsSource": "EXTRACTED",
                 "investorType": "Family Office",
-                "agentRate": "0%",
+                "agentRate": 0,
                 "agentConc": "0%",
                 "agentBB": "$0",
                 "agentBBNum": 0,
@@ -239,14 +241,12 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
 
         LpRecord eqt = stored.getFirst();
         assertThat(eqt.getSourceSeq()).isEqualTo(1);
-        assertThat(eqt.getFundSleeve()).isEqualTo("Nerdio");
-        assertThat(eqt.getAgentCls()).isEqualTo("Included Investor");
-        assertThat(eqt.getAgentClsSource()).isEqualTo("EXTRACTED");
-        assertThat(eqt.getAgentRate()).isEqualTo("95%");
-        assertThat(eqt.getAgentConc()).isEqualTo("7.5%");
-        assertThat(eqt.getAbb()).isEqualTo("$12,500,000");
-        assertThat(eqt.getAbbNum()).isEqualByComparingTo("12500000");
-        assertThat(eqt.isTf()).isTrue();
+        assertThat(eqt.getAgentLpCategory()).isEqualTo("Included Investor");
+        assertThat(eqt.getAgentLpCategorySource()).isEqualTo("EXTRACTED");
+        assertThat(eqt.getAgentAdvanceRate()).isEqualByComparingTo("0.95");   // extraction "95%" → stored fraction
+        assertThat(eqt.getAgentConcentrationLimit()).isEqualByComparingTo("7.5");
+        assertThat(eqt.getAgentBorrowingBase()).isEqualByComparingTo("12500000");
+        assertThat(eqt.isTransferee()).isTrue();
     }
 
     @Test
@@ -293,7 +293,7 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         assertThat(stored.stream().map((LpRecord lpRecord) -> lpRecord.getId()).toList()).doesNotContainAnyElementsOf(firstIds);
         assertThat(stored.stream().map((LpRecord lpRecord) -> lpRecord.getInvestorName()).toList()).containsExactlyElementsOf(NAMES);
         assertThat(stored.get(0).getInvestorType()).isEqualTo(investorTypeFor(0));
-        assertThat(stored.get(0).getAgentCls()).isEqualTo(agentClassFor(0));
+        assertThat(stored.get(0).getAgentLpCategory()).isEqualTo(agentClassFor(0));
     }
 
     @Test
@@ -351,10 +351,10 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         matchedElsewhere.setFacilityId(otherFacilityId);
         matchedElsewhere.setInvestorName("Texas Teachers Retirement System");
         matchedElsewhere.setParent("Do Not Copy Parent");
-        matchedElsewhere.setInvType("Pension");
-        matchedElsewhere.setRegion("US");
-        matchedElsewhere.setCls("Rated");
-        matchedElsewhere.setCapCommit("$99.0M");
+        matchedElsewhere.setInvestorSegmentOrType("Pension");
+        matchedElsewhere.setRegionLocation("US");
+        matchedElsewhere.setUbsLpCategory("Rated");
+        matchedElsewhere.setCapitalCommitment(new BigDecimal("99000000"));
         int matchedElsewhereId = lpRecordRepo.save(matchedElsewhere).getId();
 
         SubmissionExtraction ext = extractionRepo.findBySubmissionId(submissionId).orElseThrow();
@@ -422,28 +422,28 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
 
         LpRecord acceptedLp = stored.get(0);
         assertThat(acceptedLp.getParent()).isNull();
-        assertThat(acceptedLp.getInvType()).isEqualTo("Institutional");
-        assertThat(acceptedLp.getCls()).isEqualTo("Eligible");
-        assertThat(acceptedLp.getCapCommit()).isEqualTo("$10.0M");
-        assertThat(acceptedLp.getUc()).isEqualTo("$4.0M");
-        assertThat(acceptedLp.getAgentCls()).isEqualTo("Pension Fund");
-        assertThat(acceptedLp.getAgentClsSource()).isEqualTo("EXTRACTED");
+        assertThat(acceptedLp.getInstitutionalOrHnw()).isEqualTo("Institutional");
+        assertThat(acceptedLp.getUbsLpCategory()).isEqualTo("Eligible");
+        assertThat(acceptedLp.getCapitalCommitment()).isEqualByComparingTo("10000000");
+        assertThat(acceptedLp.getUncalledCapital()).isEqualByComparingTo("4000000");
+        assertThat(acceptedLp.getAgentLpCategory()).isEqualTo("Pension Fund");
+        assertThat(acceptedLp.getAgentLpCategorySource()).isEqualTo("EXTRACTED");
         assertThat(acceptedLp.getInvestorType()).isEqualTo("Public Pension");
 
         LpRecord rejectedNewLp = stored.get(1);
-        assertThat(rejectedNewLp.getInvType()).isEqualTo("Institutional");
-        assertThat(rejectedNewLp.getCls()).isEqualTo("Eligible");
-        assertThat(rejectedNewLp.getCapCommit()).isEqualTo("$5.0M");
-        assertThat(rejectedNewLp.getUc()).isEqualTo("$2.0M");
-        assertThat(rejectedNewLp.getAgentCls()).isEqualTo("Non-Rated Included");
-        assertThat(rejectedNewLp.getAgentClsSource()).isEqualTo("DERIVED");
+        assertThat(rejectedNewLp.getInstitutionalOrHnw()).isEqualTo("Institutional");
+        assertThat(rejectedNewLp.getUbsLpCategory()).isEqualTo("Eligible");
+        assertThat(rejectedNewLp.getCapitalCommitment()).isEqualByComparingTo("5000000");
+        assertThat(rejectedNewLp.getUncalledCapital()).isEqualByComparingTo("2000000");
+        assertThat(rejectedNewLp.getAgentLpCategory()).isEqualTo("Non-Rated Included");
+        assertThat(rejectedNewLp.getAgentLpCategorySource()).isEqualTo("DERIVED");
         assertThat(rejectedNewLp.getInvestorType()).isEqualTo("Public Pension");
 
         LpRecord untouchedMatchedRecord = lpRecordRepo.findById(matchedElsewhereId).orElseThrow();
         assertThat(untouchedMatchedRecord.getFacilityId()).isEqualTo(otherFacilityId);
         assertThat(untouchedMatchedRecord.getParent()).isEqualTo("Do Not Copy Parent");
-        assertThat(untouchedMatchedRecord.getCapCommit()).isEqualTo("$99.0M");
-        assertThat(untouchedMatchedRecord.getAgentCls()).isNull();
+        assertThat(untouchedMatchedRecord.getCapitalCommitment()).isEqualByComparingTo("99000000");
+        assertThat(untouchedMatchedRecord.getAgentLpCategory()).isNull();
     }
 
     @Test
@@ -460,7 +460,7 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
                 "commit": "$38.0M",
                 "uncalled": "$11.0M",
                 "calledCap": "$27.0M",
-                "pctCapCommit": "4.67%",
+                "pctCapCommit": 0.0467,
                 "agentExcessConc": ""
               },
               {
@@ -489,25 +489,27 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
 
         // Direct row keys
         LpRecord arkansas = stored.get(0);
-        assertThat(arkansas.getCalledCap()).isEqualTo("$27.0M");
-        assertThat(arkansas.getPctCapCommit()).isEqualTo("4.67%");
-        assertThat(arkansas.getAgentExcessConc()).isNull(); // blank ("" = zero excess) stays unset
+        assertThat(arkansas.getCalledCapital()).isEqualByComparingTo("27000000");
+        // Percent columns are NUMERIC fractions: the agent's "4.67%" is stored as 0.0467.
+        assertThat(arkansas.getPctOfFundCommitments()).isEqualByComparingTo("0.0467");
+        assertThat(arkansas.getAgentExcessConcentration()).isNull(); // blank ("" = zero excess) stays unset
 
         // canonicalFields fallback
         LpRecord phoenix = stored.get(1);
-        assertThat(phoenix.getCalledCap()).isEqualTo("$284.8M");
-        assertThat(phoenix.getPctCapCommit()).isEqualTo("50.25%");
-        assertThat(phoenix.getAgentExcessConc()).isEqualTo("$107.3M");
+        assertThat(phoenix.getCalledCapital()).isEqualByComparingTo("284800000");
+        assertThat(phoenix.getPctOfFundCommitments()).isEqualByComparingTo("0.5025");
+        assertThat(phoenix.getAgentExcessConcentration()).isEqualByComparingTo("107300000");
 
-        // Round-trip: the listing endpoint exposes the committed values.
+        // Round-trip: the listing endpoint exposes the committed values — money as full-precision
+        // display strings, percents as the raw fraction the client formats.
         mvc.perform(get("/api/lpRecords").param("facilityId", String.valueOf(facilityId)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(2)))
-            .andExpect(jsonPath("$[0].calledCap").value("$27.0M"))
-            .andExpect(jsonPath("$[0].pctCapCommit").value("4.67%"))
-            .andExpect(jsonPath("$[1].calledCap").value("$284.8M"))
-            .andExpect(jsonPath("$[1].pctCapCommit").value("50.25%"))
-            .andExpect(jsonPath("$[1].agentExcessConc").value("$107.3M"));
+            .andExpect(jsonPath("$[0].calledCapital").value("$27,000,000"))
+            .andExpect(jsonPath("$[0].pctOfFundCommitments").value(closeTo(0.0467, 0.0001)))
+            .andExpect(jsonPath("$[1].calledCapital").value("$284,800,000"))
+            .andExpect(jsonPath("$[1].pctOfFundCommitments").value(closeTo(0.5025, 0.0001)))
+            .andExpect(jsonPath("$[1].agentExcessConcentration").value("$107,300,000"));
     }
 
     @Test
@@ -539,10 +541,9 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         List<LpRecord> stored = lpRecordRepo.findByFacilityIdOrderBySourceSeqAscInvestorNameAsc(facilityId);
         assertThat(stored).hasSize(2);
         assertThat(stored).allMatch(lp -> "Blackstone Strategic Partners".equals(lp.getInvestorName()));
-        assertThat(stored.stream().map(r -> r.getFundSleeve()).toList())
-            .containsExactly("Fund IX", "Fund X");
-        assertThat(stored.stream().map(r -> r.getUc()).toList())
-            .containsExactly("$18.0M", "$11.0M");
+        assertThat(stored.stream().map(r -> r.getUncalledCapital()).toList())
+            .usingElementComparator(BigDecimal::compareTo)
+            .containsExactly(new BigDecimal("18000000"), new BigDecimal("11000000"));
         assertThat(stored.stream().map(r -> r.getSourceSeq()).toList())
             .containsExactly(1, 2);
     }

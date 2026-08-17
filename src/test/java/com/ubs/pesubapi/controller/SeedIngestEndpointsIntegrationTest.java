@@ -60,21 +60,21 @@ class SeedIngestEndpointsIntegrationTest extends IntegrationTestBase {
           "investorName": "Acme Pension Fund",
           "parent": "Acme Holdings",
           "spv": false,
-          "highQty": true,
+          "highQuality": true,
           "investorType": "Pension Fund",
-          "instVsHnw": "Institutional",
+          "institutionalOrHnw": "Institutional",
           "regionLocation": "United States",
           "investmentGrade": true,
-          "sp": "AA",
-          "mdy": "Aa2",
-          "fitch": "AA",
+          "spRating": "AA",
+          "moodysRating": "Aa2",
+          "fitchRating": "AA",
           "aum": "$10B",
           "nav": "$8B",
-          "pension": "$10B",
-          "pensionFunded": "105%",
-          "ubsClassification": null,
-          "ubsDefaultAdvRate": "90%",
-          "ubsDefaultConcLimit": "5%",
+          "pensionAssets": "$10B",
+          "fundingRatio": "105%",
+          "ubsLpCategory": null,
+          "ubsDefaultAdvanceRate": "90%",
+          "ubsDefaultConcentrationLimit": "5%",
           "notes": "seed"
         }
         """;
@@ -154,8 +154,8 @@ class SeedIngestEndpointsIntegrationTest extends IntegrationTestBase {
         List<LpMaster> all = lpMasterRepo.findAll();
         assertThat(all).hasSize(1);
         assertThat(all.getFirst().getAum()).isEqualTo("$12B");
-        assertThat(all.getFirst().getSp()).isEqualTo("AA");
-        assertThat(all.getFirst().isIg()).isTrue();
+        assertThat(all.getFirst().getSpRating()).isEqualTo("AA");
+        assertThat(all.getFirst().isInvestmentGrade()).isTrue();
     }
 
     @Test
@@ -168,27 +168,27 @@ class SeedIngestEndpointsIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isOk());
 
         // Row 1 carries the full per-LP column set (row values must win over the LP Master
-        // profile; "pension" is left blank to prove the blank->LP Master fallback). Rows 2-3
+        // profile; "pensionAssets" is left blank to prove the blank->LP Master fallback). Rows 2-3
         // exercise the skip paths.
         String seedRows = """
             [
               { "facilityName": "Seed Facility Alpha", "investorName": "Acme Pension Fund",
-                "capCommit": "$300M", "uncalled": "$90M", "agentCls": "Rated",
-                "agentRate": "90%", "agentConc": "5%",
-                "parent": "Row Parent Ltd", "spv": "TRUE", "highQty": "FALSE",
-                "investorType": "Sovereign Wealth Fund", "instVsHnw": "Institutional",
+                "capitalCommitment": "$300M", "uncalledCapital": "$90M", "agentLpCategory": "Rated",
+                "agentAdvanceRate": "90%", "agentConcentrationLimit": "5%",
+                "parent": "Row Parent Ltd", "spv": "TRUE", "highQuality": "FALSE",
+                "investorType": "Sovereign Wealth Fund", "institutionalOrHnw": "Institutional",
                 "regionLocation": "Norway", "investmentGrade": "FALSE",
-                "ubsCls": "Unrated NAV > $1Bn", "sp": "A", "mdy": "A2", "fitch": "A-",
-                "aum": "$7B", "nav": "$6B", "pension": "", "pensionFunded": "98%",
-                "pctCapCommit": "3%", "calledCap": "$210M", "pctUncalled": "2.5%",
-                "pctCalled": "70%", "ubsConc": "4%", "ubsRate": "75%",
-                "agentBb": "$81M", "ubsBb": "$67.5M", "notes": "row note" },
+                "ubsLpCategory": "Unrated NAV > $1Bn", "spRating": "A", "moodysRating": "A2", "fitchRating": "A-",
+                "aum": "$7B", "nav": "$6B", "pensionAssets": "", "fundingRatio": "98%",
+                "pctOfFundCommitments": "3%", "calledCapital": "$210M", "pctOfFundUncalled": "2.5%",
+                "pctLpCalled": "70%", "ubsConcentrationLimit": "4%", "ubsAdvanceRate": "75%",
+                "agentBorrowingBase": "$81M", "ubsBorrowingBase": "$67.5M", "notes": "row note" },
               { "facilityName": "No Such Facility", "investorName": "Acme Pension Fund",
-                "capCommit": "$1M", "uncalled": "$1M", "agentCls": "Rated",
-                "agentRate": "90%", "agentConc": "5%" },
+                "capitalCommitment": "$1M", "uncalledCapital": "$1M", "agentLpCategory": "Rated",
+                "agentAdvanceRate": "90%", "agentConcentrationLimit": "5%" },
               { "facilityName": "Seed Facility Alpha", "investorName": "Unknown Investor",
-                "capCommit": "$1M", "uncalled": "$1M", "agentCls": "Rated",
-                "agentRate": "90%", "agentConc": "5%" }
+                "capitalCommitment": "$1M", "uncalledCapital": "$1M", "agentLpCategory": "Rated",
+                "agentAdvanceRate": "90%", "agentConcentrationLimit": "5%" }
             ]
             """;
 
@@ -204,46 +204,46 @@ class SeedIngestEndpointsIntegrationTest extends IntegrationTestBase {
         assertThat(records).hasSize(1);
         LpRecord lp = records.getFirst();
         assertThat(lp.getLpMasterId()).isEqualTo(lpMasterRepo.findAll().getFirst().getId());
-        assertThat(lp.getAgentCls()).isEqualTo("Rated Included");        // "Rated" normalized
-        assertThat(lp.getAgentClsSource()).isEqualTo("EXTRACTED");
-        assertThat(lp.getCapCommit()).isEqualTo("$300M");
-        assertThat(lp.getUc()).isEqualTo("$90M");
-        assertThat(lp.getAgentRate()).isEqualTo("90%");
-        assertThat(lp.getAgentConc()).isEqualTo("5%");
+        assertThat(lp.getAgentLpCategory()).isEqualTo("Rated Included");        // "Rated" normalized
+        assertThat(lp.getAgentLpCategorySource()).isEqualTo("EXTRACTED");
+        assertThat(lp.getCapitalCommitment()).isEqualByComparingTo("300000000");
+        assertThat(lp.getUncalledCapital()).isEqualByComparingTo("90000000");
+        assertThat(lp.getAgentAdvanceRate()).isEqualByComparingTo("0.90");
+        assertThat(lp.getAgentConcentrationLimit()).isEqualByComparingTo("5");
         // Row values win over the LP Master profile:
-        assertThat(lp.getCls()).isEqualTo("Unrated NAV > $1Bn");         // row ubsCls, not agentCls-derived
+        assertThat(lp.getUbsLpCategory()).isEqualTo("Unrated NAV > $1Bn");         // row ubsCls, not agentCls-derived
         assertThat(lp.getParent()).isEqualTo("Row Parent Ltd");
         assertThat(lp.isSpv()).isTrue();
-        assertThat(lp.isHighQty()).isFalse();
+        assertThat(lp.isHighQuality()).isFalse();
         assertThat(lp.getInvestorType()).isEqualTo("Sovereign Wealth Fund");
-        assertThat(lp.getInstVsHnw()).isEqualTo("Institutional");
+        assertThat(lp.getInstitutionalOrHnw()).isEqualTo("Institutional");
         assertThat(lp.getRegionLocation()).isEqualTo("Norway");
-        assertThat(lp.isIg()).isFalse();
-        assertThat(lp.getSp()).isEqualTo("A");
-        assertThat(lp.getMdy()).isEqualTo("A2");
-        assertThat(lp.getFitch()).isEqualTo("A-");
+        assertThat(lp.isInvestmentGrade()).isFalse();
+        assertThat(lp.getSpRating()).isEqualTo("A");
+        assertThat(lp.getMoodysRating()).isEqualTo("A2");
+        assertThat(lp.getFitchRating()).isEqualTo("A-");
         assertThat(lp.getAum()).isEqualTo("$7B");
         assertThat(lp.getNav()).isEqualTo("$6B");
-        assertThat(lp.getPensionFunded()).isEqualTo("98%");
+        assertThat(lp.getFundingRatio()).isEqualByComparingTo("0.98");
         // Blank row value falls back to the LP Master golden profile:
-        assertThat(lp.getPension()).isEqualTo("$10B");
+        assertThat(lp.getPensionAssets()).isEqualTo("$10B");
         // Row-only fields (no LP Master counterpart) round-trip:
-        assertThat(lp.getPctCapCommit()).isEqualTo("3%");
-        assertThat(lp.getCalledCap()).isEqualTo("$210M");
-        assertThat(lp.getPctUncalled()).isEqualTo("2.5%");
-        assertThat(lp.getPctCalled()).isEqualTo("70%");
-        assertThat(lp.getUbsConc()).isEqualTo("4%");
-        assertThat(lp.getUbsRate()).isEqualTo("75%");
-        assertThat(lp.getAbb()).isEqualTo("$81M");
-        assertThat(lp.getUbb()).isEqualTo("$67.5M");
+        assertThat(lp.getPctOfFundCommitments()).isEqualByComparingTo("0.03");
+        assertThat(lp.getCalledCapital()).isEqualByComparingTo("210000000");
+        assertThat(lp.getPctOfFundUncalled()).isEqualByComparingTo("0.025");
+        assertThat(lp.getPctLpCalled()).isEqualByComparingTo("0.70");
+        assertThat(lp.getUbsConcentrationLimit()).isEqualByComparingTo("4");
+        assertThat(lp.getUbsAdvanceRate()).isEqualByComparingTo("0.75");
+        assertThat(lp.getAgentBorrowingBase()).isEqualByComparingTo("81000000");
+        assertThat(lp.getUbsBorrowingBase()).isEqualByComparingTo("67500000");
         assertThat(lp.getNotes()).isEqualTo("row note");
 
         // Re-seeding the same pair is a no-op: existing records are never overwritten.
         mvc.perform(post("/api/lpRecords/seed")
                 .contentType(MediaType.APPLICATION_JSON).content("""
                     [{ "facilityName": "Seed Facility Alpha", "investorName": "Acme Pension Fund",
-                       "capCommit": "$999M", "uncalled": "$999M", "agentCls": "Designated",
-                       "agentRate": "50%", "agentConc": "1%" }]
+                       "capitalCommitment": "$999M", "uncalledCapital": "$999M", "agentLpCategory": "Designated",
+                       "agentAdvanceRate": "50%", "agentConcentrationLimit": "1%" }]
                     """))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.created").value(0))
@@ -252,7 +252,7 @@ class SeedIngestEndpointsIntegrationTest extends IntegrationTestBase {
         assertThat(lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId))
             .hasSize(1)
             .first()
-            .satisfies(unchanged -> assertThat(unchanged.getCapCommit()).isEqualTo("$300M"));
+            .satisfies(unchanged -> assertThat(unchanged.getCapitalCommitment()).isEqualByComparingTo("300000000"));
     }
 
     @Test
@@ -274,14 +274,14 @@ class SeedIngestEndpointsIntegrationTest extends IntegrationTestBase {
                 .contentType(MediaType.APPLICATION_JSON).content("""
                     [
                       { "facilityName": "Seed Facility Alpha", "investorName": "CP1 Pension Fund",
-                        "capCommit": "$50M", "uncalled": "$20M", "agentCls": "Non-Rated Included",
-                        "agentRate": "75%", "agentConc": "5%", "ubsCls": "Corp Pension > $1Bn Assets" },
+                        "capitalCommitment": "$50M", "uncalledCapital": "$20M", "agentLpCategory": "Non-Rated Included",
+                        "agentAdvanceRate": "75%", "agentConcentrationLimit": "5%", "ubsLpCategory": "Corp Pension > $1Bn Assets" },
                       { "facilityName": "Seed Facility Alpha", "investorName": "Feeder Family Office",
-                        "capCommit": "$50M", "uncalled": "$20M", "agentCls": "Designated PWM",
-                        "agentRate": "50%", "agentConc": "1%", "ubsCls": "HNW Feeder (acceptable)" },
+                        "capitalCommitment": "$50M", "uncalledCapital": "$20M", "agentLpCategory": "Designated PWM",
+                        "agentAdvanceRate": "50%", "agentConcentrationLimit": "1%", "ubsLpCategory": "HNW Feeder (acceptable)" },
                       { "facilityName": "Seed Facility Alpha", "investorName": "HNW Family Office",
-                        "capCommit": "$50M", "uncalled": "$20M", "agentCls": "Designated PWM",
-                        "agentRate": "50%", "agentConc": "1%", "ubsCls": "HNW (acceptable)" }
+                        "capitalCommitment": "$50M", "uncalledCapital": "$20M", "agentLpCategory": "Designated PWM",
+                        "agentAdvanceRate": "50%", "agentConcentrationLimit": "1%", "ubsLpCategory": "HNW (acceptable)" }
                     ]
                     """))
             .andExpect(status().isOk())
@@ -293,15 +293,15 @@ class SeedIngestEndpointsIntegrationTest extends IntegrationTestBase {
         assertThat(records).satisfiesExactly(
             cp1 -> {
                 assertThat(cp1.getInvestorName()).isEqualTo("CP1 Pension Fund");
-                assertThat(cp1.getCls()).isEqualTo("Corp Pension > $1Bn Assets");
+                assertThat(cp1.getUbsLpCategory()).isEqualTo("Corp Pension > $1Bn Assets");
             },
             feeder -> {
                 assertThat(feeder.getInvestorName()).isEqualTo("Feeder Family Office");
-                assertThat(feeder.getCls()).isEqualTo("HNW Feeder (acceptable)");
+                assertThat(feeder.getUbsLpCategory()).isEqualTo("HNW Feeder (acceptable)");
             },
             hnw -> {
                 assertThat(hnw.getInvestorName()).isEqualTo("HNW Family Office");
-                assertThat(hnw.getCls()).isEqualTo("HNW (acceptable)");
+                assertThat(hnw.getUbsLpCategory()).isEqualTo("HNW (acceptable)");
             });
     }
 

@@ -68,15 +68,9 @@ class DocRecognitionFormatTest extends IntegrationTestBase {
 
     @Test
     void format_ignoresLegacyFormat_whenNoRecognisedTemplate() throws Exception {
+        // A legacy extraction format enum is present but must not be reported: with no DB-recognised
+        // template the Format string is "unrecognized", exactly as when the enum is UNKNOWN too.
         int id = newSubmissionWithExtraction("CITIBANK", null);
-        mvc.perform(get("/api/submissions/{id}/doc-recognition", id))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.format").value("Excel Workbook — unrecognized template"));
-    }
-
-    @Test
-    void format_unrecognized_whenNeitherDbTemplateNorLegacyFormatRecognised() throws Exception {
-        int id = newSubmissionWithExtraction("UNKNOWN", null);
         mvc.perform(get("/api/submissions/{id}/doc-recognition", id))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.format").value("Excel Workbook — unrecognized template"));

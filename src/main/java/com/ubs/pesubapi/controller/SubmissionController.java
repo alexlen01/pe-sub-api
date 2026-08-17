@@ -99,9 +99,9 @@ public class SubmissionController {
     private final ObjectMapper                   mapper;
     private final CurrentUserService             currentUser;
     private final NotificationService            notifier;
-    private final ShadowBbService                 shadowBbService;
+    private final ShadowBbService                shadowBbService;
 
-    @Value("${app.uploads.path:uploads}")
+    @Value("${app.uploads.path}")
     private String uploadsPath;
 
     public SubmissionController(SubmissionRepository submissions,
@@ -328,6 +328,9 @@ public class SubmissionController {
                 ObjectNode row = mapper.createObjectNode();
                 row.put("id",           seqId++);
                 row.put("rowIndex",     rec.rowIndex());
+                // Multi-tab provenance: which workbook sheet this row came from. Review-screen
+                // display only — this is extraction metadata, unrelated to the dropped
+                // lp_records.fund_sleeve column, and is never persisted onto an LP record.
                 if (rec.fundSleeve() != null) row.put("fundSleeve", rec.fundSleeve());
                 String investorName = fieldStr(rec.fields(), "INVESTOR_NAME");
                 row.put("name",         investorName);

@@ -40,8 +40,8 @@ public class CollateralPdfService {
             ? List.of()
             : selected.getResult().lps();
         List<ComputedLpRecord> shownLps = "all".equals(options.includeLps())
-            ? allLps : allLps.stream().filter(lp -> lp != null && lp.inc()).toList();
-        List<ComputedLpRecord> reclassified = allLps.stream().filter(lp -> lp != null && lp.rcl()).toList();
+            ? allLps : allLps.stream().filter(lp -> lp != null && lp.included()).toList();
+        List<ComputedLpRecord> reclassified = allLps.stream().filter(lp -> lp != null && lp.reclassified()).toList();
         double highQualityM = allLps.stream().filter(lp -> lp != null && lp.highQuality()).mapToDouble(lp -> lp.uecM()).sum();
         double otherQualityM = allLps.stream().filter(lp -> lp != null && !lp.highQuality()).mapToDouble(lp -> lp.uecM()).sum();
         List<BbSnapshot> allTrend = snapshots.findByFacilityIdOrderByCalculatedAtAsc(report.facilityId());
@@ -104,6 +104,12 @@ public class CollateralPdfService {
 
         public String signedAmount(String value) {
             return signedMillions(BbCalculationService.parseMoney(value));
+        }
+
+        /** A stored rate fraction to the certificate's percent display (0.9 → "90%"); blank when unset. */
+        public String percent(java.math.BigDecimal value) {
+            if (value == null) return "";
+            return value.multiply(java.math.BigDecimal.valueOf(100)).stripTrailingZeros().toPlainString() + "%";
         }
 
         public String signedPercent(double value) {

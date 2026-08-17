@@ -61,9 +61,9 @@ class MatchQueueIntegrationTest extends IntegrationTestBase {
         LpRecord lpRecord = new LpRecord();
         lpRecord.setFacilityId(facilityId);
         lpRecord.setInvestorName("Texas Teachers Retirement System");
-        lpRecord.setInvType("Pension");
-        lpRecord.setRegion("US");
-        lpRecord.setCls("Rated");
+        lpRecord.setInvestorSegmentOrType("Pension");
+        lpRecord.setRegionLocation("US");
+        lpRecord.setUbsLpCategory("Rated");
         lpRecordRepo.save(lpRecord);
 
         LpMaster master = new LpMaster();

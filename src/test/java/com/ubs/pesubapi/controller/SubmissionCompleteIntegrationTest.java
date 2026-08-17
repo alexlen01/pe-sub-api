@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -160,9 +161,12 @@ class SubmissionCompleteIntegrationTest extends IntegrationTestBase {
 
         // Maker step must NOT activate the facility — that is the checker's decision.
         Facility f = facilityRepo.findById(facilityId).orElseThrow();
-        assert !"Active".equals(f.getStatus())
-            : "Facility must not be Active before acceptance, got: " + f.getStatus();
-        assert f.getLastRunAt() == null : "lastRunAt must not be stamped before acceptance";
+        assertThat(f.getStatus())
+            .as("Facility must not be Active before acceptance")
+            .isNotEqualTo("Active");
+        assertThat(f.getLastRunAt())
+            .as("lastRunAt must not be stamped before acceptance")
+            .isNull();
     }
 
     @Test
@@ -179,8 +183,10 @@ class SubmissionCompleteIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.reviewedBy").value("mgr.checker"));
 
         Facility f = facilityRepo.findById(facilityId).orElseThrow();
-        assert "Active".equals(f.getStatus()) : "Expected Active, got: " + f.getStatus();
-        assert f.getLastRunAt() != null : "lastRunAt must be stamped on acceptance";
+        assertThat(f.getStatus()).isEqualTo("Active");
+        assertThat(f.getLastRunAt())
+            .as("lastRunAt must be stamped on acceptance")
+            .isNotNull();
     }
 
     @Test
@@ -188,9 +194,9 @@ class SubmissionCompleteIntegrationTest extends IntegrationTestBase {
         LpRecord lp = new LpRecord();
         lp.setFacilityId(facilityId);
         lp.setInvestorName("Reclassified Pension");
-        lp.setRegion("North America");
-        lp.setCls("Rated Investor");
-        lp.setRcl(true);
+        lp.setRegionLocation("North America");
+        lp.setUbsLpCategory("Rated Investor");
+        lp.setReclassified(true);
         int lpId = lpRecordRepo.save(lp).getId();
 
         mvc.perform(post("/api/submissions/{id}/complete", submissionId)
@@ -201,8 +207,9 @@ class SubmissionCompleteIntegrationTest extends IntegrationTestBase {
                 .with(user("mgr.checker").roles("MANAGER")))
             .andExpect(status().isOk());
 
-        assert !lpRecordRepo.findById(lpId).orElseThrow().isRcl()
-            : "Approved reclassification must no longer be shown as pending";
+        assertThat(lpRecordRepo.findById(lpId).orElseThrow().isReclassified())
+            .as("Approved reclassification must no longer be shown as pending")
+            .isFalse();
     }
 
     @Test
@@ -253,7 +260,9 @@ class SubmissionCompleteIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.reviewNote").value("Advance rate for Tier 2 looks wrong"));
 
         Facility f = facilityRepo.findById(facilityId).orElseThrow();
-        assert !"Active".equals(f.getStatus()) : "Rejected submission must not activate the facility";
+        assertThat(f.getStatus())
+            .as("Rejected submission must not activate the facility")
+            .isNotEqualTo("Active");
     }
 
     @Test

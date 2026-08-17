@@ -43,6 +43,7 @@ public abstract class IntegrationTestBase {
                 report_history,
                 audit_log,
                 lp_records,
+                lp_aliases,
                 lp_master,
                 facilities
             CASCADE

@@ -40,6 +40,10 @@ server:
 
 pe-sub-extraction:
   base-url: ${PE_SUB_EXTRACTION_URL}
+  # Without explicit timeouts a hung pe-sub-extraction pins the calling thread forever; reads stay
+  # generous because large-workbook extraction is legitimately slow.
+  connect-timeout: ${PE_SUB_EXTRACTION_CONNECT_TIMEOUT:5s}
+  read-timeout: ${PE_SUB_EXTRACTION_READ_TIMEOUT:120s}
 
 # Authentication. mode=dev (default) authenticates every request as the dev identity below, so
 # local runs and the header-less UI work without a login flow. In production set mode=gateway:
@@ -52,15 +56,44 @@ app:
     first-name-header: X-Auth-First-Name
     last-name-header: X-Auth-Last-Name
     email-header: X-Auth-Email
-    dev-user: ${APP_SECURITY_DEV_USER:LOCAL_DEV_USER}
-    dev-first-name: ${APP_SECURITY_DEV_FIRST_NAME:Local}
-    dev-last-name: ${APP_SECURITY_DEV_LAST_NAME:Analyst}
-    dev-email: ${APP_SECURITY_DEV_EMAIL:local.analyst@ubs.dev}
+    # A uuName, not an email: dev-user is the natural key of the users directory, so a local run
+    # produces a directory row shaped exactly like a gateway-authenticated one.
+    dev-user: ${APP_SECURITY_DEV_USER:js25029}
+    dev-first-name: ${APP_SECURITY_DEV_FIRST_NAME:John}
+    dev-last-name: ${APP_SECURITY_DEV_LAST_NAME:Smith}
+    dev-email: ${APP_SECURITY_DEV_EMAIL:john.smith@ubs.com}
     # SERVICE is included in dev so header-less service callers (pe-sub-jobs seed feeds) work
     # locally — DEV mode gives every request the same identity and cannot distinguish callers.
     # In gateway mode service identities come from the proxy headers and operators never hold SERVICE.
     dev-roles: ANALYST,SERVICE
+    # How stale a users-directory row may get before an otherwise-unchanged identity is rewritten.
+    # Keeps the UI's reachability ping from putting a row update in front of every API call.
+    directory-last-seen-ttl: ${APP_SECURITY_DIRECTORY_LAST_SEEN_TTL:10m}
+
+  uploads:
+    # Directory for uploaded Agent BB workbooks.
+    path: ${APP_UPLOADS_PATH:uploads}
+
+  ingest:
+    # Minimum per-field extraction confidence before a value is written to an LP record.
+    min-field-confidence: ${APP_INGEST_MIN_FIELD_CONFIDENCE:0.7}
+
+  # Agent-BB template recognition scoring. A candidate template accumulates points per signal;
+  # below min-score the engine ignores the registry and auto-detects sheet/header instead.
+  template-recognition:
+    min-score: ${APP_TEMPLATE_RECOGNITION_MIN_SCORE:30}
+    score-filename: ${APP_TEMPLATE_RECOGNITION_SCORE_FILENAME:100}
+    score-title: ${APP_TEMPLATE_RECOGNITION_SCORE_TITLE:50}
+    score-detect-key: ${APP_TEMPLATE_RECOGNITION_SCORE_DETECT_KEY:20}
+    score-named-tab: ${APP_TEMPLATE_RECOGNITION_SCORE_NAMED_TAB:15}
+    score-agent-bank: ${APP_TEMPLATE_RECOGNITION_SCORE_AGENT_BANK:10}
+
+  # Profiling an unrecognised workbook into a candidate template definition.
+  template-profiler:
+    min-header-matches: ${APP_TEMPLATE_PROFILER_MIN_HEADER_MATCHES:3}
+    header-scan-rows: ${APP_TEMPLATE_PROFILER_HEADER_SCAN_ROWS:15}
+    max-groups: ${APP_TEMPLATE_PROFILER_MAX_GROUPS:12}
 
 logging:
   file:
-    path: ${LOG_PATH:logs}
+    path: ${LOG_PATH:../pe-sub/logs}

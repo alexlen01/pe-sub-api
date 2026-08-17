@@ -4,6 +4,7 @@ import com.ubs.pesubapi.dto.IngestSummary;
 import com.ubs.pesubapi.dto.LpMasterIngestRow;
 import com.ubs.pesubapi.entity.LpMaster;
 import com.ubs.pesubapi.repository.LpMasterRepository;
+import com.ubs.pesubapi.util.MoneyValues;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,9 +19,11 @@ import java.util.List;
 public class LpMasterIngestService {
 
     private final LpMasterRepository lpMasterRepo;
+    private final LpMasterService lpMasterService;
 
-    public LpMasterIngestService(LpMasterRepository lpMasterRepo) {
+    public LpMasterIngestService(LpMasterRepository lpMasterRepo, LpMasterService lpMasterService) {
         this.lpMasterRepo = lpMasterRepo;
+        this.lpMasterService = lpMasterService;
     }
 
     /**
@@ -47,25 +50,29 @@ public class LpMasterIngestService {
             boolean isNew = lp.getId() == null;
             lp.setParent(row.parent());
             lp.setSpv(row.spv());
-            lp.setHighQty(row.highQty());
+            lp.setHighQuality(row.highQuality());
             lp.setInvestorType(row.investorType());
-            lp.setInstVsHnw(row.instVsHnw());
+            lp.setInstitutionalOrHnw(row.institutionalOrHnw());
             lp.setRegionLocation(row.regionLocation());
-            lp.setIg(row.investmentGrade());
-            lp.setSp(row.sp());
-            lp.setMdy(row.mdy());
-            lp.setFitch(row.fitch());
+            lp.setInvestmentGrade(row.investmentGrade());
+            lp.setSpRating(row.spRating());
+            lp.setMoodysRating(row.moodysRating());
+            lp.setFitchRating(row.fitchRating());
             lp.setAum(row.aum());
             lp.setNav(row.nav());
-            lp.setPension(row.pension());
-            lp.setPensionFunded(row.pensionFunded());
-            lp.setUbsClassification(row.ubsClassification());
-            lp.setUbsDefaultAdvRate(row.ubsDefaultAdvRate());
-            lp.setUbsDefaultConcLimit(row.ubsDefaultConcLimit());
+            lp.setPensionAssets(row.pensionAssets());
+            lp.setFundingRatio(MoneyValues.ratio(row.fundingRatio()));
+            lp.setUbsLpCategory(row.ubsLpCategory());
+            lp.setUbsDefaultAdvanceRate(MoneyValues.fraction(row.ubsDefaultAdvanceRate()));
+            // A conc limit is a percent of total uncalled OR a dollar cap, not a fraction.
+            lp.setUbsDefaultConcentrationLimit(MoneyValues.concLimit(row.ubsDefaultConcentrationLimit()));
             lp.setNotes(row.notes());
             lpMasterRepo.save(lp);
             if (isNew) created++; else updated++;
         }
+        // Feed rows arrive in arbitrary order, so a child ingested ahead of its sponsor names a
+        // parent that did not yet exist. Resolve the whole batch's links once it has all landed.
+        lpMasterService.relinkParents();
         return new IngestSummary(created, updated, skipped);
     }
 }

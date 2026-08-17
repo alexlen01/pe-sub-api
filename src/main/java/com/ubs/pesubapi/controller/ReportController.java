@@ -44,7 +44,7 @@ public class ReportController {
                                                  @RequestParam(defaultValue = "true") boolean reclass,
                                                  @RequestParam(defaultValue = "true") boolean quality) {
         String requestId = UUID.randomUUID().toString();
-        try (MDC.MDCCloseable _ = MDC.putCloseable("reportRequestId", requestId)) {
+        try (MDC.MDCCloseable mdc = MDC.putCloseable("reportRequestId", requestId)) {
             log.info("collateral_pdf_request facilityId={} snapshotId={} detail={} includeLps={} catSummary={} coverageTrend={} concAnalysis={} reclass={} quality={} watermark={}",
                 facilityId, snapshotId, detail, includeLps, catSummary, coverageTrend, concAnalysis, reclass, quality,
                 watermark == null ? "null" : (watermark.isBlank() ? "blank" : "present"));
@@ -67,7 +67,7 @@ public class ReportController {
     public CollateralReportDto collateral(@PathVariable int facilityId,
                                           @RequestParam(required = false) Integer snapshotId) {
         String requestId = UUID.randomUUID().toString();
-        try (MDC.MDCCloseable _ = MDC.putCloseable("reportRequestId", requestId)) {
+        try (MDC.MDCCloseable mdc = MDC.putCloseable("reportRequestId", requestId)) {
             log.info("collateral_json_request facilityId={} snapshotId={}", facilityId, snapshotId);
             return reports.collateral(facilityId, snapshotId);
         }
@@ -77,7 +77,7 @@ public class ReportController {
     @GetMapping("/ear/{facilityId}")
     public List<EarPointDto> ear(@PathVariable int facilityId) {
         String requestId = UUID.randomUUID().toString();
-        try (MDC.MDCCloseable _ = MDC.putCloseable("reportRequestId", requestId)) {
+        try (MDC.MDCCloseable mdc = MDC.putCloseable("reportRequestId", requestId)) {
             log.info("ear_request facilityId={}", facilityId);
             return reports.earTrend(facilityId);
         }
@@ -87,7 +87,7 @@ public class ReportController {
     @GetMapping("/agent-banks")
     public List<AgentBankExposureDto> agentBanks() {
         String requestId = UUID.randomUUID().toString();
-        try (MDC.MDCCloseable _ = MDC.putCloseable("reportRequestId", requestId)) {
+        try (MDC.MDCCloseable mdc = MDC.putCloseable("reportRequestId", requestId)) {
             log.info("agent_bank_exposure_request");
             return reports.agentBankExposure();
         }
@@ -96,7 +96,7 @@ public class ReportController {
     @GetMapping("/concentration/{facilityId}")
     public Map<String, List<BbBreach>> concentration(@PathVariable int facilityId) {
         String requestId = UUID.randomUUID().toString();
-        try (MDC.MDCCloseable _ = MDC.putCloseable("reportRequestId", requestId)) {
+        try (MDC.MDCCloseable mdc = MDC.putCloseable("reportRequestId", requestId)) {
             log.info("concentration_request facilityId={}", facilityId);
             return Map.of("breaches", reports.concentrationBreaches(facilityId));
         }
@@ -107,7 +107,7 @@ public class ReportController {
     @GetMapping("/history")
     public List<ReportHistoryDto> history() {
         String requestId = UUID.randomUUID().toString();
-        try (MDC.MDCCloseable _ = MDC.putCloseable("reportRequestId", requestId)) {
+        try (MDC.MDCCloseable mdc = MDC.putCloseable("reportRequestId", requestId)) {
             log.info("report_history_list_request");
             return reports.history();
         }
@@ -116,7 +116,7 @@ public class ReportController {
     @PostMapping("/history")
     public ResponseEntity<ReportHistoryDto> recordHistory(@RequestBody CreateReportHistoryRequest req) {
         String requestId = UUID.randomUUID().toString();
-        try (MDC.MDCCloseable _ = MDC.putCloseable("reportRequestId", requestId)) {
+        try (MDC.MDCCloseable mdc = MDC.putCloseable("reportRequestId", requestId)) {
             log.info("report_history_create_request report={} facilityId={} format={}",
                 req == null ? null : req.report(),
                 req == null ? null : req.facilityId(),

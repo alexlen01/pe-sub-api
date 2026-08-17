@@ -58,9 +58,9 @@ class LpMasterClearIntegrationTest extends IntegrationTestBase {
         LpRecord record = new LpRecord();
         record.setFacilityId(facilityId);
         record.setInvestorName(LP);
-        record.setInvType("Pension");
-        record.setRegion("Latin America");
-        record.setCls("Rated");
+        record.setInvestorSegmentOrType("Pension");
+        record.setRegionLocation("Latin America");
+        record.setUbsLpCategory("Rated");
         record.setLpMasterId(masterId);
         recordId = lpRecordRepo.save(record).getId();
     }

@@ -14,6 +14,8 @@ import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
@@ -103,16 +105,16 @@ public class ShadowBbService {
         for (LpRecord lpRecord : lps) {
             ComputedLpRecord row = lpRecord.getId() != null ? byId.get(lpRecord.getId()) : null;
             if (row == null) continue;
-            lpRecord.setUbb(row.ubb());
-            lpRecord.setUbsExcessConc(fmtM(row.concExcessM()));
-            lpRecord.setAgentExcessConc(fmtM(row.agentExcessM()));
+            // The engine carries these in $millions at full precision; the columns are NUMERIC
+            // absolute dollars, so persist the exact figure rather than a rounded "$17.7M".
+            lpRecord.setUbsBorrowingBase(dollarsFromM(row.ubbM()));
+            lpRecord.setUbsExcessConcentration(dollarsFromM(row.concExcessM()));
+            lpRecord.setAgentExcessConcentration(dollarsFromM(row.agentExcessM()));
         }
     }
 
-    private static String fmtM(double m) {
-        if (m == 0) return "$0";
-        double abs = Math.abs(m);
-        return (m < 0 ? "-" : "") + "$" + String.format("%.1f", abs) + "M";
+    private static BigDecimal dollarsFromM(double millions) {
+        return BigDecimal.valueOf(millions * 1_000_000.0).setScale(2, RoundingMode.HALF_UP);
     }
 
     /** Outcome of a facility LP record deletion, for audit/notification messaging. */
@@ -147,13 +149,13 @@ public class ShadowBbService {
     private void refreshRanks(List<LpRecord> lps) {
         List<LpRecord> ordered = lps.stream()
             .sorted(Comparator
-                .comparingDouble((LpRecord lpRecord) -> BbCalculationService.moneyM(lpRecord.getUcNum(), lpRecord.getUc())).reversed()
+                .comparingDouble((LpRecord lpRecord) -> BbCalculationService.dollarM(lpRecord.getUncalledCapital())).reversed()
                 .thenComparing(lpRecord -> lpRecord.getInvestorName() == null ? "" : lpRecord.getInvestorName()))
             .toList();
 
         Map<Integer, Integer> ranksById = competitionRanks(ordered);
         for (LpRecord lpRecord : lps) {
-            lpRecord.setRank(lpRecord.getId() == null ? null : ranksById.get(lpRecord.getId()));
+            lpRecord.setLpRank(lpRecord.getId() == null ? null : ranksById.get(lpRecord.getId()));
         }
     }
 
@@ -168,7 +170,7 @@ public class ShadowBbService {
             lp -> lp.getId(),
             lpRecord -> {
                 int index = position.incrementAndGet();
-                double value = BbCalculationService.moneyM(lpRecord.getUcNum(), lpRecord.getUc());
+                double value = BbCalculationService.dollarM(lpRecord.getUncalledCapital());
                 if (index == 1 || Double.compare(value, state.previousValue) != 0) {
                     state.currentRank = index;
                     state.previousValue = value;

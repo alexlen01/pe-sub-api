@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -72,22 +73,22 @@ public class ReportService {
         }
 
         Map<String, double[]> agg = new LinkedHashMap<>();          // [count, uncalledM, ubbM]
-        Map<String, String>   rates = new HashMap<>();
+        Map<String, BigDecimal> rates = new HashMap<>();
         for (String tier : TIER_ORDER) agg.put(tier, new double[3]);
         for (ComputedLpRecord lpRecord : lps) {
-            String cls = lpRecord.cls() != null && !lpRecord.cls().isBlank() ? lpRecord.cls() : "Unclassified";
+            String cls = lpRecord.ubsLpCategory() != null && !lpRecord.ubsLpCategory().isBlank() ? lpRecord.ubsLpCategory() : "Unclassified";
             double[] a = agg.computeIfAbsent(cls, k -> new double[3]);
             a[0]++;
-            a[1] += BbCalculationService.parseMoney(lpRecord.uc());
+            a[1] += BbCalculationService.parseMoney(lpRecord.uncalledCapital());
             a[2] += lpRecord.ubbM();
-            rates.putIfAbsent(cls, lpRecord.rate());
+            rates.putIfAbsent(cls, lpRecord.ubsAdvanceRate());
         }
 
         List<CollateralReportDto.ClassBreakdownRow> breakdown = agg.entrySet().stream()
             .filter(e -> e.getValue()[0] > 0)
             .map(e -> new CollateralReportDto.ClassBreakdownRow(
                 e.getKey(), (int) e.getValue()[0], e.getValue()[1], e.getValue()[2],
-                rates.getOrDefault(e.getKey(), "0%")))
+                rates.getOrDefault(e.getKey(), BigDecimal.ZERO)))
             .toList();
 
         double totalEligibleUncalledM = lps.stream().mapToDouble(lp -> lp != null ? lp.uecM() : 0).sum();

@@ -29,7 +29,10 @@ class MatchingServiceTest {
         // Empty config → service falls back to documented defaults
         // (autoAccept 95, reviewQueue 80, jwWeight 0.6, levWeight 0.4).
         when(configService.get("matching_config")).thenReturn(Optional.empty());
-        service = new MatchingService(lpMasterRepo, configService, new ObjectMapper());
+        // Scoring is independent of the alias and parent-routing collaborators, which only
+        // participate in buildMatchQueueEntries; the tests below drive matchBest/analyze directly.
+        service = new MatchingService(lpMasterRepo, mock(LpAliasService.class),
+            mock(LpMasterResolutionService.class), configService, new ObjectMapper());
     }
 
     @Test
@@ -37,7 +40,6 @@ class MatchingServiceTest {
         var best = service.matchBestInList("Blue Owl GP Stakes V",
             List.of("Blue Owl GP Stakes V", "Ares Capital Corp"));
 
-        assertThat(best).isNotNull();
         assertThat(best.name()).isEqualTo("Blue Owl GP Stakes V");
         assertThat(best.score()).isEqualTo(100);
         assertThat(best.action()).isEqualTo("Accept");
@@ -48,20 +50,7 @@ class MatchingServiceTest {
         var best = service.matchBestInList("blue owl, gp stakes v",
             List.of("Blue Owl GP Stakes V"));
 
-        assertThat(best).isNotNull();
         assertThat(best.action()).isEqualTo("Accept");
-    }
-
-    @Test
-    void unrelatedNameIsNotAutoAccepted() {
-        // An unrelated name must never be auto-accepted. Per §6.4 it is still queued (no candidate
-        // is auto-rejected) — either as a low-confidence review or as a potential new LP.
-        var best = service.matchBestInList("Completely Different Fund",
-            List.of("Blue Owl GP Stakes V"));
-
-        assertThat(best).isNotNull();
-        assertThat(best.action()).isNotEqualTo("Accept");
-        assertThat(best.band()).isNotEqualTo(MatchingService.Band.AUTO_ACCEPT);
     }
 
     @Test
@@ -149,7 +138,6 @@ class MatchingServiceTest {
         var best = service.matchBestInList("Texas Teachers Ret. Sys.",
             List.of("Texas Teachers Retirement System", "Ares Capital Corp"));
 
-        assertThat(best).isNotNull();
         assertThat(best.name()).isEqualTo("Texas Teachers Retirement System");
         assertThat(best.score()).isEqualTo(100);
         assertThat(best.action()).isEqualTo("Accept");
@@ -162,8 +150,9 @@ class MatchingServiceTest {
 
     @Test
     void fourBandClassificationSpansAcceptReviewAndNoMatch() {
-        // One exact name (Accept) and one unrelated name (queued, not auto-accepted) confirm the
-        // band boundaries are wired through to MatchCandidate.band().
+        // One exact name (Accept) and one unrelated name (queued as a potential new LP — per §6.4
+        // no candidate is ever auto-rejected) confirm the band boundaries are wired through to
+        // MatchCandidate.band().
         var exact = service.matchBestInList("Ares Capital Corp",
             List.of("Ares Capital Corp", "Blue Owl GP Stakes V"));
         assertThat(exact.band()).isEqualTo(MatchingService.Band.AUTO_ACCEPT);

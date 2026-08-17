@@ -6,19 +6,17 @@ import com.ubs.pesubapi.dto.IngestResult;
 import com.ubs.pesubapi.entity.LpRecord;
 import com.ubs.pesubapi.entity.LpMaster;
 import com.ubs.pesubapi.entity.MatchQueueEntry;
-import com.ubs.pesubapi.repository.LpMasterRepository;
 import com.ubs.pesubapi.repository.LpRecordRepository;
 import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
 import com.ubs.pesubapi.util.AgentLpClassificationDeriver;
+import com.ubs.pesubapi.util.MoneyValues;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.text.DecimalFormat;
-import java.text.DecimalFormatSymbols;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -32,21 +30,28 @@ import java.util.stream.Collectors;
 public class LpIngestService {
 
     private static final Logger log = LoggerFactory.getLogger(LpIngestService.class);
-    private static final double MIN_FIELD_CONFIDENCE = 0.7;
 
     private final LpRecordRepository              lpRecordRepo;
-    private final LpMasterRepository        lpMasterRepo;
+    private final LpMasterResolutionService resolutionService;
+    private final LpAliasService            aliasService;
     private final MatchingService           matchingService;
     private final MatchQueueEntryRepository matchQueueRepo;
 
+    /** Minimum per-field extraction confidence before a value is written to an LP record. */
+    private final double minFieldConfidence;
+
     public LpIngestService(LpRecordRepository lpRecordRepo,
-                           LpMasterRepository lpMasterRepo,
+                           LpMasterResolutionService resolutionService,
+                           LpAliasService aliasService,
                            MatchingService matchingService,
-                           MatchQueueEntryRepository matchQueueRepo) {
+                           MatchQueueEntryRepository matchQueueRepo,
+                           @Value("${app.ingest.min-field-confidence}") double minFieldConfidence) {
         this.lpRecordRepo          = lpRecordRepo;
-        this.lpMasterRepo    = lpMasterRepo;
+        this.resolutionService = resolutionService;
+        this.aliasService      = aliasService;
         this.matchingService = matchingService;
         this.matchQueueRepo  = matchQueueRepo;
+        this.minFieldConfidence = minFieldConfidence;
     }
 
     public IngestResult ingest(int submissionId, IngestRequest request) {
@@ -169,6 +174,10 @@ public class LpIngestService {
         // collapsing them by investor name would drop a line's uncalled capital and understate the
         // borrowing base. This is why V1_4 removed the (facility_id, investor_name) unique constraint.
         List<LpRecord> toSave = new ArrayList<>();
+        // Queue entries whose resolved match id / ultimate parent were filled in below. The bulk
+        // clearMatchedLpIdsForFacility above ran as JPQL, so these are re-saved explicitly rather
+        // than left to dirty-checking against a persistence context that update bypassed.
+        List<MatchQueueEntry> resolvedEntries = new ArrayList<>();
         int skippedBlank = 0;
 
         // Insert every extracted row; no row is discarded regardless of match queue status.
@@ -188,17 +197,29 @@ public class LpIngestService {
             lpRecord.setFacilityId(facilityId);
             lpRecord.setInvestorName(name);
             lpRecord.setInvestorType("");
-            lpRecord.setInstVsHnw("Institutional");
+            lpRecord.setInstitutionalOrHnw("Institutional");
             // Missing source geography must remain missing. Do not synthesize a US domicile;
             // an accepted LP Master match or an extracted Region / Location may populate it.
-            lpRecord.setRegion("");
-            lpRecord.setCls("Eligible");
+            lpRecord.setRegionLocation("");
+            lpRecord.setUbsLpCategory("Eligible");
 
             // For accepted LP Master matches: pre-populate empty fields from LP Master
             // (stable identity, ratings, UBS credit profile) before extraction fields win.
+            // A matched child/feeder routes up its parent chain — see LpMasterResolutionService.
             if (isAccepted) {
-                final LpRecord lpRef = lpRecord;
-                lpMasterRepo.findByInvestorName(name).ifPresent(m -> applyLpMasterBaseline(lpRef, m));
+                var resolved = resolutionService.resolveByName(name).orElse(null);
+                if (resolved != null) {
+                    applyLpMasterBaseline(lpRecord, resolved);
+                    // The matched record — child, not parent — is the identity of record, so the
+                    // audit trail keeps naming the entity the agent listed.
+                    lpRecord.setLpMasterId(resolved.matched().getId());
+                    entry.setMatchedLpMasterId(resolved.matched().getId());
+                    entry.setMasterParent(resolved.routed()
+                        ? resolved.ultimateParent().getInvestorName() : null);
+                    resolvedEntries.add(entry);
+                    // Phase 5: the accepted agent string becomes an exact match next upload.
+                    aliasService.remember(entry.getExtractedName(), resolved.matched().getId());
+                }
             }
 
             lpRecord.setSourceSeq(rowIndex);
@@ -212,6 +233,7 @@ public class LpIngestService {
         }
 
         lpRecordRepo.saveAll(toSave);
+        if (!resolvedEntries.isEmpty()) matchQueueRepo.saveAll(resolvedEntries);
 
         // Reconciliation: extractedRows == persisted + skippedBlank. Any shortfall is now a real,
         // logged fact rather than a silent name-collapse (the "52 processed, 47 persisted" bug).
@@ -239,13 +261,9 @@ public class LpIngestService {
     }
 
     private void applyExtractedJsonRow(LpRecord lpRecord, JsonNode row) {
-        String aum     = textOrNull(row, "aum");
-        String commit  = textOrNull(row, "commit");
-        String uncalled = textOrNull(row, "uncalled");
         String rate    = textOrNull(row, "agentRate");
         String conc    = textOrNull(row, "agentConc");
         String parent  = textOrNull(row, "parent");
-        String fundSleeve = textOrNull(row, "fundSleeve");
         String nav     = textOrNull(row, "nav");
         String sp      = textOrNull(row, "sp");
         String mdy     = textOrNull(row, "moodys");
@@ -274,55 +292,53 @@ public class LpIngestService {
         String agentBB   = textOrNull(row, "agentBB");
         if (agentBB == null) agentBB = textOrNull(row, "agentBBFmt");
 
-        if (aum      != null) lpRecord.setAum(aum);
-        if (commit   != null) lpRecord.setCapCommit(commit);
-        if (uncalled != null) lpRecord.setUc(uncalled);
-        if (rate     != null) lpRecord.setAgentRate(rate);
-        if (conc     != null) lpRecord.setAgentConc(conc);
-        if (parent   != null) lpRecord.setParent(parent);
-        if (fundSleeve != null) lpRecord.setFundSleeve(fundSleeve);
-        if (nav      != null) lpRecord.setNav(nav);
-        if (sp       != null) lpRecord.setSp(sp);
-        if (mdy      != null) lpRecord.setMdy(mdy);
-        if (fitch    != null) lpRecord.setFitch(fitch);
+        // AUM is a VARCHAR display field: keep the agent's reported text verbatim, falling back to
+        // the formatted numeric for rows that only carry the precise figure.
+        String aumText = textOrNull(row, "aum");
+        if (aumText == null) aumText = MoneyValues.display(moneyDollars(row, "aumNum", "aum"));
+
+        // Precise numeric money (C2): extract exact dollar amounts from JSON or parse display strings
+        BigDecimal commNum     = moneyDollars(row, "commitNum",  "commit");
+        BigDecimal ucNum       = moneyDollars(row, "uncalledNum", "uncalled");
+        BigDecimal abbNum      = moneyDollars(row, "agentBBNum", "agentBB");
+
+        if (aumText     != null) lpRecord.setAum(aumText);
+        if (commNum     != null) lpRecord.setCapitalCommitment(commNum);
+        if (ucNum       != null) lpRecord.setUncalledCapital(ucNum);
+        if (rate        != null) lpRecord.setAgentAdvanceRate(MoneyValues.fraction(rate));
+        if (conc        != null) lpRecord.setAgentConcentrationLimit(MoneyValues.decimal(conc));
+        if (parent      != null) lpRecord.setParent(parent);
+        if (nav         != null) lpRecord.setNav(nav);
+        if (sp       != null) lpRecord.setSpRating(sp);
+        if (mdy      != null) lpRecord.setMoodysRating(mdy);
+        if (fitch    != null) lpRecord.setFitchRating(fitch);
         if (investorType != null) lpRecord.setInvestorType(investorType);
         if (agentCls != null) {
-            lpRecord.setAgentCls(agentCls);
-            lpRecord.setAgentClsSource(agentClsSource);
+            lpRecord.setAgentLpCategory(agentCls);
+            lpRecord.setAgentLpCategorySource(agentClsSource);
         } else {
             // Agent BB carried no LP Category column for this row: derive it from the investor
             // type and any ratings so Shadow BB has a category to work with, marking the source
             // DERIVED so the UI can distinguish it from an extracted or user-edited value.
             String derivedAgentCls = AgentLpClassificationDeriver.derive(
                 lpRecord.getInvestorType(),
-                lpRecord.getSp(), lpRecord.getMdy(), lpRecord.getFitch(),
+                lpRecord.getSpRating(), lpRecord.getMoodysRating(), lpRecord.getFitchRating(),
                 null, null,
                 notes != null ? notes : lpRecord.getNotes(),
                 false);
             if (derivedAgentCls != null) {
-                lpRecord.setAgentCls(derivedAgentCls);
-                lpRecord.setAgentClsSource("DERIVED");
+                lpRecord.setAgentLpCategory(derivedAgentCls);
+                lpRecord.setAgentLpCategorySource("DERIVED");
             }
         }
-        if (agentBB  != null) lpRecord.setAbb(agentBB);
-        if (calledCap  != null) lpRecord.setCalledCap(calledCap);
-        if (pctCalled  != null) lpRecord.setPctCalled(pctCalled);
-        if (pctUncalled != null) lpRecord.setPctUncalled(pctUncalled);
-        if (pctCapCommit    != null) lpRecord.setPctCapCommit(pctCapCommit);
-        if (agentExcessConc != null) lpRecord.setAgentExcessConc(agentExcessConc);
+        if (abbNum   != null) lpRecord.setAgentBorrowingBase(abbNum);
+        if (calledCap  != null) lpRecord.setCalledCapital(MoneyValues.dollars(calledCap));
+        if (pctCalled  != null) lpRecord.setPctLpCalled(MoneyValues.fraction(pctCalled));
+        if (pctUncalled != null) lpRecord.setPctOfFundUncalled(MoneyValues.fraction(pctUncalled));
+        if (pctCapCommit    != null) lpRecord.setPctOfFundCommitments(MoneyValues.fraction(pctCapCommit));
+        if (agentExcessConc != null) lpRecord.setAgentExcessConcentration(MoneyValues.dollars(agentExcessConc));
         if (notes     != null) lpRecord.setNotes(notes);
-        lpRecord.setTf(isTransferee(row));
-
-        // Precise numeric money (C2): prefer the exact value carried in the stored JSON; fall back
-        // to parsing the display string for extractions saved before the numeric fields existed.
-        BigDecimal ucNum   = moneyDollars(row, "uncalledNum", "uncalled");
-        BigDecimal commNum  = moneyDollars(row, "commitNum",  "commit");
-        BigDecimal aumNum  = moneyDollars(row, "aumNum",     "aum");
-        BigDecimal abbNum  = moneyDollars(row, "agentBBNum", "agentBB");
-        if (ucNum   != null) lpRecord.setUcNum(ucNum);
-        if (commNum != null) lpRecord.setCapCommitNum(commNum);
-        if (aumNum  != null) lpRecord.setAumNum(aumNum);
-        if (abbNum  != null) lpRecord.setAbbNum(abbNum);
+        lpRecord.setTransferee(isTransferee(row));
 
         lpRecord.setUpdatedAt(LocalDateTime.now());
     }
@@ -377,49 +393,57 @@ public class LpIngestService {
      * unconditionally — they are never set by extraction, so LP Master is the only source
      * of pre-populated credit decisions for this submission cycle.
      */
-    private void applyLpMasterBaseline(LpRecord lpRecord, LpMaster master) {
+    /**
+     * Seed a new facility LP record from an accepted LP Master match.
+     *
+     * <p>Every field resolves child-first: the matched record's own value wins, and only where it is
+     * absent does an ancestor supply one ({@link LpMasterResolutionService.Resolution#text} and
+     * {@code value} walk the chain). Because credit standing sits at the sponsor level, a feeder
+     * with no rating of its own inherits the parent's — which is the whole point of routing.
+     *
+     * <p>SPV status is read from the matched record directly, not the chain: it describes the entity
+     * the agent listed, and a sponsor being an operating company says nothing about its feeder.
+     */
+    private void applyLpMasterBaseline(LpRecord lpRecord, LpMasterResolutionService.Resolution r) {
+        LpMaster matched = r.matched();
+
         // Stable identity — override defaults set at new-record creation time
-        if (master.getInvestorType() != null && !master.getInvestorType().isBlank()
-                && (lpRecord.getInvestorType() == null || lpRecord.getInvestorType().isBlank())) {
-            lpRecord.setInvestorType(master.getInvestorType());
+        if (lpRecord.getInvestorType() == null || lpRecord.getInvestorType().isBlank()) {
+            r.text(LpMaster::getInvestorType).ifPresent(lpRecord::setInvestorType);
         }
-        if (master.getInstVsHnw() != null && !master.getInstVsHnw().isBlank()
-                && (lpRecord.getInstVsHnw() == null || lpRecord.getInstVsHnw().isBlank())) {
-            lpRecord.setInstVsHnw(master.getInstVsHnw());
+        if (lpRecord.getInstitutionalOrHnw() == null || lpRecord.getInstitutionalOrHnw().isBlank()) {
+            r.text(LpMaster::getInstitutionalOrHnw).ifPresent(lpRecord::setInstitutionalOrHnw);
         }
-        if (master.getRegion() != null && !master.getRegion().isBlank()
-                && (lpRecord.getRegion() == null || lpRecord.getRegion().isBlank())) {
-            lpRecord.setRegion(master.getRegion());
+        if (lpRecord.getRegionLocation() == null || lpRecord.getRegionLocation().isBlank()) {
+            r.text(LpMaster::getRegionLocation).ifPresent(lpRecord::setRegionLocation);
         }
-        lpRecord.setSpv(master.isSpv());
-        lpRecord.setHighQty(master.isHighQty());
-        lpRecord.setIg(master.isIg());
-        if (master.getParent() != null && !master.getParent().isBlank() && lpRecord.getParent() == null) {
-            lpRecord.setParent(master.getParent());
+        lpRecord.setSpv(matched.isSpv());
+        lpRecord.setHighQuality(r.flag(LpMaster::isHighQuality));
+        lpRecord.setInvestmentGrade(r.flag(LpMaster::isInvestmentGrade));
+        // Prefer the resolved ultimate parent's name over the matched row's own parent string —
+        // it is the entity whose credit profile the record now carries.
+        if (lpRecord.getParent() == null) {
+            if (r.routed()) lpRecord.setParent(r.ultimateParent().getInvestorName());
+            else r.text(LpMaster::getParent).ifPresent(lpRecord::setParent);
         }
 
-        // Ratings — apply when LP Master has a value and the facility record is still blank
-        if (!master.getSp().isBlank()    && lpRecord.getSp().isBlank())    lpRecord.setSp(master.getSp());
-        if (!master.getMdy().isBlank()   && lpRecord.getMdy().isBlank())   lpRecord.setMdy(master.getMdy());
-        if (!master.getFitch().isBlank() && lpRecord.getFitch().isBlank()) lpRecord.setFitch(master.getFitch());
+        // Ratings — apply when the chain has a value and the facility record is still blank
+        if (lpRecord.getSpRating().isBlank())     r.text(LpMaster::getSpRating).ifPresent(lpRecord::setSpRating);
+        if (lpRecord.getMoodysRating().isBlank()) r.text(LpMaster::getMoodysRating).ifPresent(lpRecord::setMoodysRating);
+        if (lpRecord.getFitchRating().isBlank())  r.text(LpMaster::getFitchRating).ifPresent(lpRecord::setFitchRating);
 
-        // Financial scale — fill nulls from LP Master
-        if (master.getAum()          != null && lpRecord.getAum()          == null) lpRecord.setAum(master.getAum());
-        if (master.getNav()          != null && lpRecord.getNav()          == null) lpRecord.setNav(master.getNav());
-        if (master.getPension()      != null && lpRecord.getPension()      == null) lpRecord.setPension(master.getPension());
-        if (master.getPensionFunded()!= null && lpRecord.getPensionFunded()== null) lpRecord.setPensionFunded(master.getPensionFunded());
+        // Financial scale — fill nulls from the chain. These are VARCHAR on both sides, so the
+        // copy is a plain assignment.
+        if (lpRecord.getAum()           == null) r.value(LpMaster::getAum).ifPresent(lpRecord::setAum);
+        if (lpRecord.getNav()           == null) r.value(LpMaster::getNav).ifPresent(lpRecord::setNav);
+        if (lpRecord.getPensionAssets() == null) r.value(LpMaster::getPensionAssets).ifPresent(lpRecord::setPensionAssets);
+        if (lpRecord.getFundingRatio()  == null) r.value(LpMaster::getFundingRatio).ifPresent(lpRecord::setFundingRatio);
 
         // UBS credit profile — always apply; these fields are never set by extraction so
         // LP Master is the sole pre-populated source ahead of the credit officer's review
-        if (master.getUbsClassification() != null && !master.getUbsClassification().isBlank()) {
-            lpRecord.setCls(master.getUbsClassification());
-        }
-        if (master.getUbsDefaultAdvRate() != null && !master.getUbsDefaultAdvRate().isBlank()) {
-            lpRecord.setUbsRate(master.getUbsDefaultAdvRate());
-        }
-        if (master.getUbsDefaultConcLimit() != null && !master.getUbsDefaultConcLimit().isBlank()) {
-            lpRecord.setUbsConc(master.getUbsDefaultConcLimit());
-        }
+        r.text(LpMaster::getUbsLpCategory).ifPresent(lpRecord::setUbsLpCategory);
+        r.value(LpMaster::getUbsDefaultAdvanceRate).ifPresent(lpRecord::setUbsAdvanceRate);
+        r.value(LpMaster::getUbsDefaultConcentrationLimit).ifPresent(lpRecord::setUbsConcentrationLimit);
     }
 
     private String textOrNull(JsonNode node, String field) {
@@ -462,13 +486,12 @@ public class LpIngestService {
         BigDecimal rate = valueIfValid(row.agentRate());
         BigDecimal conc = valueIfValid(row.concentrationLimit());
 
-        // Dual-write: keep the formatted string for display and store the precise value (C2) so
-        // the BB engine reads exact dollars instead of re-parsing a rounded "$12.3M".
-        if (aum  != null) { lpRecord.setAum(formatMoney(aum));  lpRecord.setAumNum(aum);       changed.add("aum"); }
-        if (comm != null) { lpRecord.setCapCommit(formatMoney(comm)); lpRecord.setCapCommitNum(comm); changed.add("capCommit"); }
-        if (uc   != null) { lpRecord.setUc(formatMoney(uc));    lpRecord.setUcNum(uc);         changed.add("uc"); }
-        if (rate != null) { lpRecord.setAgentRate(formatRate(rate));   changed.add("agentRate"); }
-        if (conc != null) { lpRecord.setAgentConc(formatRate(conc));   changed.add("agentConc"); }
+        // Store precise numeric values
+        if (aum  != null) { lpRecord.setAum(MoneyValues.shortDisplay(aum)); changed.add("aum"); }
+        if (comm != null) { lpRecord.setCapitalCommitment(comm); changed.add("capCommit"); }
+        if (uc   != null) { lpRecord.setUncalledCapital(uc);         changed.add("uc"); }
+        if (rate != null) { lpRecord.setAgentAdvanceRate(MoneyValues.fraction(rate));   changed.add("agentRate"); }
+        if (conc != null) { lpRecord.setAgentConcentrationLimit(conc);   changed.add("agentConcLimit"); }
 
         String sp       = strValueIfValid(row.sp());
         String mdy      = strValueIfValid(row.mdy());
@@ -481,20 +504,20 @@ public class LpIngestService {
         String notes    = strValueIfValid(row.notes());
         String transferee = strValueIfValid(row.transferee());
 
-        if (sp       != null) { lpRecord.setSp(sp);               changed.add("sp"); }
-        if (mdy      != null) { lpRecord.setMdy(mdy);             changed.add("mdy"); }
-        if (fitch    != null) { lpRecord.setFitch(fitch);         changed.add("fitch"); }
+        if (sp       != null) { lpRecord.setSpRating(sp);               changed.add("sp"); }
+        if (mdy      != null) { lpRecord.setMoodysRating(mdy);             changed.add("mdy"); }
+        if (fitch    != null) { lpRecord.setFitchRating(fitch);         changed.add("fitch"); }
         if (nav      != null) { lpRecord.setNav(nav);             changed.add("nav"); }
         if (investorType != null) { lpRecord.setInvestorType(investorType); changed.add("investorType"); }
         if (agentCls != null) {
-            lpRecord.setAgentCls(agentCls);
-            lpRecord.setAgentClsSource(agentClsSource != null ? agentClsSource : "USER_EDITED");
+            lpRecord.setAgentLpCategory(agentCls);
+            lpRecord.setAgentLpCategorySource(agentClsSource != null ? agentClsSource : "USER_EDITED");
             changed.add("agentCls");
         }
         if (parent   != null) { lpRecord.setParent(parent);       changed.add("parent"); }
         if (notes    != null) { lpRecord.setNotes(notes);         changed.add("notes"); }
         if (transferee != null) {
-            lpRecord.setTf(isTruthyFlag(transferee));
+            lpRecord.setTransferee(isTruthyFlag(transferee));
             changed.add("tf");
         }
 
@@ -504,7 +527,7 @@ public class LpIngestService {
 
     private String strValueIfValid(IngestRequest.StringField f) {
         return (f != null && f.value() != null && !f.value().isBlank()
-                && f.confidence() >= MIN_FIELD_CONFIDENCE) ? f.value() : null;
+                && f.confidence() >= minFieldConfidence) ? f.value() : null;
     }
 
     private boolean isTruthyFlag(String value) {
@@ -516,25 +539,8 @@ public class LpIngestService {
     }
 
     private BigDecimal valueIfValid(IngestRequest.DecimalField f) {
-        return (f != null && f.value() != null && f.confidence() >= MIN_FIELD_CONFIDENCE)
+        return (f != null && f.value() != null && f.confidence() >= minFieldConfidence)
             ? f.value() : null;
-    }
-
-    // Full-precision dollar display: thousands grouping, every digit kept, no unit
-    // abbreviation — "$1,999,999" must never render (or persist) as "$2.0M".
-    private String formatMoney(BigDecimal v) {
-        DecimalFormat money = new DecimalFormat("#,##0.##", DecimalFormatSymbols.getInstance(Locale.US));
-        money.setMaximumFractionDigits(20);
-        return "$" + money.format(v);
-    }
-
-    // Rate display convention: exactly one decimal ("75.0%", "5.6%") — never a bare
-    // integer percent and never more than one decimal.
-    private String formatRate(BigDecimal v) {
-        BigDecimal pct = v.compareTo(BigDecimal.ONE) < 0
-            ? v.multiply(BigDecimal.valueOf(100))
-            : v;
-        return pct.setScale(1, RoundingMode.HALF_UP).toPlainString() + "%";
     }
 
     private List<String> reviewReasons(IngestRequest.ExtractedLpRow row,

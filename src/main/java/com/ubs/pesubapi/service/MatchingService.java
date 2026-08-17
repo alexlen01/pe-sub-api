@@ -2,6 +2,7 @@ package com.ubs.pesubapi.service;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import com.ubs.pesubapi.entity.LpMaster;
 import com.ubs.pesubapi.entity.MatchQueueEntry;
 import com.ubs.pesubapi.repository.LpMasterRepository;
 import org.slf4j.Logger;
@@ -17,12 +18,18 @@ public class MatchingService {
 
     private static final Logger log = LoggerFactory.getLogger(MatchingService.class);
 
-    private final LpMasterRepository lpMasterRepo;
+    private final LpMasterRepository        lpMasterRepo;
+    private final LpAliasService            aliasService;
+    private final LpMasterResolutionService resolutionService;
     private final ConfigService      configService;
     private final ObjectMapper       mapper;
 
-    public MatchingService(LpMasterRepository lpMasterRepo, ConfigService configService, ObjectMapper mapper) {
+    public MatchingService(LpMasterRepository lpMasterRepo, LpAliasService aliasService,
+                           LpMasterResolutionService resolutionService,
+                           ConfigService configService, ObjectMapper mapper) {
         this.lpMasterRepo  = lpMasterRepo;
+        this.aliasService  = aliasService;
+        this.resolutionService = resolutionService;
         this.configService = configService;
         this.mapper        = mapper;
     }
@@ -227,37 +234,78 @@ public class MatchingService {
     public List<MatchQueueEntry> buildMatchQueueEntries(
             int submissionId, int facilityId, JsonNode extractedLps) {
         if (extractedLps == null || !extractedLps.isArray()) return new ArrayList<>();
-        List<String> masterNames = lpMasterRepo.findAllInvestorNames();
+
+        // Load the master rows once. Names drive scoring; the full rows drive parent/child routing
+        // (Phase 3) without a query per ancestor inside the parallel section below.
+        List<LpMaster> masterRows = lpMasterRepo.findAll();
+        Map<Integer, LpMaster> masterById   = new HashMap<>();
+        Map<String,  LpMaster> masterByName = new HashMap<>();
+        for (LpMaster m : masterRows) {
+            masterById.put(m.getId(), m);
+            masterByName.putIfAbsent(m.getInvestorName(), m);
+        }
+        List<String> masterNames = masterRows.stream()
+            .map(LpMaster::getInvestorName).sorted().toList();
         Prepared prepared = prepare(masterNames);
 
         // Collect non-blank rows using the extraction row's stable sequence id when present.
         // Multi-tab workbooks (Audax VII, CCP VII, etc.) restart worksheet row numbers on each tab,
         // so raw rowIndex is not unique and cannot be the queue/order key. The API assigns `id`
         // sequentially across the combined LP Data Extract array, preserving tab order + row order.
-        record Row(int rowIndex, String agentName) {}
+        // `agentParent` is the sponsor the agent document itself named, kept for the Parent/Sponsor
+        // signal on the Match Analysis panel.
+        record Row(int rowIndex, String agentName, String agentParent) {}
         List<Row> rows = new ArrayList<>();
         int index = 0;
         for (JsonNode lpNode : extractedLps) {
             String agentName = lpNode.path("name").asString("").trim();
+            String agentParent = lpNode.path("parent").asString("").trim();
             int rowIndex = lpNode.path("id").asInt(lpNode.path("rowIndex").asInt(index));
-            if (!agentName.isBlank()) rows.add(new Row(rowIndex, agentName));
+            if (!agentName.isBlank()) rows.add(new Row(rowIndex, agentName, agentParent));
             index++;
         }
 
-        // Fuzzy matching is CPU-bound and each row is independent; Prepared is immutable, so
-        // scoring rows in parallel is safe. Persistence stays out of the parallel section.
+        // Phase 5 feedback loop: strings an analyst has already accepted resolve exactly, bypassing
+        // fuzzy scoring entirely — but still running the same parent routing as a fuzzy hit.
+        Map<String, Integer> aliasHits =
+            aliasService.lookupAll(rows.stream().map(Row::agentName).toList());
+
+        // Fuzzy matching is CPU-bound and each row is independent; Prepared is immutable and the
+        // master maps are read-only from here, so scoring rows in parallel is safe. Persistence
+        // stays out of the parallel section.
         Config cfg = prepared.cfg;
         List<MatchQueueEntry> entries = new ArrayList<>(rows.parallelStream()
             .map(row -> {
+                LpMaster aliased = masterById.get(aliasHits.get(LpAliasService.key(row.agentName())));
+
                 // Full match analysis drives the decision (§6.4) and the persisted breakdown (§6.5).
                 MatchAnalysis analysis = masterNames.isEmpty() ? null : analyze(row.agentName(), prepared, 5);
                 ScoredCandidate top = (analysis != null && !analysis.candidates().isEmpty())
                     ? analysis.candidates().getFirst() : null;
-                Band   band        = top != null ? top.band() : Band.NO_MATCH;
-                boolean isNew      = band == Band.NO_MATCH;          // below noMatch → potential new LP
-                String matchedName = (top != null && !isNew) ? top.name() : null;      // review/accept bands show a candidate
-                int    matchScore  = top != null ? top.combined() : 0;
-                String decision    = band == Band.AUTO_ACCEPT ? "Accepted" : "Pending";
+
+                Band   band;
+                String matchedName;
+                int    matchScore;
+                boolean isNew;
+                if (aliased != null) {
+                    band        = Band.AUTO_ACCEPT;
+                    matchedName = aliased.getInvestorName();
+                    matchScore  = 100;
+                    isNew       = false;
+                } else {
+                    band        = top != null ? top.band() : Band.NO_MATCH;
+                    isNew       = band == Band.NO_MATCH;   // below noMatch → potential new LP
+                    matchedName = (top != null && !isNew) ? top.name() : null;  // review/accept bands show a candidate
+                    matchScore  = top != null ? top.combined() : 0;
+                }
+                String decision = band == Band.AUTO_ACCEPT ? "Accepted" : "Pending";
+
+                // Route the proposed match to its ultimate entity so Review Matches can show which
+                // profile an Accept would actually apply — before anything is committed.
+                LpMaster proposed = aliased != null ? aliased
+                    : (matchedName != null ? masterByName.get(matchedName) : null);
+                LpMasterResolutionService.Resolution resolution =
+                    proposed != null ? resolutionService.resolveIn(proposed, masterById) : null;
 
                 MatchQueueEntry entry = new MatchQueueEntry();
                 entry.setSubmissionId(submissionId);
@@ -268,13 +316,24 @@ public class MatchingService {
                 entry.setMatchScore(matchScore);
                 entry.setNew(isNew);
                 entry.setDecision(decision);
-                entry.setReasons(queueReasons(band, matchScore, cfg));
+                entry.setAgentParent(row.agentParent().isBlank() ? null : row.agentParent());
+                if (resolution != null) {
+                    entry.setMatchedLpMasterId(resolution.matched().getId());
+                    entry.setMasterParent(resolution.routed()
+                        ? resolution.ultimateParent().getInvestorName() : null);
+                }
+                entry.setReasons(aliased != null
+                    ? List.of("Known alias — previously accepted against '" + matchedName + "'")
+                    : queueReasons(band, matchScore, cfg));
                 if (analysis != null) entry.setMatchDetails(mapper.valueToTree(analysis));
                 // DEBUG identifies each queue entry so a persistence failure on save is
                 // attributable to a specific extracted row in lower environments.
                 log.debug("Match queue entry built: submission={} rowIndex={} extractedName='{}' "
-                        + "matchedName='{}' score={} band={} decision={}",
-                    submissionId, row.rowIndex(), row.agentName(), matchedName, matchScore, band, decision);
+                        + "matchedName='{}' score={} band={} decision={} alias={} ultimateParent='{}'",
+                    submissionId, row.rowIndex(), row.agentName(), matchedName, matchScore, band,
+                    decision, aliased != null,
+                    resolution != null && resolution.routed()
+                        ? resolution.ultimateParent().getInvestorName() : null);
                 return entry;
             })
             .toList());

@@ -11,6 +11,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.math.BigDecimal;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -52,11 +54,11 @@ class LpMasterWriteBackIntegrationTest extends IntegrationTestBase {
                 "type": "Institutional", "region": "North America",
                 "ig": true, "cls": "Rated Investor",
                 "sp": "AAA", "mdy": "Aaa", "fitch": "",
-                "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
+                "aum": "$500.0B", "nav": null, "pensionAssets": null, "fundingRatio": null,
                 "capCommit": "$20.0M", "pctCapCommit": null, "calledCap": "$14.0M",
                 "uc": "$20.0M", "pctUncalled": null, "pctCalled": null,
-                "agentConc": "7.5%", "ubsConc": "7.5%", "ubsRate": "90%",
-                "agentRate": "95.0%", "abb": "$19.0M",
+                "agentConc": "7.5%", "ubsConc": "7.5%", "ubsRate": 0.90,
+                "agentRate": 0.95, "abb": "$19.0M",
                 "inc": true, "rcl": false, "notes": null
               }]
             }
@@ -73,9 +75,9 @@ class LpMasterWriteBackIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isCreated());
 
         LpMaster m = lpMasterRepo.findByInvestorName(LP).orElseThrow();
-        assertThat(m.getUbsClassification()).isEqualTo("Rated Investor");
-        assertThat(m.getUbsDefaultAdvRate()).isEqualTo("90%");     // regression: previously dropped
-        assertThat(m.getUbsDefaultConcLimit()).isEqualTo("7.5%");
+        assertThat(m.getUbsLpCategory()).isEqualTo("Rated Investor");
+        assertThat(m.getUbsDefaultAdvanceRate()).isEqualByComparingTo("0.90");   // regression: previously dropped
+        assertThat(m.getUbsDefaultConcentrationLimit()).isEqualByComparingTo("7.5");  // conc limits stay percent-scaled
     }
 
     // ── Path 2: Re-Run (no body) re-syncs LP Master from the persisted LP records ──────
@@ -89,8 +91,8 @@ class LpMasterWriteBackIntegrationTest extends IntegrationTestBase {
 
         // Simulate LP Master drifting out of sync (e.g. a stale earlier value).
         LpMaster m = lpMasterRepo.findByInvestorName(LP).orElseThrow();
-        m.setUbsDefaultAdvRate("1%");
-        m.setUbsDefaultConcLimit("1%");
+        m.setUbsDefaultAdvanceRate(new BigDecimal("0.01"));
+        m.setUbsDefaultConcentrationLimit(BigDecimal.ONE);
         lpMasterRepo.save(m);
 
         // A Re-Run carries no payload — it only recomputes. It must still refresh LP Master.
@@ -98,8 +100,8 @@ class LpMasterWriteBackIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isCreated());
 
         LpMaster refreshed = lpMasterRepo.findByInvestorName(LP).orElseThrow();
-        assertThat(refreshed.getUbsDefaultAdvRate()).isEqualTo("90%");
-        assertThat(refreshed.getUbsDefaultConcLimit()).isEqualTo("7.5%");
+        assertThat(refreshed.getUbsDefaultAdvanceRate()).isEqualByComparingTo("0.90");
+        assertThat(refreshed.getUbsDefaultConcentrationLimit()).isEqualByComparingTo("7.5");
     }
 
     // ── Path 3: Manual LP Category & Rate save flush writes LP Master ─────────────────
@@ -132,9 +134,9 @@ class LpMasterWriteBackIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.updated").value(1));
 
         LpMaster m = lpMasterRepo.findByInvestorName(LP).orElseThrow();
-        assertThat(m.getUbsClassification()).isEqualTo("Other Institutional");
-        assertThat(m.getUbsDefaultAdvRate()).isEqualTo("50%");
-        assertThat(m.getUbsDefaultConcLimit()).isEqualTo("5%");
+        assertThat(m.getUbsLpCategory()).isEqualTo("Other Institutional");
+        assertThat(m.getUbsDefaultAdvanceRate()).isEqualByComparingTo("0.50");
+        assertThat(m.getUbsDefaultConcentrationLimit()).isEqualByComparingTo("5");
     }
 
     @Test
@@ -163,7 +165,7 @@ class LpMasterWriteBackIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isOk());
 
         LpMaster m = lpMasterRepo.findByInvestorName(LP).orElseThrow();
-        assertThat(m.getUbsClassification()).isEqualTo("Rated Investor");   // unchanged
-        assertThat(m.getUbsDefaultAdvRate()).isEqualTo("90%");
+        assertThat(m.getUbsLpCategory()).isEqualTo("Rated Investor");   // unchanged
+        assertThat(m.getUbsDefaultAdvanceRate()).isEqualByComparingTo("0.90");
     }
 }

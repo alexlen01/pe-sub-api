@@ -3,6 +3,7 @@ package com.ubs.pesubapi.controller;
 import com.ubs.pesubapi.entity.MatchQueueEntry;
 import com.ubs.pesubapi.repository.FacilityRepository;
 import com.ubs.pesubapi.repository.MatchQueueEntryRepository;
+import com.ubs.pesubapi.service.LpMasterResolutionService;
 import com.ubs.pesubapi.service.MatchingService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
@@ -26,15 +27,37 @@ public class MatchingController {
     private static final Logger log = LoggerFactory.getLogger(MatchingController.class);
 
     private final MatchingService            matchingService;
+    private final LpMasterResolutionService  resolutionService;
     private final MatchQueueEntryRepository  matchQueueRepo;
     private final FacilityRepository         facilityRepo;
 
     public MatchingController(MatchingService matchingService,
+                               LpMasterResolutionService resolutionService,
                                MatchQueueEntryRepository matchQueueRepo,
                                FacilityRepository facilityRepo) {
         this.matchingService = matchingService;
+        this.resolutionService = resolutionService;
         this.matchQueueRepo  = matchQueueRepo;
         this.facilityRepo    = facilityRepo;
+    }
+
+    /**
+     * Re-run parent/child routing after a manual Search/Override so the Ultimate Parent shown on
+     * Review Matches reflects the analyst's selection, not the algorithm's original candidate
+     * (LP mapping design, Phase 4). Clearing the override falls back to the proposed match.
+     */
+    private void applyOverrideRouting(MatchQueueEntry entry) {
+        String effectiveName = entry.getMasterNameOverride() != null
+            ? entry.getMasterNameOverride() : entry.getMatchedLpName();
+        var resolution = resolutionService.resolveByName(effectiveName).orElse(null);
+        if (resolution == null) {
+            entry.setMatchedLpMasterId(null);
+            entry.setMasterParent(null);
+            return;
+        }
+        entry.setMatchedLpMasterId(resolution.matched().getId());
+        entry.setMasterParent(resolution.routed()
+            ? resolution.ultimateParent().getInvestorName() : null);
     }
 
     // ── POST /api/matching/test ───────────────────────────────────────────────
@@ -69,12 +92,35 @@ public class MatchingController {
                     .ifPresent(f -> facilityNames.put(nonNullFacilityId, f.getName()));
             });
 
+        // Parent routing is resolved on read, not read back from the stored column, for two
+        // reasons: entries written before routing existed carry no master parent at all, and an
+        // analyst may have edited the hierarchy since the queue was built. Resolving here means
+        // "Ultimate Parent (To Be Applied)" always states what an Accept would actually apply —
+        // and a genuinely null answer unambiguously means "the match is the ultimate entity".
+        // One batched load of the master rows serves the whole queue.
+        List<String> matchedNames = entries.stream()
+            .map(MatchingController::effectiveMasterName)
+            .filter(Objects::nonNull)
+            .distinct()
+            .toList();
+        Map<String, LpMasterResolutionService.Resolution> routing =
+            resolutionService.resolveAllByName(matchedNames);
+
         List<MatchQueueItemDto> dtos = entries.stream()
-            .map(e -> toDto(e, facilityNames.getOrDefault(e.getFacilityId(), "—")))
+            .map(e -> toDto(e, facilityNames.getOrDefault(e.getFacilityId(), "—"), routing))
             .toList();
 
-        log.info("Match queue listed submissionId={} count={}", submissionId, dtos.size());
+        log.info("Match queue listed submissionId={} count={} routed={}",
+            submissionId, dtos.size(), routing.values().stream().filter(r -> r.routed()).count());
         return ResponseEntity.ok(dtos);
+    }
+
+    /** The LP Master name a row currently proposes — an analyst override wins over the algorithm's pick. */
+    private static String effectiveMasterName(MatchQueueEntry e) {
+        String override = e.getMasterNameOverride();
+        if (override != null && !override.isBlank()) return override;
+        String matched = e.getMatchedLpName();
+        return matched != null && !matched.isBlank() ? matched : null;
     }
 
     // ── DELETE /api/matching/queue/:id ───────────────────────────────────────
@@ -101,6 +147,7 @@ public class MatchingController {
             if (body.containsKey("masterName") && body.get("masterName") instanceof String mn) {
                 entry.setMasterNameOverride(mn.isBlank() ? null : mn);
                 if (!mn.isBlank()) entry.setDecision("Accepted");
+                applyOverrideRouting(entry);
             }
             MatchQueueEntry saved = matchQueueRepo.save(Objects.requireNonNull(entry));
             log.info("Match queue entry decided id={} submissionId={} extracted='{}' decision='{}' masterOverride='{}'",
@@ -138,6 +185,7 @@ public class MatchingController {
             if (d.masterName() != null) {
                 entry.setMasterNameOverride(d.masterName().isBlank() ? null : d.masterName());
                 if (!d.masterName().isBlank()) entry.setDecision("Accepted");
+                applyOverrideRouting(entry);
             }
         });
         // saveAll runs in a single transaction — the batch is applied all-or-nothing.
@@ -161,6 +209,14 @@ public class MatchingController {
 
     // ── DTO ───────────────────────────────────────────────────────────────────
 
+    /**
+     * One Review Matches row.
+     *
+     * <p>{@code masterParent} is the <em>ultimate</em> entity the proposed match routes to — the
+     * profile an Accept would actually apply (Phase 3/4 of the LP mapping design). It is null when
+     * the match is itself the ultimate entity, which the screen renders as "Self". {@code agentParent}
+     * is the sponsor the agent document named, and feeds the Parent/Sponsor corroboration signal.
+     */
     record MatchQueueItemDto(
         Integer id,
         Integer submissionId,
@@ -168,6 +224,9 @@ public class MatchingController {
         String facilityName,
         String agentName,
         String masterName,
+        Integer masterLpId,
+        String agentParent,
+        String masterParent,
         Integer score,
         String decision,
         String status,
@@ -186,12 +245,33 @@ public class MatchingController {
         ) {}
     }
 
+    /** Single-entry form, resolving this row's routing on its own. */
     private MatchQueueItemDto toDto(MatchQueueEntry e, String facilityName) {
-        String displayName = e.getMasterNameOverride() != null
-            ? e.getMasterNameOverride() : e.getMatchedLpName();
+        String name = effectiveMasterName(e);
+        return toDto(e, facilityName, name == null
+            ? Map.of()
+            : resolutionService.resolveAllByName(List.of(name)));
+    }
+
+    /**
+     * @param routing matched LP Master name → its resolved chain, from one batched load. A name
+     *                absent from the map (or a chain that ends at itself) yields a null ultimate
+     *                parent, which the screen renders as "Self".
+     */
+    private MatchQueueItemDto toDto(MatchQueueEntry e, String facilityName,
+                                    Map<String, LpMasterResolutionService.Resolution> routing) {
+        String displayName = effectiveMasterName(e);
+        LpMasterResolutionService.Resolution resolved =
+            displayName == null ? null : routing.get(displayName);
+        Integer masterLpId = resolved != null
+            ? resolved.matched().getId() : e.getMatchedLpMasterId();
+        String masterParent = resolved != null
+            ? (resolved.routed() ? resolved.ultimateParent().getInvestorName() : null)
+            : e.getMasterParent();
         return new MatchQueueItemDto(
             e.getId(), e.getSubmissionId(), e.getFacilityId(), facilityName,
             e.getExtractedName(), displayName,
+            masterLpId, e.getAgentParent(), masterParent,
             e.getMatchScore(), e.getDecision(), e.getDecision(),
             e.isNew(), e.getReasons(), e.getMatchDetails()
         );

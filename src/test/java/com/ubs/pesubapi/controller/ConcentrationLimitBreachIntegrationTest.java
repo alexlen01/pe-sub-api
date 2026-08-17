@@ -167,11 +167,11 @@ class ConcentrationLimitBreachIntegrationTest extends IntegrationTestBase {
                   "type": "Institutional", "region": "North America",
                   "ig": true, "cls": "Rated Investor",
                   "sp": "AAA", "mdy": "Aaa", "fitch": "",
-                  "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
+                  "aum": "$500.0B", "nav": null, "pensionAssets": null, "fundingRatio": null,
                   "capCommit": "$20.0M", "pctCapCommit": null, "calledCap": null,
                   "uc": "$20.0M", "pctUncalled": null, "pctCalled": null,
                   "agentConc": null, "ubsConc": "$25.0M",
-                  "agentRate": "95%%", "abb": "$19.0M",
+                  "agentRate": 0.95, "abb": "$19.0M",
                   "inc": true, "rcl": false, "notes": null
                 }""".formatted(i))
             .collect(Collectors.joining(",\n"));

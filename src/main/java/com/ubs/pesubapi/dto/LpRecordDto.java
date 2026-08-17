@@ -1,55 +1,65 @@
 package com.ubs.pesubapi.dto;
 
 import com.ubs.pesubapi.entity.LpRecord;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.ubs.pesubapi.util.MoneyValues;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+/**
+ * An LP record as served to pe-sub-ui. Keys mirror the {@link LpRecord} field names one-for-one and
+ * are camelCase throughout — no snake_case aliases.
+ *
+ * <p>Two representations coexist deliberately:
+ * <ul>
+ *   <li>Money and the concentration limits are pre-formatted display strings
+ *       ({@code "$12,000,000"}, {@code "7.5%"}), because the limits pack a percent-or-dollars
+ *       distinction the client should not have to re-derive. {@code aum} is stored compact or
+ *       verbatim ({@code "$4.2B"}) and expanded here, once, to the same full-precision form;
+ *       {@code nav} and {@code pensionAssets} remain verbatim passthrough.</li>
+ *   <li>Percents and advance rates are raw fractions (0.91 = 91%), formatted by the client.</li>
+ * </ul>
+ */
 public record LpRecordDto(
     Integer       id,
     Integer       facilityId,
-    String        name,
+    String        investorName,
     String        parent,
     boolean       spv,
-    boolean       hq,
-    @JsonProperty("fund_sleeve")
-    String        fundSleeve,
-    @JsonProperty("investor_type")
+    boolean       highQuality,
     String        investorType,
-    @JsonProperty("inst_vs_hnw")
-    String        instVsHnw,
-    @JsonProperty("region_location")
+    String        institutionalOrHnw,
     String        regionLocation,
-    boolean       ig,
-    String        agentCls,
-    String        agentClsSource,
-    String        cls,
-    String        clsTag,
-    String        sp,
-    String        mdy,
-    String        fitch,
+    boolean       investmentGrade,
+    String        agentLpCategory,
+    String        agentLpCategorySource,
+    String        ubsLpCategory,
+    String        ubsLpCategoryTag,
+    String        spRating,
+    String        moodysRating,
+    String        fitchRating,
     String        aum,
     String        nav,
-    String        pension,
-    String        pensionFunded,
-    String        capCommit,
-    String        pctCapCommit,
-    String        calledCap,
-    String        uc,
-    String        pctUncalled,
-    String        pctCalled,
-    String        agentConc,
-    String        ubsConc,
-    String        rate,
-    String        agentRate,
-    String        agentExcessConc,
-    String        ubsExcessConc,
-    String        abb,
-    String        ubb,
-    boolean       inc,
-    boolean       rcl,
-    boolean       tf,
-    Integer       rank,
+    String        pensionAssets,
+    BigDecimal    fundingRatio,
+    String        capitalCommitment,
+    BigDecimal    pctOfFundCommitments,
+    String        calledCapital,
+    String        uncalledCapital,
+    BigDecimal    pctOfFundUncalled,
+    BigDecimal    pctLpCalled,
+    String        agentConcentrationLimit,
+    String        ubsConcentrationLimit,
+    BigDecimal    ubsAdvanceRate,
+    BigDecimal    agentAdvanceRate,
+    String        agentExcessConcentration,
+    String        ubsExcessConcentration,
+    String        agentBorrowingBase,
+    String        ubsBorrowingBase,
+    boolean       included,
+    boolean       reclassified,
+    boolean       transferee,
+    Integer       lpRank,
     String        notes,
     LocalDateTime createdAt,
     LocalDateTime updatedAt
@@ -57,15 +67,24 @@ public record LpRecordDto(
     public static LpRecordDto from(LpRecord lpRecord) {
         return new LpRecordDto(
             lpRecord.getId(), lpRecord.getFacilityId(), lpRecord.getInvestorName(), lpRecord.getParent(),
-            lpRecord.isSpv(), lpRecord.isHighQty(), lpRecord.getFundSleeve(), lpRecord.getInvestorType(), lpRecord.getInstVsHnw(), lpRecord.getRegionLocation(), lpRecord.isIg(),
-            lpRecord.getAgentCls(), lpRecord.getAgentClsSource(), lpRecord.getCls(), lpRecord.getClsTag(), lpRecord.getSp(), lpRecord.getMdy(), lpRecord.getFitch(),
-            lpRecord.getAum(), lpRecord.getNav(),
-            lpRecord.getPension(), lpRecord.getPensionFunded(),
-            lpRecord.getCapCommit(), lpRecord.getPctCapCommit(), lpRecord.getCalledCap(),
-            lpRecord.getUc(), lpRecord.getPctUncalled(), lpRecord.getPctCalled(),
-            lpRecord.getAgentConc(), lpRecord.getUbsConc(), lpRecord.getUbsRate(), lpRecord.getAgentRate(),
-            lpRecord.getAgentExcessConc(), lpRecord.getUbsExcessConc(), lpRecord.getAbb(), lpRecord.getUbb(),
-            lpRecord.isInc(), lpRecord.isRcl(), lpRecord.isTf(), lpRecord.getRank(), lpRecord.getNotes(),
+            lpRecord.isSpv(), lpRecord.isHighQuality(), lpRecord.getInvestorType(),
+            lpRecord.getInstitutionalOrHnw(), lpRecord.getRegionLocation(), lpRecord.isInvestmentGrade(),
+            lpRecord.getAgentLpCategory(), lpRecord.getAgentLpCategorySource(),
+            lpRecord.getUbsLpCategory(), lpRecord.getUbsLpCategoryTag(),
+            lpRecord.getSpRating(), lpRecord.getMoodysRating(), lpRecord.getFitchRating(),
+            MoneyValues.expand(lpRecord.getAum()), lpRecord.getNav(),
+            lpRecord.getPensionAssets(), lpRecord.getFundingRatio(),
+            MoneyValues.display(lpRecord.getCapitalCommitment()), lpRecord.getPctOfFundCommitments(),
+            MoneyValues.display(lpRecord.getCalledCapital()),
+            MoneyValues.display(lpRecord.getUncalledCapital()), lpRecord.getPctOfFundUncalled(),
+            lpRecord.getPctLpCalled(),
+            MoneyValues.concLimitText(lpRecord.getAgentConcentrationLimit()),
+            MoneyValues.concLimitText(lpRecord.getUbsConcentrationLimit()),
+            lpRecord.getUbsAdvanceRate(), lpRecord.getAgentAdvanceRate(),
+            MoneyValues.display(lpRecord.getAgentExcessConcentration()), MoneyValues.display(lpRecord.getUbsExcessConcentration()),
+            MoneyValues.display(lpRecord.getAgentBorrowingBase()), MoneyValues.display(lpRecord.getUbsBorrowingBase()),
+            lpRecord.isIncluded(), lpRecord.isReclassified(), lpRecord.isTransferee(),
+            lpRecord.getLpRank(), lpRecord.getNotes(),
             lpRecord.getCreatedAt(), lpRecord.getUpdatedAt());
     }
 }

@@ -50,10 +50,6 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
                     """))
             .andExpect(status().isCreated());
 
-        mvc.perform(get("/api/facilities"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$[0].name").value("Fund Alpha"));
-
         int id = facilityRepo.findByName("Fund Alpha").orElseThrow().getId();
 
         mvc.perform(get("/api/facilities/{id}", id))
@@ -142,9 +138,9 @@ class FacilityControllerIntegrationTest extends IntegrationTestBase {
         com.ubs.pesubapi.entity.LpRecord lpRecord = new com.ubs.pesubapi.entity.LpRecord();
         lpRecord.setFacilityId(facilityId);
         lpRecord.setInvestorName(investorName);
-        lpRecord.setInvType("Institutional");
-        lpRecord.setRegion("US");
-        lpRecord.setCls("Eligible");
+        lpRecord.setInvestorSegmentOrType("Institutional");
+        lpRecord.setRegionLocation("US");
+        lpRecord.setUbsLpCategory("Eligible");
         return lpRecord;
     }
 

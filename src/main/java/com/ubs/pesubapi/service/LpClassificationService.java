@@ -6,6 +6,7 @@ import com.ubs.pesubapi.entity.LpRate;
 import com.ubs.pesubapi.repository.LpRateRepository;
 import com.ubs.pesubapi.repository.LpRecordRepository;
 import com.ubs.pesubapi.util.EffectivePeriod;
+import com.ubs.pesubapi.util.MoneyValues;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,18 +31,24 @@ public class LpClassificationService {
     private final LpRecordRepository     lpRecordRepo;
     private final LpRateRepository rateRepo;
     private final LpMasterWriteBackService lpMasterWriteBack;
+    private final ReclassificationPolicy reclassificationPolicy;
 
     public LpClassificationService(LpRecordRepository lpRecordRepo, LpRateRepository rateRepo,
-                                   LpMasterWriteBackService lpMasterWriteBack) {
+                                   LpMasterWriteBackService lpMasterWriteBack,
+                                   ReclassificationPolicy reclassificationPolicy) {
         this.lpRecordRepo   = lpRecordRepo;
         this.rateRepo = rateRepo;
         this.lpMasterWriteBack = lpMasterWriteBack;
+        this.reclassificationPolicy = reclassificationPolicy;
     }
 
     @Transactional
     public int applyClassifications(LpClassificationRequest req) {
         if (req.facilityId() == null || req.rows() == null) return 0;
         LocalDate effectiveDate = parseMonth(req.effectiveDate());
+        // Wizard steps 1–5 run before the submission's first Shadow BB, so category edits there are
+        // initial data entry rather than reclassifications. See ReclassificationPolicy.
+        boolean marksReclassification = reclassificationPolicy.marksReclassification(req.facilityId());
 
         Map<Integer, LpRecord> byId = new HashMap<>();
         lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(req.facilityId()).forEach(lpRecord -> {
@@ -54,58 +61,59 @@ public class LpClassificationService {
 
         int updated = 0;
         for (LpClassificationRequest.Row row : req.rows()) {
-            if (row.name() == null) continue;
+            if (row.investorName() == null) continue;
             LpRecord lpRecord = row.id() != null ? byId.get(row.id()) : null;
             if (lpRecord == null) {
                 String lookupName = row.originalName() != null && !row.originalName().isBlank()
                     ? row.originalName()
-                    : row.name();
+                    : row.investorName();
                 lpRecord = byName.get(lookupName);
             }
             if (lpRecord == null) continue;   // only persisted LP Master records are updated
 
             // Derive reclassification from persisted values during Save. The flag is sticky so
             // downstream screens and reports do not depend on a separate client-side action.
-            boolean reclassified = changed(row.agentCls(), lpRecord.getAgentCls())
-                || changed(row.cls(), lpRecord.getCls());
+            boolean reclassified = marksReclassification
+                && (changed(row.agentLpCategory(), lpRecord.getAgentLpCategory())
+                    || changed(row.ubsLpCategory(), lpRecord.getUbsLpCategory()));
 
-            if (row.name() != null && !row.name().isBlank()) lpRecord.setInvestorName(row.name());
+            if (row.investorName() != null && !row.investorName().isBlank()) lpRecord.setInvestorName(row.investorName());
             if (row.parent()         != null) lpRecord.setParent(row.parent());
             if (row.spv()            != null) lpRecord.setSpv(row.spv());
-            if (row.fundSleeve()     != null) lpRecord.setFundSleeve(row.fundSleeve());
             if (row.investorType()  != null) lpRecord.setInvestorType(row.investorType());
-            if (row.instVsHnw()     != null) lpRecord.setInstVsHnw(row.instVsHnw());
+            if (row.institutionalOrHnw()     != null) lpRecord.setInstitutionalOrHnw(row.institutionalOrHnw());
             if (row.regionLocation() != null) lpRecord.setRegionLocation(row.regionLocation());
-            if (row.ig()             != null) lpRecord.setIg(row.ig());
-            if (row.cls()            != null) lpRecord.setCls(row.cls());
-            if (row.agentCls()       != null) {
-                lpRecord.setAgentCls(row.agentCls());
-                lpRecord.setAgentClsSource(normalizeAgentClsSource(row.agentClsSource(), "USER_EDITED"));
+            if (row.investmentGrade()             != null) lpRecord.setInvestmentGrade(row.investmentGrade());
+            if (row.ubsLpCategory()            != null) lpRecord.setUbsLpCategory(row.ubsLpCategory());
+            if (row.agentLpCategory()       != null) {
+                lpRecord.setAgentLpCategory(row.agentLpCategory());
+                lpRecord.setAgentLpCategorySource(normalizeAgentClsSource(row.agentLpCategorySource(), "USER_EDITED"));
             }
-            if (row.sp()             != null) lpRecord.setSp(row.sp());
-            if (row.mdy()            != null) lpRecord.setMdy(row.mdy());
-            if (row.fitch()          != null) lpRecord.setFitch(row.fitch());
+            if (row.spRating()             != null) lpRecord.setSpRating(row.spRating());
+            if (row.moodysRating()            != null) lpRecord.setMoodysRating(row.moodysRating());
+            if (row.fitchRating()          != null) lpRecord.setFitchRating(row.fitchRating());
             if (row.aum()            != null) lpRecord.setAum(row.aum());
             if (row.nav()            != null) lpRecord.setNav(row.nav());
-            if (row.pension()        != null) lpRecord.setPension(row.pension());
-            if (row.pensionFunded()  != null) lpRecord.setPensionFunded(row.pensionFunded());
-            if (row.capCommit()      != null) lpRecord.setCapCommit(row.capCommit());
-            if (row.inc()            != null) lpRecord.setInc(row.inc());
-            if (row.tf()             != null) lpRecord.setTf(row.tf());
-            if (row.uc()             != null) lpRecord.setUc(row.uc());
+            if (row.pensionAssets()  != null) lpRecord.setPensionAssets(row.pensionAssets());
+            if (row.fundingRatio()   != null) lpRecord.setFundingRatio(MoneyValues.ratio(row.fundingRatio()));
+            if (row.capitalCommitment()      != null) lpRecord.setCapitalCommitment(MoneyValues.dollars(row.capitalCommitment()));
+            if (row.included()            != null) lpRecord.setIncluded(row.included());
+            if (row.transferee()             != null) lpRecord.setTransferee(row.transferee());
+            if (row.uncalledCapital()             != null) lpRecord.setUncalledCapital(MoneyValues.dollars(row.uncalledCapital()));
             if (row.notes()          != null) lpRecord.setNotes(row.notes());
-            if (reclassified) lpRecord.setRcl(true);
-            // Rates: persist the display strings on the lpRecord, and upsert the decimal fractions
-            // into lp_rates below for the submission period.
-            if (row.ubsAdvRatePct()  != null) lpRecord.setUbsRate(formatPct(row.ubsAdvRatePct()));
-            if (row.ubsConcLimitPct() != null) lpRecord.setUbsConc(formatPct(row.ubsConcLimitPct()));
-            if (row.agentRatePct()   != null) lpRecord.setAgentRate(formatPct(row.agentRatePct()));
-            if (row.agentConcLimitPct() != null) lpRecord.setAgentConc(formatPct(row.agentConcLimitPct()));
+            if (reclassified) lpRecord.setReclassified(true);
+            // Rates arrive percent-scaled (90.0 = 90%) and persist as fractions, matching lp_rates
+            // below. The concentration limits are the exception: they keep the inbound percent scale
+            // so the magnitude split against an absolute dollar cap still holds.
+            if (row.ubsAdvanceRatePct()  != null) lpRecord.setUbsAdvanceRate(toFraction(row.ubsAdvanceRatePct()));
+            if (row.ubsConcentrationLimitPct() != null) lpRecord.setUbsConcentrationLimit(BigDecimal.valueOf(row.ubsConcentrationLimitPct()));
+            if (row.agentAdvanceRatePct()   != null) lpRecord.setAgentAdvanceRate(toFraction(row.agentAdvanceRatePct()));
+            if (row.agentConcentrationLimitPct() != null) lpRecord.setAgentConcentrationLimit(BigDecimal.valueOf(row.agentConcentrationLimitPct()));
             lpRecord.setUpdatedAt(LocalDateTime.now());
             lpRecordRepo.save(lpRecord);
             updated++;
 
-            if (row.ubsAdvRatePct() != null || row.ubsConcLimitPct() != null) {
+            if (row.ubsAdvanceRatePct() != null || row.ubsConcentrationLimitPct() != null) {
                 upsertRate(lpRecord, effectiveDate, row);
             }
         }
@@ -125,15 +133,15 @@ public class LpClassificationService {
             .orElseGet(LpRate::new);
         rate.setLpId(lpRecord.getId());
         rate.setEffectiveDate(effectiveDate);
-        rate.setClassification(row.cls() != null ? row.cls()
-            : (lpRecord.getCls() != null ? lpRecord.getCls() : ""));
-        if (row.ubsAdvRatePct() != null) {
-            rate.setUbsAdvRatePct(toFraction(row.ubsAdvRatePct()));
+        rate.setClassification(row.ubsLpCategory() != null ? row.ubsLpCategory()
+            : (lpRecord.getUbsLpCategory() != null ? lpRecord.getUbsLpCategory() : ""));
+        if (row.ubsAdvanceRatePct() != null) {
+            rate.setUbsAdvRatePct(toFraction(row.ubsAdvanceRatePct()));
         } else if (rate.getUbsAdvRatePct() == null) {
             rate.setUbsAdvRatePct(BigDecimal.ZERO);
         }
-        if (row.ubsConcLimitPct() != null) {
-            rate.setUbsConcLimitPct(toFraction(row.ubsConcLimitPct()));
+        if (row.ubsConcentrationLimitPct() != null) {
+            rate.setUbsConcLimitPct(toFraction(row.ubsConcentrationLimitPct()));
         } else if (rate.getUbsConcLimitPct() == null) {
             rate.setUbsConcLimitPct(BigDecimal.ZERO);
         }
@@ -141,14 +149,9 @@ public class LpClassificationService {
         rateRepo.save(rate);
     }
 
-    /** Percentage (90.0) → decimal fraction (0.9000) as stored in lp_rates. */
+    /** Percentage (90.0) → decimal fraction (0.9000) as stored on lp_records and in lp_rates. */
     private BigDecimal toFraction(double pct) {
         return BigDecimal.valueOf(pct).movePointLeft(2);
-    }
-
-    /** Percentage (90.0) → display string ("90%") as stored on the LP record. */
-    private String formatPct(double pct) {
-        return (pct == Math.rint(pct) ? String.valueOf((long) pct) : String.valueOf(pct)) + "%";
     }
 
     /** Submission period → first of the month; null/blank defaults to the current month. */

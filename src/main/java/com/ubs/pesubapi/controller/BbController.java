@@ -112,9 +112,9 @@ public class BbController {
 
         // Uncalled-weighted population shares (SHADOW_BB_ANALYSIS Table 1):
         // each metric = Σ(uncalled of matching LPs) ÷ Σ(total uncalled), not a headcount ratio.
-        double instUncalled   = lps.stream().filter(lpRecord -> "Institutional".equals(lpRecord.getInstVsHnw())).mapToDouble(lpRecord -> ucM(lpRecord)).sum();
-        double hnwUncalled    = lps.stream().filter(lpRecord -> "HNW".equals(lpRecord.getInstVsHnw())).mapToDouble(lpRecord -> ucM(lpRecord)).sum();
-        double igUncalled     = lps.stream().filter(lpRecord -> lpRecord.isIg()).mapToDouble(lpRecord -> ucM(lpRecord)).sum();
+        double instUncalled   = lps.stream().filter(lpRecord -> "Institutional".equals(lpRecord.getInstitutionalOrHnw())).mapToDouble(lpRecord -> ucM(lpRecord)).sum();
+        double hnwUncalled    = lps.stream().filter(lpRecord -> "HNW".equals(lpRecord.getInstitutionalOrHnw())).mapToDouble(lpRecord -> ucM(lpRecord)).sum();
+        double igUncalled     = lps.stream().filter(lpRecord -> lpRecord.isInvestmentGrade()).mapToDouble(lpRecord -> ucM(lpRecord)).sum();
         double pctInstitutional = totalUncalled > 0 ? instUncalled / totalUncalled : 0;
         double pctHNW           = totalUncalled > 0 ? hnwUncalled  / totalUncalled : 0;
         double igRatio          = totalUncalled > 0 ? igUncalled   / totalUncalled : 0;
@@ -181,7 +181,7 @@ public class BbController {
         for (String key : List.of("90%", "75%", "65%", "50%", "0%"))
             agentMap.put(key, new double[]{0, 0});   // [count, dollars]
         for (var lpRecord : lps) {
-            String rateKey = AdvanceRateFloorMap.groupLabel(parseRatePct(lpRecord.getAgentRate()));
+            String rateKey = AdvanceRateFloorMap.groupLabel(storedRatePct(lpRecord.getAgentAdvanceRate()));
             agentMap.get(rateKey)[0]++;
             agentMap.get(rateKey)[1] += ucM(lpRecord);
         }
@@ -206,7 +206,7 @@ public class BbController {
         for (String key : List.of("Rated Investors", "Unrated Investors", "Eligible Investors", "Excluded Investors"))
             clsMap.put(key, new double[]{0, 0});
         for (var lpRecord : lps) {
-            String bucket = canonicalClassBucket(lpRecord.getCls());
+            String bucket = canonicalClassBucket(lpRecord.getUbsLpCategory());
             clsMap.get(bucket)[0]++;
             clsMap.get(bucket)[1] += ucM(lpRecord);
         }
@@ -251,7 +251,7 @@ public class BbController {
     /** Called Capital for one LpRecord ($millions): the stored value when present, else the calculated
      *  Capital Commitments − Uncalled Capital (never negative). */
     private static double calledCapM(com.ubs.pesubapi.entity.LpRecord lpRecord) {
-        if (lpRecord.getCalledCap() != null && !lpRecord.getCalledCap().isBlank()) return parseMoney(lpRecord.getCalledCap());
+        if (lpRecord.getCalledCapital() != null) return BbCalculationService.dollarM(lpRecord.getCalledCapital());
         return Math.max(0, capCommitM(lpRecord) - ucM(lpRecord));
     }
 
@@ -263,9 +263,10 @@ public class BbController {
 
     // Numeric-first money reads ($millions) — the precise C2 numeric column when present, else the
     // legacy display string. Keeps summaryExt aligned with the engine's computeOne.
-    private static double ucM(com.ubs.pesubapi.entity.LpRecord lpRecord)        { return BbCalculationService.moneyM(lpRecord.getUcNum(), lpRecord.getUc()); }
-    private static double capCommitM(com.ubs.pesubapi.entity.LpRecord lpRecord) { return BbCalculationService.moneyM(lpRecord.getCapCommitNum(), lpRecord.getCapCommit()); }
-    private static double aumM(com.ubs.pesubapi.entity.LpRecord lpRecord)       { return BbCalculationService.moneyM(lpRecord.getAumNum(), lpRecord.getAum()); }
+    private static double ucM(com.ubs.pesubapi.entity.LpRecord lpRecord)        { return BbCalculationService.dollarM(lpRecord.getUncalledCapital()); }
+    private static double capCommitM(com.ubs.pesubapi.entity.LpRecord lpRecord) { return BbCalculationService.dollarM(lpRecord.getCapitalCommitment()); }
+    // aum is a VARCHAR display field, so it parses on read rather than reading a numeric column.
+    private static double aumM(com.ubs.pesubapi.entity.LpRecord lpRecord)       { return BbCalculationService.parseMoney(lpRecord.getAum()); }
 
     /** Rolls a granular LP Classification (UBS or legacy taxonomy) up into one of the four
      *  canonical eligibility buckets used by SHADOW_BB_ANALYSIS Table 5. */
@@ -286,6 +287,11 @@ public class BbController {
         if (rate == null) return 0;
         try { return Double.parseDouble(rate.replace("%", "").trim()); }
         catch (NumberFormatException e) { return 0; }
+    }
+
+    /** A stored rate column (a fraction) to the percent scale the group labels are keyed on. */
+    private static double storedRatePct(java.math.BigDecimal rate) {
+        return rate != null ? rate.doubleValue() * 100 : 0;
     }
 
     private Map<String, Object> emptySummaryExt() {

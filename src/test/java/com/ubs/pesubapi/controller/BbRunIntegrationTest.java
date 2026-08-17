@@ -70,11 +70,11 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                 "type": "Institutional", "region": "North America",
                 "ig": true, "cls": "Rated Investor",
                 "sp": "AAA", "mdy": "Aaa", "fitch": "",
-                "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
+                "aum": "$500.0B", "nav": null, "pensionAssets": null, "fundingRatio": null,
                 "capCommit": "$10.0M", "pctCapCommit": null, "calledCap": "$7.0M",
                 "uc": "$10.0M", "pctUncalled": null, "pctCalled": null,
                 "agentConc": "7.5%%", "ubsConc": "$25.0M",
-                "agentRate": "95.0%%",
+                "agentRate": 0.95,
                 "inc": true, "rcl": false, "notes": null
               }]
             }
@@ -85,7 +85,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                 .content(body))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.result.summary.totalUBB").value(closeTo(9.0, 0.01)))
-            .andExpect(jsonPath("$.result.lps[0].cls").value("Rated Investor"))
+            .andExpect(jsonPath("$.result.lps[0].ubsLpCategory").value("Rated Investor"))
             .andExpect(jsonPath("$.result.lps[0].ubbM").value(closeTo(9.0, 0.01)));
     }
 
@@ -139,12 +139,21 @@ class BbRunIntegrationTest extends IntegrationTestBase {
 
     @Test
     void run_doesNotClearStickyReclassifiedFlagFromStalePayload() throws Exception {
-        String currentPayload = lpPayload(facilityId)
+        String reclassifiedPayload = lpPayload(facilityId)
             .replaceFirst("\\\"rcl\\\": false", "\\\"rcl\\\": true");
 
+        // First run of the wizard: there is no earlier Shadow BB for a category change to
+        // invalidate, so a client-side rcl flag is ignored (see ReclassificationPolicy).
         mvc.perform(post("/api/bb/run/{id}", facilityId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(currentPayload))
+                .content(reclassifiedPayload))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.result.summary.reclassCount").value(0));
+
+        // Re-run after that snapshot exists: the same flag now sticks.
+        mvc.perform(post("/api/bb/run/{id}", facilityId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(reclassifiedPayload))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.result.summary.reclassCount").value(1));
 
@@ -155,13 +164,13 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                 .content(lpPayload(facilityId)))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.result.summary.reclassCount").value(1))
-            .andExpect(jsonPath("$.result.lps[?(@.name == 'CalPERS')].rcl").value(true));
+            .andExpect(jsonPath("$.result.lps[?(@.investorName == 'CalPERS')].reclassified").value(true));
 
         assertThat(lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).stream()
             .filter(lp -> "CalPERS".equals(lp.getInvestorName()))
             .findFirst()
             .orElseThrow()
-            .isRcl()).isTrue();
+            .isReclassified()).isTrue();
     }
 
     @Test
@@ -178,11 +187,11 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                   "type": "Institutional", "region": "North America",
                   "ig": true, "cls": "Rated Investor",
                   "sp": "AAA", "mdy": "Aaa", "fitch": "",
-                  "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
+                  "aum": "$500.0B", "nav": null, "pensionAssets": null, "fundingRatio": null,
                   "capCommit": "$20.0M", "pctCapCommit": null, "calledCap": null,
                   "uc": "$20.0M", "pctUncalled": null, "pctCalled": null,
                   "agentConc": null, "ubsConc": "$25.0M",
-                  "agentRate": "95.0%%",
+                  "agentRate": 0.95,
                   "inc": true, "rcl": false, "notes": null
                 },
                 {
@@ -191,11 +200,11 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                   "type": "Institutional", "region": "North America",
                   "ig": true, "cls": "Excluded",
                   "sp": "AAA", "mdy": "Aaa", "fitch": "",
-                  "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
+                  "aum": "$500.0B", "nav": null, "pensionAssets": null, "fundingRatio": null,
                   "capCommit": "$30.0M", "pctCapCommit": null, "calledCap": null,
                   "uc": "$30.0M", "pctUncalled": null, "pctCalled": null,
                   "agentConc": null, "ubsConc": "$25.0M",
-                  "agentRate": "0%%",
+                  "agentRate": 0,
                   "inc": false, "rcl": false, "notes": null
                 }
               ]
@@ -209,21 +218,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
 
         var lps = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId);
         assertThat(lps).hasSize(1);
-        assertThat(lps.getFirst().getCls()).isEqualTo("Excluded");   // last value wins
-    }
-
-    @Test
-    void run_withoutBodyStillComputesFromExistingLpMaster() throws Exception {
-        // Seed one LpRecord manually to simulate pre-existing LP Master data
-        mvc.perform(post("/api/bb/run/{id}", facilityId)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(lpPayload(facilityId)))
-            .andExpect(status().isCreated());
-
-        // Now call with no body — should compute from the persisted LPs
-        mvc.perform(post("/api/bb/run/{id}", facilityId))
-            .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.result.lps", hasSize(3)));
+        assertThat(lps.getFirst().getUbsLpCategory()).isEqualTo("Excluded");   // last value wins
     }
 
     @Test
@@ -234,7 +229,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isCreated());
 
         var corrupted = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId);
-        corrupted.forEach(lpRecord -> lpRecord.setRank(99));
+        corrupted.forEach(lpRecord -> lpRecord.setLpRank(99));
         lpRecordRepo.saveAll(corrupted);
 
         mvc.perform(post("/api/bb/run/{id}", facilityId))
@@ -243,7 +238,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
 
         var ranks = new java.util.HashMap<String, Integer>();
         lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)
-            .forEach(lpRecord -> ranks.put(lpRecord.getInvestorName(), lpRecord.getRank()));
+            .forEach(lpRecord -> ranks.put(lpRecord.getInvestorName(), lpRecord.getLpRank()));
         assertThat(ranks.get("CalPERS")).isEqualTo(1);
         assertThat(ranks.get("Stanford Endowment")).isEqualTo(2);
         // Excluded LPs are ranked too: Rank reflects size position in the full population.
@@ -266,13 +261,13 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                 "type": "%s", "investor_type": "%s", "region": "North America",
                 "ig": true, "cls": "Rated Investor",
                 "sp": "AAA", "mdy": "Aaa", "fitch": "",
-                "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
-                "capCommit": "$12,102,000,000", "pctCapCommit": "48.8%%",
+                "aum": "$500.0B", "nav": null, "pensionAssets": null, "fundingRatio": null,
+                "capCommit": "$12,102,000,000", "pctCapCommit": 0.488,
                 "calledCap": "$7,013,456,789",
-                "uc": "$12,372,297,594", "pctUncalled": "49.9%%",
-                "pctCalled": "71.1%%",
+                "uc": "$12,372,297,594", "pctUncalled": 0.499,
+                "pctCalled": 0.711,
                 "agentConc": "7.5%%", "ubsConc": "$25.0M",
-                "agentRate": "95.0%%",
+                "agentRate": 0.95,
                 "inc": true, "rcl": false, "notes": null
               }]
             }
@@ -286,10 +281,11 @@ class BbRunIntegrationTest extends IntegrationTestBase {
         var lp = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).getFirst();
         assertThat(lp.getInvestorName()).isEqualTo(longName);
         assertThat(lp.getInvestorType()).isEqualTo(longType);
-        assertThat(lp.getInstVsHnw()).isEqualTo(longType);   // JSON "type" aliases inst_vs_hnw
-        assertThat(lp.getCapCommit()).isEqualTo("$12,102,000,000");
-        assertThat(lp.getPctCapCommit()).isEqualTo("48.8%");
-        assertThat(lp.getPctCalled()).isEqualTo("71.1%");
+        assertThat(lp.getInstitutionalOrHnw()).isEqualTo(longType);   // JSON "type" aliases inst_vs_hnw
+        assertThat(lp.getCapitalCommitment()).isEqualByComparingTo("12102000000");
+        // Percent columns are NUMERIC fractions: the submitted 0.488 / 0.711 persist as-is.
+        assertThat(lp.getPctOfFundCommitments()).isEqualByComparingTo("0.488");
+        assertThat(lp.getPctLpCalled()).isEqualByComparingTo("0.711");
     }
 
     @Test
@@ -391,11 +387,11 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                 "type": "Institutional", "region": "North America",
                 "ig": false, "cls": "FoF & Other > $10Bn AUM",
                 "sp": "", "mdy": "", "fitch": "",
-                "aum": "$80.0B", "nav": null, "pension": null, "pensionFunded": null,
+                "aum": "$80.0B", "nav": null, "pensionAssets": null, "fundingRatio": null,
                 "capCommit": "$10.0M", "pctCapCommit": null, "calledCap": null,
                 "uc": "$10.0M", "pctUncalled": null, "pctCalled": null,
                 "agentConc": null, "ubsConc": "$25.0M",
-                "agentRate": "75.0%%",
+                "agentRate": 0.75,
                 "inc": true, "rcl": false, "notes": null
               }]
             }
@@ -461,13 +457,13 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(lpPayload(facilityId)))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.result.lps[?(@.name == 'CalPERS')].ucM").value(hasItem(closeTo(20.0, 0.001))))
-            .andExpect(jsonPath("$.result.lps[?(@.name == 'CalPERS')].pctAgentBB").value(hasItem(closeTo(2.20875 / 3.9525, 0.0001))))
-            .andExpect(jsonPath("$.result.lps[?(@.name == 'Stanford Endowment')].pctAgentBB").value(hasItem(closeTo(1.74375 / 3.9525, 0.0001))))
-            .andExpect(jsonPath("$.result.lps[?(@.name == 'CalPERS')].agentExcessM").value(hasItem(closeTo(17.675, 0.001))))
-            .andExpect(jsonPath("$.result.lps[?(@.name == 'Stanford Endowment')].agentExcessM").value(hasItem(closeTo(7.675, 0.001))))
-            .andExpect(jsonPath("$.result.lps[?(@.name == 'Tiny Fund LLC')].agentExcessM").value(hasItem(closeTo(0.0, 0.001))))
-            .andExpect(jsonPath("$.result.lps[?(@.name == 'Tiny Fund LLC')].pctUbsBB").value(hasItem(closeTo(0.0, 0.0001))))
+            .andExpect(jsonPath("$.result.lps[?(@.investorName == 'CalPERS')].ucM").value(hasItem(closeTo(20.0, 0.001))))
+            .andExpect(jsonPath("$.result.lps[?(@.investorName == 'CalPERS')].pctAgentBB").value(hasItem(closeTo(2.20875 / 3.9525, 0.0001))))
+            .andExpect(jsonPath("$.result.lps[?(@.investorName == 'Stanford Endowment')].pctAgentBB").value(hasItem(closeTo(1.74375 / 3.9525, 0.0001))))
+            .andExpect(jsonPath("$.result.lps[?(@.investorName == 'CalPERS')].agentExcessM").value(hasItem(closeTo(17.675, 0.001))))
+            .andExpect(jsonPath("$.result.lps[?(@.investorName == 'Stanford Endowment')].agentExcessM").value(hasItem(closeTo(7.675, 0.001))))
+            .andExpect(jsonPath("$.result.lps[?(@.investorName == 'Tiny Fund LLC')].agentExcessM").value(hasItem(closeTo(0.0, 0.001))))
+            .andExpect(jsonPath("$.result.lps[?(@.investorName == 'Tiny Fund LLC')].pctUbsBB").value(hasItem(closeTo(0.0, 0.0001))))
             .andExpect(jsonPath("$.result.summary.totalUEC").value(closeTo(30.0, 0.001)))
             .andExpect(jsonPath("$.result.summary.totalUC").value(closeTo(30.0, 0.001)))
             .andExpect(jsonPath("$.result.summary.totalConcExcess").value(closeTo(1.0, 0.001)))
@@ -485,23 +481,26 @@ class BbRunIntegrationTest extends IntegrationTestBase {
         lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId)
             .forEach(lp -> byName.put(lp.getInvestorName(), lp));
 
-        // Engine results are persisted onto the records in the run transaction (fmtM strings).
-        assertThat(byName.get("CalPERS").getAgentExcessConc()).isEqualTo("$17.7M");
-        assertThat(byName.get("CalPERS").getUbsExcessConc()).isEqualTo("$0");
-        assertThat(byName.get("CalPERS").getUbb()).startsWith("$");
-        assertThat(byName.get("Tiny Fund LLC").getUbsExcessConc()).isEqualTo("$1.0M");
-        assertThat(byName.get("Tiny Fund LLC").getAgentExcessConc()).isEqualTo("$0");
+        // Engine results are persisted onto the records in the run transaction as exact dollars �
+        // these columns are NUMERIC, so the old lossy "$17.7M" rounding is gone.
+        // $20M uncalled less the 7.5% agent limit on $31M total = $2.325M eligible → $17.675M excess,
+        // the exact figure the old "$17.7M" string rounded away.
+        assertThat(byName.get("CalPERS").getAgentExcessConcentration()).isEqualByComparingTo("17675000");
+        assertThat(byName.get("CalPERS").getUbsExcessConcentration()).isEqualByComparingTo("0");
+        assertThat(byName.get("CalPERS").getUbsBorrowingBase()).isNotNull();
+        assertThat(byName.get("Tiny Fund LLC").getUbsExcessConcentration()).isEqualByComparingTo("1000000");
+        assertThat(byName.get("Tiny Fund LLC").getAgentExcessConcentration()).isEqualByComparingTo("0");
         // abb is not part of the commit payload and the engine never writes it back — it stays
         // whatever ingest recorded (null here: these records were created by the run upsert).
-        assertThat(byName.get("CalPERS").getAbb()).isNull();
+        assertThat(byName.get("CalPERS").getAgentBorrowingBase()).isNull();
 
         // A row-less re-run recomputes from the DB and must land on the same values.
         mvc.perform(post("/api/bb/run/{id}", facilityId))
             .andExpect(status().isCreated());
         var calpers = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).getFirst();
         assertThat(calpers.getInvestorName()).isEqualTo("CalPERS");
-        assertThat(calpers.getAgentExcessConc()).isEqualTo("$17.7M");
-        assertThat(calpers.getAbb()).isNull();
+        assertThat(calpers.getAgentExcessConcentration()).isEqualByComparingTo("17675000");
+        assertThat(calpers.getAgentBorrowingBase()).isNull();
     }
 
     @Test
@@ -550,11 +549,11 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                   "type": "Institutional", "region": "North America",
                   "ig": true, "cls": "Rated Investor",
                   "sp": "AAA", "mdy": "Aaa", "fitch": "",
-                  "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
+                  "aum": "$500.0B", "nav": null, "pensionAssets": null, "fundingRatio": null,
                   "capCommit": "$20.0M", "pctCapCommit": null, "calledCap": null,
                   "uc": "$10.0M", "pctUncalled": null, "pctCalled": null,
                   "agentConc": "60%", "ubsConc": "$25.0M",
-                  "agentRate": "90.0%",
+                  "agentRate": 0.90,
                   "inc": true, "rcl": false, "notes": null
                 },
                 {
@@ -563,11 +562,11 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                   "type": "Institutional", "region": "North America",
                   "ig": false, "cls": "Unrated NAV > $1Bn",
                   "sp": "", "mdy": "", "fitch": "",
-                  "aum": "$40.0B", "nav": null, "pension": null, "pensionFunded": null,
+                  "aum": "$40.0B", "nav": null, "pensionAssets": null, "fundingRatio": null,
                   "capCommit": "$10.0M", "pctCapCommit": null, "calledCap": null,
                   "uc": "$10.0M", "pctUncalled": null, "pctCalled": null,
                   "agentConc": "60%", "ubsConc": "$25.0M",
-                  "agentRate": "90.0%",
+                  "agentRate": 0.90,
                   "inc": true, "rcl": false, "notes": null
                 },
                 {
@@ -576,11 +575,11 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                   "type": "HNW", "region": "Europe",
                   "ig": false, "cls": "Excluded",
                   "sp": "", "mdy": "", "fitch": "",
-                  "aum": null, "nav": null, "pension": null, "pensionFunded": null,
+                  "aum": null, "nav": null, "pensionAssets": null, "fundingRatio": null,
                   "capCommit": "$1.0M", "pctCapCommit": null, "calledCap": null,
                   "uc": "$1.0M", "pctUncalled": null, "pctCalled": null,
                   "agentConc": "60%", "ubsConc": "$25.0M",
-                  "agentRate": "50%",
+                  "agentRate": 0.50,
                   "inc": false, "rcl": false, "notes": null
                 }
               ]
@@ -592,8 +591,8 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                 .content(body))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.result.summary.totalABB").value(closeTo(18.0, 0.01)))
-            .andExpect(jsonPath("$.result.lps[?(@.name == 'Alpha Pension')].abbM").value(hasItem(closeTo(9.0, 0.01))))
-            .andExpect(jsonPath("$.result.lps[?(@.name == 'Gamma Excluded')].abbM").value(hasItem(closeTo(0.0, 0.001))));
+            .andExpect(jsonPath("$.result.lps[?(@.investorName == 'Alpha Pension')].abbM").value(hasItem(closeTo(9.0, 0.01))))
+            .andExpect(jsonPath("$.result.lps[?(@.investorName == 'Gamma Excluded')].abbM").value(hasItem(closeTo(0.0, 0.001))));
 
         // The derived total must flow through to summary-ext (Agent Borrowing Base, and with it
         // Available Commitment and Current Facility Advance Rate on the Shadow BB summary).
@@ -615,11 +614,11 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                 "type": "Institutional", "region": "North America",
                 "ig": true, "cls": "Rated Investor",
                 "sp": "AAA", "mdy": "Aaa", "fitch": "",
-                "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
+                "aum": "$500.0B", "nav": null, "pensionAssets": null, "fundingRatio": null,
                 "capCommit": "$20.0M", "pctCapCommit": null, "calledCap": null,
                 "uc": "$10.0M", "pctUncalled": null, "pctCalled": null,
                 "agentConc": "60%", "ubsConc": "$25.0M",
-                "agentRate": "90.0%",
+                "agentRate": 0.90,
                 "inc": true, "rcl": false, "notes": null
               }]
             }
@@ -632,8 +631,7 @@ class BbRunIntegrationTest extends IntegrationTestBase {
 
         // Simulate the ingest-written agent-reported "$0" (abb is not commit-payload-settable).
         var record = lpRecordRepo.findByFacilityIdOrderByInvestorNameAsc(facilityId).getFirst();
-        record.setAbb("$0");   // TEST ONLY
-        record.setAbbNum(java.math.BigDecimal.ZERO);
+        record.setAgentBorrowingBase(java.math.BigDecimal.ZERO);   // TEST ONLY
         lpRecordRepo.save(record);
 
         mvc.perform(post("/api/bb/run/{id}", facilityId))
@@ -655,11 +653,11 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                   "type": "Institutional", "region": "North America",
                   "ig": true, "cls": "Rated Investor",
                   "sp": "AAA", "mdy": "Aaa", "fitch": "",
-                  "aum": "$500.0B", "nav": null, "pension": null, "pensionFunded": null,
+                  "aum": "$500.0B", "nav": null, "pensionAssets": null, "fundingRatio": null,
                   "capCommit": "$20.0M", "pctCapCommit": null, "calledCap": "$14.0M",
                   "uc": "$20.0M", "pctUncalled": null, "pctCalled": null,
                   "agentConc": "7.5%%", "ubsConc": "$25.0M",
-                  "agentRate": "95.0%%",
+                  "agentRate": 0.95,
                   "inc": true, "rcl": false, "notes": null
                 },
                 {
@@ -668,11 +666,11 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                   "type": "Institutional", "region": "North America",
                   "ig": false, "cls": "Unrated NAV > $1Bn",
                   "sp": "", "mdy": "", "fitch": "",
-                  "aum": "$40.0B", "nav": null, "pension": null, "pensionFunded": null,
+                  "aum": "$40.0B", "nav": null, "pensionAssets": null, "fundingRatio": null,
                   "capCommit": "$10.0M", "pctCapCommit": null, "calledCap": null,
                   "uc": "$10.0M", "pctUncalled": null, "pctCalled": null,
                   "agentConc": "7.5%%", "ubsConc": "$25.0M",
-                  "agentRate": "75.0%%",
+                  "agentRate": 0.75,
                   "inc": true, "rcl": false, "notes": null
                 },
                 {
@@ -681,11 +679,11 @@ class BbRunIntegrationTest extends IntegrationTestBase {
                   "type": "HNW", "region": "Europe",
                   "ig": false, "cls": "Excluded",
                   "sp": "", "mdy": "", "fitch": "",
-                  "aum": null, "nav": null, "pension": null, "pensionFunded": null,
+                  "aum": null, "nav": null, "pensionAssets": null, "fundingRatio": null,
                   "capCommit": "$1.0M", "pctCapCommit": null, "calledCap": null,
                   "uc": "$1.0M", "pctUncalled": null, "pctCalled": null,
                   "agentConc": null, "ubsConc": "$25.0M",
-                  "agentRate": "0%%",
+                  "agentRate": 0,
                   "inc": false, "rcl": false, "notes": null
                 }
               ]

@@ -32,11 +32,14 @@ public class SecurityProperties {
     private String lastNameHeader = "X-Auth-Last-Name";
     private String emailHeader = "X-Auth-Email";
 
-    /** Identity used for every request in DEV mode. */
-    private String devUser = "local.analyst@ubs.dev";
-    private String devFirstName = "Local";
-    private String devLastName = "Analyst";
-    private String devEmail = "local.analyst@ubs.dev";
+    /**
+     * Identity used for every request in DEV mode. A uuName, not an email — it is the natural key
+     * of the users directory, so a dev run produces a directory row shaped like a real one.
+     */
+    private String devUser = "js25029";
+    private String devFirstName = "John";
+    private String devLastName = "Smith";
+    private String devEmail = "john.smith@ubs.com";
 
     /** Roles granted to {@link #devUser} in DEV mode. */
     private List<String> devRoles = List.of("ANALYST");

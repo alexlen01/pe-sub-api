@@ -294,6 +294,6 @@ ON CONFLICT (key) DO NOTHING;
 -- Retire the "Included (PWM)" class (BB_CRITERIA_DESIGN.md Q5): any existing rows move to the
 -- successor HNW Feeder class. No-op on a fresh database (the label only ever existed in the
 -- prototype), kept so the migration is correct against any environment that adopted it.
-UPDATE lp_records SET classification     = 'HNW Feeder (acceptable)' WHERE classification     = 'Included (PWM)';
-UPDATE lp_rates   SET classification     = 'HNW Feeder (acceptable)' WHERE classification     = 'Included (PWM)';
-UPDATE lp_master  SET ubs_classification = 'HNW Feeder (acceptable)' WHERE ubs_classification = 'Included (PWM)';
+UPDATE lp_records SET ubs_lp_category = 'HNW Feeder (acceptable)' WHERE ubs_lp_category = 'Included (PWM)';
+UPDATE lp_rates   SET classification   = 'HNW Feeder (acceptable)' WHERE classification   = 'Included (PWM)';
+UPDATE lp_master  SET ubs_lp_category = 'HNW Feeder (acceptable)' WHERE ubs_lp_category = 'Included (PWM)';

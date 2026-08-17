@@ -80,12 +80,6 @@ public class BbTemplate {
     @Column(name = "notes", columnDefinition = "jsonb")
     private List<String> notes = List.of();
 
-    @Column(name = "source_file_name")
-    private String sourceFileName;
-
-    @Column(name = "source_file_size")
-    private Long sourceFileSize;
-
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -116,10 +110,7 @@ public class BbTemplate {
     public String  getSummaryRowRange()      { return summaryRowRange; }
     public List<String> getDetectKeys()      { return detectKeys; }
     public List<Map<String, String>> getLegend() { return legend; }
-    public List<String> getNotes()           { return notes; }
-    public String getSourceFileName()        { return sourceFileName; }
-    public Long getSourceFileSize()          { return sourceFileSize; }
-    public LocalDateTime getCreatedAt()      { return createdAt; }
+    public List<String> getNotes()           { return notes; }    public LocalDateTime getCreatedAt()      { return createdAt; }
     public LocalDateTime getUpdatedAt()      { return updatedAt; }
 
     public void setTemplateName(String v)           { this.templateName          = v; }
@@ -139,7 +130,4 @@ public class BbTemplate {
     public void setSummaryRowRange(String v)        { this.summaryRowRange      = v; }
     public void setDetectKeys(List<String> v)       { this.detectKeys           = v; }
     public void setLegend(List<Map<String, String>> v) { this.legend            = v; }
-    public void setNotes(List<String> v)            { this.notes                = v; }
-    public void setSourceFileName(String v)          { this.sourceFileName       = v; }
-    public void setSourceFileSize(Long v)            { this.sourceFileSize       = v; }
-}
+    public void setNotes(List<String> v)            { this.notes                = v; }}
