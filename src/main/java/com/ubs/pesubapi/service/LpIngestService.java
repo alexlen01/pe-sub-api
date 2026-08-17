@@ -384,16 +384,6 @@ public class LpIngestService {
     }
 
     /**
-     * Applies LP Master stable attributes and UBS credit profile as a baseline onto a
-     * facility LP record before Agent BB extraction fields are overlaid.
-     *
-     * Stable identity/financial scale fields are applied only when the LP record currently
-     * holds its default/blank value, so a manually-edited facility record is not silently
-     * clobbered.  UBS credit profile fields (cls, ubsRate, ubsConc) are applied
-     * unconditionally — they are never set by extraction, so LP Master is the only source
-     * of pre-populated credit decisions for this submission cycle.
-     */
-    /**
      * Seed a new facility LP record from an accepted LP Master match.
      *
      * <p>Every field resolves child-first: the matched record's own value wins, and only where it is
@@ -409,41 +399,41 @@ public class LpIngestService {
 
         // Stable identity — override defaults set at new-record creation time
         if (lpRecord.getInvestorType() == null || lpRecord.getInvestorType().isBlank()) {
-            r.text(LpMaster::getInvestorType).ifPresent(lpRecord::setInvestorType);
+            r.text(m -> m.getInvestorType()).ifPresent(lpRecord::setInvestorType);
         }
         if (lpRecord.getInstitutionalOrHnw() == null || lpRecord.getInstitutionalOrHnw().isBlank()) {
-            r.text(LpMaster::getInstitutionalOrHnw).ifPresent(lpRecord::setInstitutionalOrHnw);
+            r.text(m -> m.getInstitutionalOrHnw()).ifPresent(lpRecord::setInstitutionalOrHnw);
         }
         if (lpRecord.getRegionLocation() == null || lpRecord.getRegionLocation().isBlank()) {
-            r.text(LpMaster::getRegionLocation).ifPresent(lpRecord::setRegionLocation);
+            r.text(m -> m.getRegionLocation()).ifPresent(lpRecord::setRegionLocation);
         }
         lpRecord.setSpv(matched.isSpv());
-        lpRecord.setHighQuality(r.flag(LpMaster::isHighQuality));
-        lpRecord.setInvestmentGrade(r.flag(LpMaster::isInvestmentGrade));
+        lpRecord.setHighQuality(r.flag(m -> m.isHighQuality()));
+        lpRecord.setInvestmentGrade(r.flag(m -> m.isInvestmentGrade()));
         // Prefer the resolved ultimate parent's name over the matched row's own parent string —
         // it is the entity whose credit profile the record now carries.
         if (lpRecord.getParent() == null) {
             if (r.routed()) lpRecord.setParent(r.ultimateParent().getInvestorName());
-            else r.text(LpMaster::getParent).ifPresent(lpRecord::setParent);
+            else r.text(m -> m.getParent()).ifPresent(lpRecord::setParent);
         }
 
         // Ratings — apply when the chain has a value and the facility record is still blank
-        if (lpRecord.getSpRating().isBlank())     r.text(LpMaster::getSpRating).ifPresent(lpRecord::setSpRating);
-        if (lpRecord.getMoodysRating().isBlank()) r.text(LpMaster::getMoodysRating).ifPresent(lpRecord::setMoodysRating);
-        if (lpRecord.getFitchRating().isBlank())  r.text(LpMaster::getFitchRating).ifPresent(lpRecord::setFitchRating);
+        if (lpRecord.getSpRating().isBlank())     r.text(m -> m.getSpRating()).ifPresent(lpRecord::setSpRating);
+        if (lpRecord.getMoodysRating().isBlank()) r.text(m -> m.getMoodysRating()).ifPresent(lpRecord::setMoodysRating);
+        if (lpRecord.getFitchRating().isBlank())  r.text(m -> m.getFitchRating()).ifPresent(lpRecord::setFitchRating);
 
         // Financial scale — fill nulls from the chain. These are VARCHAR on both sides, so the
         // copy is a plain assignment.
-        if (lpRecord.getAum()           == null) r.value(LpMaster::getAum).ifPresent(lpRecord::setAum);
-        if (lpRecord.getNav()           == null) r.value(LpMaster::getNav).ifPresent(lpRecord::setNav);
-        if (lpRecord.getPensionAssets() == null) r.value(LpMaster::getPensionAssets).ifPresent(lpRecord::setPensionAssets);
-        if (lpRecord.getFundingRatio()  == null) r.value(LpMaster::getFundingRatio).ifPresent(lpRecord::setFundingRatio);
+        if (lpRecord.getAum()           == null) r.value(m -> m.getAum()).ifPresent(lpRecord::setAum);
+        if (lpRecord.getNav()           == null) r.value(m -> m.getNav()).ifPresent(lpRecord::setNav);
+        if (lpRecord.getPensionAssets() == null) r.value(m -> m.getPensionAssets()).ifPresent(lpRecord::setPensionAssets);
+        if (lpRecord.getFundingRatio()  == null) r.value(m -> m.getFundingRatio()).ifPresent(lpRecord::setFundingRatio);
 
         // UBS credit profile — always apply; these fields are never set by extraction so
         // LP Master is the sole pre-populated source ahead of the credit officer's review
-        r.text(LpMaster::getUbsLpCategory).ifPresent(lpRecord::setUbsLpCategory);
-        r.value(LpMaster::getUbsDefaultAdvanceRate).ifPresent(lpRecord::setUbsAdvanceRate);
-        r.value(LpMaster::getUbsDefaultConcentrationLimit).ifPresent(lpRecord::setUbsConcentrationLimit);
+        r.text(m -> m.getUbsLpCategory()).ifPresent(lpRecord::setUbsLpCategory);
+        r.value(m -> m.getUbsDefaultAdvanceRate()).ifPresent(lpRecord::setUbsAdvanceRate);
+        r.value(m -> m.getUbsDefaultConcentrationLimit()).ifPresent(lpRecord::setUbsConcentrationLimit);
     }
 
     private String textOrNull(JsonNode node, String field) {
