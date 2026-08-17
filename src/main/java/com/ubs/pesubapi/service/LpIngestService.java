@@ -206,7 +206,7 @@ public class LpIngestService {
             // For accepted LP Master matches: pre-populate empty fields from LP Master
             // (stable identity, ratings, UBS credit profile) before extraction fields win.
             // A matched child/feeder routes up its parent chain — see LpMasterResolutionService.
-            if (isAccepted) {
+            if (isAccepted && entry != null) {
                 var resolved = resolutionService.resolveByName(name).orElse(null);
                 if (resolved != null) {
                     applyLpMasterBaseline(lpRecord, resolved);

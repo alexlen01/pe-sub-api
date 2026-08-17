@@ -57,7 +57,7 @@ public class LpMasterService {
         Map<Integer, Integer>  childCounts = new HashMap<>();
         for (LpMaster m : all) byId.put(m.getId(), m);
         for (LpMaster m : all) {
-            if (m.getParentId() != null) childCounts.merge(m.getParentId(), 1, Integer::sum);
+            if (m.getParentId() != null) childCounts.merge(m.getParentId(), 1, (a, b) -> a + b);
         }
         return all.stream()
             .map(m -> {

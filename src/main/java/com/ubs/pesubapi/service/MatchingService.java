@@ -245,7 +245,9 @@ public class MatchingService {
             masterByName.putIfAbsent(m.getInvestorName(), m);
         }
         List<String> masterNames = masterRows.stream()
-            .map(LpMaster::getInvestorName).sorted().toList();
+            .map(master -> master.getInvestorName() == null ? "" : master.getInvestorName())
+            .sorted()
+            .toList();
         Prepared prepared = prepare(masterNames);
 
         // Collect non-blank rows using the extraction row's stable sequence id when present.
@@ -268,7 +270,7 @@ public class MatchingService {
         // Phase 5 feedback loop: strings an analyst has already accepted resolve exactly, bypassing
         // fuzzy scoring entirely — but still running the same parent routing as a fuzzy hit.
         Map<String, Integer> aliasHits =
-            aliasService.lookupAll(rows.stream().map(Row::agentName).toList());
+            aliasService.lookupAll(rows.stream().map(r -> r.agentName()).toList());
 
         // Fuzzy matching is CPU-bound and each row is independent; Prepared is immutable and the
         // master maps are read-only from here, so scoring rows in parallel is safe. Persistence

@@ -542,7 +542,7 @@ class CommitAcceptedMatchesIntegrationTest extends IntegrationTestBase {
         assertThat(stored).hasSize(2);
         assertThat(stored).allMatch(lp -> "Blackstone Strategic Partners".equals(lp.getInvestorName()));
         assertThat(stored.stream().map(r -> r.getUncalledCapital()).toList())
-            .usingElementComparator(BigDecimal::compareTo)
+            .usingElementComparator((a, b) -> a.compareTo(b))
             .containsExactly(new BigDecimal("18000000"), new BigDecimal("11000000"));
         assertThat(stored.stream().map(r -> r.getSourceSeq()).toList())
             .containsExactly(1, 2);
