@@ -21,23 +21,25 @@ import java.util.concurrent.ThreadPoolExecutor;
  *
  * <p>Concurrency is capped to protect the heap from many simultaneous large-workbook parses;
  * excess work queues, and only under sustained overload does the submitting thread run the task
- * (CallerRuns backpressure) rather than dropping it.
+ * (CallerRuns backpressure) rather than dropping it. The sizing is environment-dependent — it
+ * trades throughput against heap — so it comes from {@link ExtractionExecutorProperties}
+ * ({@code app.extraction-executor.*}) rather than being fixed here.
  */
 @Configuration
 @EnableAsync
 public class AsyncConfig {
 
     @Bean("extractionExecutor")
-    public ThreadPoolTaskExecutor extractionExecutor() {
+    public ThreadPoolTaskExecutor extractionExecutor(ExtractionExecutorProperties props) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(2);
-        executor.setMaxPoolSize(4);
-        executor.setQueueCapacity(50);
+        executor.setCorePoolSize(props.getCorePoolSize());
+        executor.setMaxPoolSize(props.getMaxPoolSize());
+        executor.setQueueCapacity(props.getQueueCapacity());
         executor.setThreadNamePrefix("extraction-");
         executor.setTaskDecorator(mdcTaskDecorator());
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.setWaitForTasksToCompleteOnShutdown(true);
-        executor.setAwaitTerminationSeconds(60);
+        executor.setAwaitTerminationSeconds(props.getAwaitTerminationSeconds());
         executor.initialize();
         return executor;
     }

@@ -86,7 +86,6 @@ public class BbTemplateController {
     /**
      * Import a template from a structured Excel workbook.
      * Expected sheets: "Template" (one data row), "Tabs", "Groups".
-     * See pe-sub-docs/WORKBOOK_*.md for per-template examples of the required format.
      */
     @PostMapping("/import")
     @ResponseStatus(HttpStatus.CREATED)

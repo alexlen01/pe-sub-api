@@ -447,11 +447,15 @@ when the gateway sent no first/last name), so screens never assemble a name them
 | `APP_TEMPLATE_PROFILER_MIN_HEADER_MATCHES` | `3` | Header cells a row must match to be accepted as the LP-grid header |
 | `APP_TEMPLATE_PROFILER_HEADER_SCAN_ROWS` | `15` | Rows scanned from the top while looking for that header row |
 | `APP_TEMPLATE_PROFILER_MAX_GROUPS` | `12` | Upper bound on classification groups derived from one workbook |
+| `APP_EXTRACTION_EXECUTOR_CORE_POOL_SIZE` | `2` | Workbooks parsed concurrently under normal load |
+| `APP_EXTRACTION_EXECUTOR_MAX_POOL_SIZE` | `4` | Thread ceiling once the queue is full |
+| `APP_EXTRACTION_EXECUTOR_QUEUE_CAPACITY` | `50` | Queued uploads before CallerRuns backpressure applies |
+| `APP_EXTRACTION_EXECUTOR_AWAIT_TERMINATION_SECONDS` | `60` | Shutdown grace period for in-flight parses |
 
 **No hardcoded configuration in code.** Tuning values are declared in `application.yml` (each with
 an env-var override) and injected — never as constants in a service or as an inline `@Value`
 default. Clusters bind through `@ConfigurationProperties` (`SecurityProperties`,
-`TemplateRecognitionProperties`, `TemplateProfilerProperties`), picked up by
+`TemplateRecognitionProperties`, `TemplateProfilerProperties`, `ExtractionExecutorProperties`), picked up by
 `@ConfigurationPropertiesScan` on `PeSubApiApplication`. Because no property carries an inline
 fallback, a missing one fails startup loudly instead of silently running on a value nobody
 declared. Domain constants that are *not* configuration stay in code deliberately: status tokens

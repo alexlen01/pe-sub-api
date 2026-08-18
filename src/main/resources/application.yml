@@ -78,6 +78,15 @@ app:
     # Minimum per-field extraction confidence before a value is written to an LP record.
     min-field-confidence: ${APP_INGEST_MIN_FIELD_CONFIDENCE:0.7}
 
+  # Sizing for the extraction pipeline's thread pool. Each in-flight task holds a parsed POI
+  # workbook, so raise these only alongside the container's heap; beyond max-pool-size + queue
+  # capacity the submitting thread runs the task (CallerRuns backpressure).
+  extraction-executor:
+    core-pool-size: ${APP_EXTRACTION_EXECUTOR_CORE_POOL_SIZE:2}
+    max-pool-size: ${APP_EXTRACTION_EXECUTOR_MAX_POOL_SIZE:4}
+    queue-capacity: ${APP_EXTRACTION_EXECUTOR_QUEUE_CAPACITY:50}
+    await-termination-seconds: ${APP_EXTRACTION_EXECUTOR_AWAIT_TERMINATION_SECONDS:60}
+
   # Agent-BB template recognition scoring. A candidate template accumulates points per signal;
   # below min-score the engine ignores the registry and auto-detects sheet/header instead.
   template-recognition:
