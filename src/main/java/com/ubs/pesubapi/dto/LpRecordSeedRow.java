@@ -9,6 +9,9 @@ package com.ubs.pesubapi.dto;
  * references by name; rows whose facility or LP Master cannot be resolved, or whose
  * (facility, investor) pair already has an LP record, are skipped — never overwritten.
  *
+ * <p>{@code highQuality} is deliberately absent: the LP DB Export stopped carrying it, so the
+ * record inherits the LP Master value (itself on the schema default) rather than a fabricated one.
+ *
  * <p>Every value stays a String on this boundary because the feed is CSV-derived: rates and
  * percents may arrive as "90%", "90" or "0.9" and are normalised to the stored fraction by
  * {@code MoneyValues.fraction}, exactly as money goes through {@code MoneyValues.dollars}.
@@ -23,7 +26,6 @@ public record LpRecordSeedRow(
         String agentConcentrationLimit,
         String parent,
         String spv,
-        String highQuality,
         String investorType,
         String institutionalOrHnw,
         String regionLocation,
@@ -42,6 +44,8 @@ public record LpRecordSeedRow(
         String pctLpCalled,
         String ubsConcentrationLimit,
         String ubsAdvanceRate,
+        String agentExcessConcentration,
+        String ubsExcessConcentration,
         String agentBorrowingBase,
         String ubsBorrowingBase,
         String notes) {}

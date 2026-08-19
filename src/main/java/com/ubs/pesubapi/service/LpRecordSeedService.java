@@ -85,7 +85,9 @@ public class LpRecordSeedService {
             // (legacy 7-column feeds arrive with these fields blank and keep the old merge behavior).
             lp.setParent(coalesce(row.parent(), master.getParent()));
             lp.setSpv(boolOr(row.spv(), master.isSpv()));
-            lp.setHighQuality(boolOr(row.highQuality(), master.isHighQuality()));
+            // No longer fed by the export: inherit the LP Master value, which is itself on the
+            // schema default (TRUE) unless an analyst has set it.
+            lp.setHighQuality(master.isHighQuality());
             lp.setInvestorType(coalesce(row.investorType(), coalesce(master.getInvestorType(), "")));
             lp.setInstitutionalOrHnw(coalesce(row.institutionalOrHnw(), coalesce(master.getInstitutionalOrHnw(), "Institutional")));
             lp.setRegionLocation(coalesce(row.regionLocation(), coalesce(master.getRegionLocation(), "")));
@@ -113,6 +115,8 @@ public class LpRecordSeedService {
             lp.setPctLpCalled(MoneyValues.fraction(row.pctLpCalled()));
             lp.setUbsConcentrationLimit(MoneyValues.concLimit(row.ubsConcentrationLimit()));
             lp.setUbsAdvanceRate(MoneyValues.fraction(row.ubsAdvanceRate()));
+            lp.setAgentExcessConcentration(MoneyValues.dollars(row.agentExcessConcentration()));
+            lp.setUbsExcessConcentration(MoneyValues.dollars(row.ubsExcessConcentration()));
             lp.setAgentBorrowingBase(MoneyValues.dollars(row.agentBorrowingBase()));
             lp.setUbsBorrowingBase(MoneyValues.dollars(row.ubsBorrowingBase()));
             lp.setNotes(row.notes());

@@ -159,6 +159,24 @@ class SeedIngestEndpointsIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void lpMasterIngest_withoutHighQuality_keepsSchemaDefaultRatherThanFalse() throws Exception {
+        // The 2026-08-18 LP DB Export dropped the High Quality column, so the feed omits the field
+        // entirely. It must land on the schema default (TRUE) — as a primitive it would deserialise
+        // to false, quietly flipping every LP out of the high-quality tier and firing the aggregate
+        // breach checks in BbCalculationService that key off it.
+        String noHighQuality = LP_MASTER_ROW.replace("  \"highQuality\": true,\n", "");
+        assertThat(noHighQuality).doesNotContain("highQuality");
+
+        mvc.perform(post("/api/lp-master/ingest")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("[" + noHighQuality + "]"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.created").value(1));
+
+        assertThat(lpMasterRepo.findAll().getFirst().isHighQuality()).isTrue();
+    }
+
+    @Test
     void lpRecordSeed_resolvesReferencesByName_insertsOnlyWhenAbsent() throws Exception {
         mvc.perform(post("/api/facilities/ingest")
                 .contentType(MediaType.APPLICATION_JSON).content("[" + FACILITY_ROW + "]"))
@@ -175,13 +193,14 @@ class SeedIngestEndpointsIntegrationTest extends IntegrationTestBase {
               { "facilityName": "Seed Facility Alpha", "investorName": "Acme Pension Fund",
                 "capitalCommitment": "$300M", "uncalledCapital": "$90M", "agentLpCategory": "Rated",
                 "agentAdvanceRate": "90%", "agentConcentrationLimit": "5%",
-                "parent": "Row Parent Ltd", "spv": "TRUE", "highQuality": "FALSE",
+                "parent": "Row Parent Ltd", "spv": "TRUE",
                 "investorType": "Sovereign Wealth Fund", "institutionalOrHnw": "Institutional",
                 "regionLocation": "Norway", "investmentGrade": "FALSE",
                 "ubsLpCategory": "Unrated NAV > $1Bn", "spRating": "A", "moodysRating": "A2", "fitchRating": "A-",
                 "aum": "$7B", "nav": "$6B", "pensionAssets": "", "fundingRatio": "98%",
                 "pctOfFundCommitments": "3%", "calledCapital": "$210M", "pctOfFundUncalled": "2.5%",
                 "pctLpCalled": "70%", "ubsConcentrationLimit": "4%", "ubsAdvanceRate": "75%",
+                "agentExcessConcentration": "$12M", "ubsExcessConcentration": "$9M",
                 "agentBorrowingBase": "$81M", "ubsBorrowingBase": "$67.5M", "notes": "row note" },
               { "facilityName": "No Such Facility", "investorName": "Acme Pension Fund",
                 "capitalCommitment": "$1M", "uncalledCapital": "$1M", "agentLpCategory": "Rated",
@@ -214,7 +233,8 @@ class SeedIngestEndpointsIntegrationTest extends IntegrationTestBase {
         assertThat(lp.getUbsLpCategory()).isEqualTo("Unrated NAV > $1Bn");         // row ubsCls, not agentCls-derived
         assertThat(lp.getParent()).isEqualTo("Row Parent Ltd");
         assertThat(lp.isSpv()).isTrue();
-        assertThat(lp.isHighQuality()).isFalse();
+        // Not a feed column any more: inherited from the LP Master profile, which is true here.
+        assertThat(lp.isHighQuality()).isTrue();
         assertThat(lp.getInvestorType()).isEqualTo("Sovereign Wealth Fund");
         assertThat(lp.getInstitutionalOrHnw()).isEqualTo("Institutional");
         assertThat(lp.getRegionLocation()).isEqualTo("Norway");
@@ -223,6 +243,8 @@ class SeedIngestEndpointsIntegrationTest extends IntegrationTestBase {
         assertThat(lp.getMoodysRating()).isEqualTo("A2");
         assertThat(lp.getFitchRating()).isEqualTo("A-");
         assertThat(lp.getAum()).isEqualTo("$7B");
+        assertThat(lp.getAgentExcessConcentration()).isEqualByComparingTo("12000000");
+        assertThat(lp.getUbsExcessConcentration()).isEqualByComparingTo("9000000");
         assertThat(lp.getNav()).isEqualTo("$6B");
         assertThat(lp.getFundingRatio()).isEqualByComparingTo("0.98");
         // Blank row value falls back to the LP Master golden profile:

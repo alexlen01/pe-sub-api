@@ -10,12 +10,18 @@ package com.ubs.pesubapi.dto;
  * {@code ubsDefaultAdvanceRate} are normalised to stored fractions by
  * {@code MoneyValues.fraction}, and {@code ubsDefaultConcentrationLimit} through
  * {@code MoneyValues.concLimit} because it may be a percent or a dollar cap.
+ *
+ * <p>{@code highQuality} is boxed on purpose. The LP DB Export stopped carrying the column, so
+ * the field arrives absent — and as a primitive that would deserialise to {@code false},
+ * silently flipping every LP out of the high-quality tier and firing the aggregate breach
+ * checks that key off it. Null means "not supplied", which the service reads as the
+ * schema default (TRUE).
  */
 public record LpMasterIngestRow(
         String investorName,
         String parent,
         boolean spv,
-        boolean highQuality,
+        Boolean highQuality,
         String investorType,
         String institutionalOrHnw,
         String regionLocation,

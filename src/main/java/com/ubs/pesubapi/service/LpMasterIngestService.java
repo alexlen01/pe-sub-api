@@ -50,7 +50,10 @@ public class LpMasterIngestService {
             boolean isNew = lp.getId() == null;
             lp.setParent(row.parent());
             lp.setSpv(row.spv());
-            lp.setHighQuality(row.highQuality());
+            // Absent from the feed since the 2026-08-18 export format: keep whatever the record
+            // already carries (TRUE for a new one, per the schema default) rather than reading a
+            // missing field as false.
+            lp.setHighQuality(row.highQuality() != null ? row.highQuality() : lp.isHighQuality());
             lp.setInvestorType(row.investorType());
             lp.setInstitutionalOrHnw(row.institutionalOrHnw());
             lp.setRegionLocation(row.regionLocation());

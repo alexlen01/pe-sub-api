@@ -133,6 +133,9 @@ public class LpRecord {
     @Column(name = "pct_lp_called")
     private BigDecimal pctLpCalled;
 
+    @Column(name = "recallable_distributions")
+    private BigDecimal recallableDistributions;
+
     @Column(name = "agent_concentration_limit")
     private BigDecimal agentConcentrationLimit;
 
@@ -151,9 +154,6 @@ public class LpRecord {
 
     @Column(name = "reclassified", nullable = false)
     private boolean reclassified = false;
-
-    @Column(name = "recallable_distributions")
-    private BigDecimal recallableDistributions;
 
     @Column(name = "transferee", nullable = false)
     private boolean transferee = false;
@@ -212,13 +212,13 @@ public class LpRecord {
     public BigDecimal getUncalledCapital()       { return uncalledCapital; }
     public BigDecimal getPctOfFundUncalled()     { return pctOfFundUncalled; }
     public BigDecimal getPctLpCalled()           { return pctLpCalled; }
+    public BigDecimal getRecallableDistributions() { return recallableDistributions; }
     public BigDecimal getAgentConcentrationLimit() { return agentConcentrationLimit; }
     public BigDecimal getUbsConcentrationLimit() { return ubsConcentrationLimit; }
     public BigDecimal getAgentAdvanceRate()      { return agentAdvanceRate; }
     public BigDecimal getAgentBorrowingBase()    { return agentBorrowingBase; }
     public boolean isIncluded()                  { return included; }
     public boolean isReclassified()              { return reclassified; }
-    public BigDecimal getRecallableDistributions() { return recallableDistributions; }
     public boolean isTransferee()                { return transferee; }
     public Integer getLpRank()                   { return lpRank; }
     public String getNotes()                     { return notes; }
