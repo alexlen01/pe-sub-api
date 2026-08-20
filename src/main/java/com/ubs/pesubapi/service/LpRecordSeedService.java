@@ -145,7 +145,7 @@ public class LpRecordSeedService {
             case "Non-Rated", "Non-Rated Included" -> "Non-Rated Included";
             case "Designated", "Designated Institutional" -> "Designated Institutional";
             case "Designated PWM" -> "Designated PWM";
-            case "Ineligible", "Ineligible Investor", "Ineligible Investors" -> "Ineligible Investor";
+            case "Ineligible", "Ineligible Investor", "Ineligible Investors", "Excluded", "Excluded Investor", "Excluded Investors" -> "Excluded Investor";
             default -> raw.trim();
         };
     }

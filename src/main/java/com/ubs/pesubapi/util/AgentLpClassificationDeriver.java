@@ -20,9 +20,9 @@ public final class AgentLpClassificationDeriver {
     ) {
         String type = lower(investorType);
         String noteText = lower(notes);
-        if (spv || containsHardExclusion(type + " " + noteText)) return "Ineligible Investors";
+        if (spv || containsHardExclusion(type + " " + noteText)) return "Excluded Investor";
         if (hasInvestmentGradeRating(sp, mdy, fitch)) return "Rated Included";
-        if (type.matches(".*(family office|hnw|high net worth).*")) return "Ineligible Investors";
+        if (type.matches(".*(family office|hnw|high net worth).*")) return "Excluded Investor";
         if (type.matches(".*(institutional|endowment|foundation|insurance|sovereign|pension|corporate|healthcare|fund of funds|fof|investment consultant|hedge fund).*")) {
             return "Non-Rated Included";
         }

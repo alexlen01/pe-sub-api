@@ -21,7 +21,7 @@ INSERT INTO config (key, value) VALUES ('agent_tiers', '[
   {"cls":"Non-Rated Included",       "rate":75},
   {"cls":"Designated Institutional", "rate":60},
   {"cls":"Designated PWM",           "rate":50},
-  {"cls":"Ineligible Investor",      "rate":0}
+    {"cls":"Excluded Investor",       "rate":0, "concLimitPct":0}
 ]');
 
 INSERT INTO config (key, value) VALUES ('agent_rate_params', '[

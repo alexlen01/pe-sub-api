@@ -87,7 +87,7 @@ INSERT INTO config (key, value) VALUES ('classification_config', $json$
     "Non-Rated Included": "Unrated NAV > $1Bn",
     "Designated Institutional": "Corp Pension > $5Bn Assets",
     "Designated PWM": "HNW Feeder (acceptable)",
-    "Ineligible Investor": "Excluded",
+    "Excluded Investor": "Excluded",
     "Ineligible Investors": "Excluded"
   },
   "LP_SIZE_CRITERIA_OPTS": ["", "AUM", "NAV", "Assets"],
@@ -112,7 +112,7 @@ INSERT INTO config (key, value) VALUES ('classification_config', $json$
     "Non-Rated Included": "75%",
     "Designated Institutional": "60%",
     "Designated PWM": "50%",
-    "Ineligible Investor": "0%"
+    "Excluded Investor": "0%"
   },
   "CLS_TAG_MAP": {
     "Rated Investor": "tag-rated",
